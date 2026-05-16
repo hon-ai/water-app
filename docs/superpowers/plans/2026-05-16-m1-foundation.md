@@ -115,10 +115,12 @@ Create `rust-toolchain.toml`:
 
 ```toml
 [toolchain]
-channel = "1.78"
+channel = "stable"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
 ```
+
+(Rust 1.95 is currently installed on the dev machine; pinning to `stable` keeps us forward-compatible and avoids forcing version-specific downloads on contributor machines. Verified end-to-end build works.)
 
 - [ ] **Step 2: Create the workspace root manifest**
 
