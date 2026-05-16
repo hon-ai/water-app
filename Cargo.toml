@@ -1,6 +1,5 @@
 [workspace]
-# app/src-tauri is added in Task 2 once the Tauri shell is scaffolded.
-members = ["crates/water-core"]
+members = ["app/src-tauri", "crates/water-core"]
 resolver = "2"
 
 [workspace.package]
