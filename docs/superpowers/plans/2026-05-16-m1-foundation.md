@@ -461,10 +461,6 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
-[lib]
-name = "water_app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
 [build-dependencies]
 tauri-build = { workspace = true, features = [] }
 
@@ -478,6 +474,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 ```
+
+(Note: no `[lib]` block. Tauri 2's mobile target conventionally uses a `lib.rs` with `mobile_entry_point!`, but Water v1 is desktop-only; we add `[lib]` + `src/lib.rs` together if mobile lands in a later milestone.)
 
 - [ ] **Step 7: Create the Tauri config**
 
@@ -512,10 +510,12 @@ Create `app/src-tauri/tauri.conf.json`:
   "bundle": {
     "active": true,
     "targets": ["app", "dmg", "msi", "nsis"],
-    "icon": []
+    "icon": ["icons/icon.ico"]
   }
 }
 ```
+
+(Note: Tauri 2 requires at least one icon for the Windows resource embedder. Create a placeholder `app/src-tauri/icons/icon.ico` — any small valid ICO — until the real brand icon ships in M7 polish.)
 
 - [ ] **Step 8: Create the Tauri Rust entry points**
 
@@ -542,16 +542,13 @@ fn main() {
         .init();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_log_init())
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-fn tauri_plugin_log_init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::new("water-log").build()
-}
 ```
+
+(Note: an earlier draft of this task included a decorative `tauri_plugin_log_init()` shim; it has been removed because it added complexity without functional gain. `tracing-subscriber` provides all logging needed for M1.)
 
 - [ ] **Step 9: Verify Tauri compiles**
 
