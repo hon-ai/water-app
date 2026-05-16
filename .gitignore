@@ -1,0 +1,61 @@
+# Operating system
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Rust / Tauri (arrive in M1)
+/target/
+**/target/
+*.rs.bk
+Cargo.lock.bak
+
+# Node / Web (arrive in M1)
+node_modules/
+dist/
+dist-electron/
+build/
+.next/
+.cache/
+*.tsbuildinfo
+
+# Python sidecar (arrives in M1)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.uv/
+
+# Local secrets, never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Logs
+*.log
+logs/
+
+# Local Water dev artifacts
+.water-dev/
+~/.water/dev-keys.toml
+local-test-projects/
+
+# Bundled models (kept out of git; downloaded or built into installers)
+models/
+*.gguf
+*.safetensors
+*.pth
+*.onnx
+
+# Eval-harness outputs
+eval/outputs/
+eval/replays/
