@@ -150,6 +150,17 @@ impl<'a> SnapshotStore<'a> {
         Ok(plain)
     }
 
+    /// Restore a scene file from a snapshot. Takes a pre-restore snapshot
+    /// of the *current* file first so the operation is reversible.
+    pub fn restore(&self, scene_id: &Id, snapshot_id: &Id, target_path: &Path) -> Result<()> {
+        if target_path.exists() {
+            self.take(scene_id, target_path, SnapshotTrigger::PreRestore)?;
+        }
+        let plain = self.read_decompressed(snapshot_id)?;
+        std::fs::write(target_path, plain)?;
+        Ok(())
+    }
+
     /// Apply the v1 retention policy. Returns the number of rows deleted.
     ///
     /// - All snapshots taken within the last 24h are kept.
@@ -303,5 +314,31 @@ mod tests {
         // All 30 within last 24h kept; only 1 of the 10 same-hour group kept;
         // so total deleted = 9.
         assert_eq!(pruned, 9);
+    }
+
+    #[test]
+    fn restore_writes_pre_restore_then_overwrites() {
+        let (dir, db, _m_id, s_id) = fixture();
+        let store = SnapshotStore::new(&db, dir.path().to_path_buf());
+        let scene_path = dir
+            .path()
+            .join("manuscript")
+            .join("scenes")
+            .join(format!("{s_id}.md"));
+        // Take an initial snapshot of "first body".
+        let snap1 = store
+            .take(&s_id, &scene_path, SnapshotTrigger::Manual)
+            .unwrap();
+        // Mutate the file.
+        std::fs::write(&scene_path, "different content").unwrap();
+        // Restore.
+        store.restore(&s_id, &snap1.id, &scene_path).unwrap();
+        let on_disk = std::fs::read_to_string(&scene_path).unwrap();
+        assert!(on_disk.contains("first body"));
+        // There should now be ≥2 rows: original Manual + a PreRestore.
+        let rows = store.list(&s_id).unwrap();
+        assert!(rows
+            .iter()
+            .any(|r| r.trigger == SnapshotTrigger::PreRestore));
     }
 }
