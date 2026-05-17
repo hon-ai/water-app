@@ -3430,9 +3430,27 @@ git commit -m "feat(core): snapshot retention pruner"
 
 ### Task 18: Snapshot scheduler
 
+> **Plan amendment (during execution):** Several plan defects surfaced:
+> (1) the tokio API is `set_missed_tick_behavior` (singular), not
+> `set_missed_tickers_behavior`; (2) tokio's `"full"` feature set does
+> NOT include `test-util`, so a `[dev-dependencies]` override is
+> required for the `#[tokio::test(start_paused = true)]` attribute to
+> compile; (3) Rust 1.95's new `clippy::duration_suboptimal_units`
+> pedantic lint flags `Duration::from_secs(3600)` and suggests
+> `Duration::from_hours(1)`, but the latter is nightly-only — fix is
+> a named `HOURLY_INTERVAL` const with `#[allow(...)]` and explanatory
+> comment; (4) `take_one`'s `project_root: &PathBuf` trips
+> `clippy::ptr_arg` — fixed to `&Path` with `.to_path_buf()` at the
+> `SnapshotStore::new` call site; (5) the plan listed two `fixture()`
+> definitions (Step-1 and Step-2 forms); only the Step-2 form (returns
+> `TempDir`) is correct, and the test body must call
+> `dir.path().to_path_buf()` rather than `dir.clone()`. The listing
+> below incorporates all five fixes.
+
 **Files:**
 - Create: `crates/water-core/src/snapshot_scheduler.rs`
 - Modify: `crates/water-core/src/lib.rs`
+- Modify: `crates/water-core/Cargo.toml` (dev-deps tokio test-util)
 
 The scheduler is a tokio task that fires hourly + on demand. We expose `start`, `stop`, `request_manual`, and `pre_restore`.
 
@@ -3470,14 +3488,18 @@ pub struct SnapshotScheduler {
 
 impl SnapshotScheduler {
     /// Spawn the scheduler. Returns the handle. Caller must keep it alive.
+    #[must_use]
     pub fn spawn(db: Arc<Mutex<Db>>, project_root: PathBuf) -> Self {
         let (tx, mut rx) = mpsc::channel::<Cmd>(32);
         let active: Arc<Mutex<Vec<ActiveScene>>> = Arc::new(Mutex::new(Vec::new()));
         let active_clone = active.clone();
 
         tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(3600));
-            ticker.set_missed_tickers_behavior(tokio::time::MissedTickBehavior::Skip);
+            // `Duration::from_hours` is unstable on stable Rust; use seconds.
+            #[allow(clippy::duration_suboptimal_units)]
+            const HOURLY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3600);
+            let mut ticker = tokio::time::interval(HOURLY_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
             loop {
                 tokio::select! {
@@ -3560,12 +3582,12 @@ impl SnapshotScheduler {
 
 async fn take_one(
     db: &Arc<Mutex<Db>>,
-    project_root: &PathBuf,
+    project_root: &std::path::Path,
     scene: &ActiveScene,
     trigger: SnapshotTrigger,
 ) -> Result<()> {
     let db_guard = db.lock().await;
-    let store = SnapshotStore::new(&db_guard, project_root.clone());
+    let store = SnapshotStore::new(&db_guard, project_root.to_path_buf());
     store.take(&scene.scene_id, &scene.file_path, trigger)?;
     store.prune(&scene.scene_id, chrono::Utc::now())?;
     Ok(())
@@ -3596,13 +3618,13 @@ mod tests {
             .join("manuscript")
             .join("scenes")
             .join(format!("{}.md", scene.id));
-        (dir.into_path().into(), Arc::new(Mutex::new(db)), scene.id, scene_path)
+        (dir, Arc::new(Mutex::new(db)), scene.id, scene_path)
     }
 
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn manual_request_takes_a_snapshot() {
         let (dir, db, scene_id, scene_path) = fixture();
-        let scheduler = SnapshotScheduler::spawn(db.clone(), dir.clone());
+        let scheduler = SnapshotScheduler::spawn(db.clone(), dir.path().to_path_buf());
         scheduler
             .register(ActiveScene { scene_id: scene_id.clone(), file_path: scene_path })
             .await;
@@ -3625,40 +3647,15 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Note about `tempfile::TempDir`**
+- [ ] **Step 2: Enable tokio `test-util` feature in dev-deps**
 
-The test uses `dir.into_path()` to retain the directory for the scheduler's lifetime; remove the temp dir manually at the end of the test if you want strict cleanup. For M1 we accept that some test temp dirs linger.
+Append to `crates/water-core/Cargo.toml` under `[dev-dependencies]`:
 
-Re-import the type if needed; replace the `into_path()` line so the test compiles. The simpler approach is to keep `TempDir` alive in a top-level binding by returning it from the fixture. Update the fixture's return type and call sites accordingly: the test holds the `TempDir`, the scheduler holds `PathBuf::from(dir.path())`.
-
-Replace the fixture with:
-
-```rust
-    fn fixture() -> (tempfile::TempDir, Arc<Mutex<Db>>, Id, PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Db::open_in_memory().unwrap();
-        let p = ProjectStore::new(&db).insert("P").unwrap();
-        let m = ManuscriptStore::new(&db).insert(&p.id, "M", 0).unwrap();
-        let ss = SceneStore::new(&db, dir.path().to_path_buf());
-        let scene = ss
-            .create(NewScene {
-                manuscript_id: m.id,
-                chapter_id: None,
-                name: "S".into(),
-                ordering: 0,
-            })
-            .unwrap();
-        ss.write_body(&scene.id, "hello").unwrap();
-        let scene_path = dir
-            .path()
-            .join("manuscript")
-            .join("scenes")
-            .join(format!("{}.md", scene.id));
-        (dir, Arc::new(Mutex::new(db)), scene.id, scene_path)
-    }
+```toml
+tokio = { workspace = true, features = ["test-util"] }
 ```
 
-and in the test body call `dir.path().to_path_buf()` instead of `dir.clone()`.
+Tokio's `"full"` feature set does NOT include `test-util` (despite the name). The override is dev-deps-only so the runtime tokio surface stays untouched. Without this, `#[tokio::test(start_paused = true)]` fails to compile.
 
 - [ ] **Step 3: Register the module**
 
@@ -3677,7 +3674,7 @@ Expected: 1 passed.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/water-core/src/snapshot_scheduler.rs crates/water-core/src/lib.rs
+git add crates/water-core/Cargo.toml crates/water-core/src/snapshot_scheduler.rs crates/water-core/src/lib.rs
 git commit -m "feat(core): snapshot scheduler tokio task"
 ```
 
