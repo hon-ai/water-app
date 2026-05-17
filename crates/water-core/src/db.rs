@@ -22,9 +22,7 @@ impl Db {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
 
         let migrations = migrations::all();
-        migrations
-            .to_latest(&mut conn)
-            .map_err(Error::Migration)?;
+        migrations.to_latest(&mut conn).map_err(Error::Migration)?;
 
         Ok(Self { conn })
     }

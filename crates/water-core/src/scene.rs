@@ -62,7 +62,10 @@ impl<'a> SceneStore<'a> {
             updated_at: now.to_rfc3339(),
             word_count: 0,
         };
-        let file = SceneFile { frontmatter, body: String::new() };
+        let file = SceneFile {
+            frontmatter,
+            body: String::new(),
+        };
         file.write(&file_path)?;
         let file_hash = hash_file(&file_path)?;
 
@@ -114,7 +117,12 @@ impl<'a> SceneStore<'a> {
 
         self.db.conn().execute(
             "UPDATE scene SET word_count = ?2, file_hash = ?3, updated_at = ?4 WHERE id = ?1",
-            (id.as_str(), word_count, &file_hash, &file.frontmatter.updated_at),
+            (
+                id.as_str(),
+                word_count,
+                &file_hash,
+                &file.frontmatter.updated_at,
+            ),
         )?;
 
         self.row(id)
@@ -194,11 +202,7 @@ impl<'a> SceneStore<'a> {
 
 fn parse_id(s: &str) -> rusqlite::Result<Id> {
     s.parse::<Id>().map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Text,
-            Box::new(e),
-        )
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })
 }
 
@@ -304,7 +308,10 @@ mod tests {
         store.move_to(&scene.id, None, 99).unwrap();
         let row = store.list(&m_id).unwrap();
         assert_eq!(row[0].ordering, 99);
-        assert_ne!(row[0].file_hash, hash_before, "file_hash should refresh after move_to");
+        assert_ne!(
+            row[0].file_hash, hash_before,
+            "file_hash should refresh after move_to"
+        );
         let file = store.read(&scene.id).unwrap();
         assert_eq!(file.frontmatter.order, 99);
     }
@@ -313,9 +320,26 @@ mod tests {
     fn list_returns_scenes_in_ordering() {
         let (dir, db, m_id) = setup();
         let store = SceneStore::new(&db, dir.path().to_path_buf());
-        store.create(NewScene { manuscript_id: m_id.clone(), chapter_id: None, name: "B".into(), ordering: 1 }).unwrap();
-        store.create(NewScene { manuscript_id: m_id.clone(), chapter_id: None, name: "A".into(), ordering: 0 }).unwrap();
+        store
+            .create(NewScene {
+                manuscript_id: m_id.clone(),
+                chapter_id: None,
+                name: "B".into(),
+                ordering: 1,
+            })
+            .unwrap();
+        store
+            .create(NewScene {
+                manuscript_id: m_id.clone(),
+                chapter_id: None,
+                name: "A".into(),
+                ordering: 0,
+            })
+            .unwrap();
         let list = store.list(&m_id).unwrap();
-        assert_eq!(list.iter().map(|s| s.name.clone()).collect::<Vec<_>>(), vec!["A", "B"]);
+        assert_eq!(
+            list.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+            vec!["A", "B"]
+        );
     }
 }

@@ -51,7 +51,10 @@ impl SceneFile {
         })?;
         let yaml = &trimmed[..end];
         let rest = &trimmed[end + 4..]; // skip "\n---"
-        let body = rest.trim_start_matches('\r').trim_start_matches('\n').to_owned();
+        let body = rest
+            .trim_start_matches('\r')
+            .trim_start_matches('\n')
+            .to_owned();
         let frontmatter: SceneFrontmatter = serde_yaml::from_str(yaml)?;
         Ok(Self { frontmatter, body })
     }
