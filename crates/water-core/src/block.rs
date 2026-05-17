@@ -9,8 +9,8 @@ use std::hash::BuildHasher;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
-    pub id: String,           // "bk-0a3f"
-    pub text: String,         // body without the trailing ^bk- token
+    pub id: String,   // "bk-0a3f"
+    pub text: String, // body without the trailing ^bk- token
 }
 
 const PREFIX: &str = "bk-";
@@ -39,9 +39,11 @@ pub fn split_blocks(body: &str) -> Vec<(Option<String>, String)> {
         .map(|para| {
             if let Some(idx) = para.rfind("^bk-") {
                 let id_part = &para[idx + 1..]; // strip the caret
-                let valid =
-                    id_part.starts_with(PREFIX) && id_part.len() == PREFIX.len() + 4
-                        && id_part[PREFIX.len()..].chars().all(|c| c.is_ascii_alphanumeric());
+                let valid = id_part.starts_with(PREFIX)
+                    && id_part.len() == PREFIX.len() + 4
+                    && id_part[PREFIX.len()..]
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric());
                 if valid {
                     let before = para[..idx].trim_end();
                     return (Some(id_part.to_owned()), before.to_owned());
@@ -57,10 +59,7 @@ pub fn split_blocks(body: &str) -> Vec<(Option<String>, String)> {
 #[must_use]
 pub fn ensure_block_ids(body: &str) -> (String, Vec<Block>) {
     let split = split_blocks(body);
-    let mut existing: HashSet<String> = split
-        .iter()
-        .filter_map(|(id, _)| id.clone())
-        .collect();
+    let mut existing: HashSet<String> = split.iter().filter_map(|(id, _)| id.clone()).collect();
     let mut out_blocks: Vec<Block> = Vec::with_capacity(split.len());
 
     for (id_opt, text) in split {

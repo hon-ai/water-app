@@ -45,7 +45,9 @@ mod tests {
 
     #[test]
     fn version_is_non_empty() {
-        assert!(!VERSION.is_empty(), "VERSION must be exposed for diagnostics");
+        assert!(
+            !VERSION.is_empty(),
+            "VERSION must be exposed for diagnostics"
+        );
     }
 }
-
