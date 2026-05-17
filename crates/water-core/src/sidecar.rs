@@ -68,6 +68,10 @@ impl Sidecar {
             .stdout
             .take()
             .ok_or_else(|| Error::Sidecar("no stdout".into()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| Error::Sidecar("no stderr".into()))?;
         let mut reader = BufReader::new(stdout).lines();
 
         // Wait for the WATER_SIDECAR_PORT line within the boot_timeout.
@@ -82,6 +86,21 @@ impl Sidecar {
         .await
         .map_err(|_| Error::Sidecar("timeout waiting for port".into()))?
         .ok_or_else(|| Error::Sidecar("sidecar did not announce port".into()))?;
+
+        // Drain remaining stdout (post-port lines) so the OS pipe buffer never fills.
+        tokio::spawn(async move {
+            while let Ok(Some(line)) = reader.next_line().await {
+                tracing::info!(target: "sidecar.stdout", "{line}");
+            }
+        });
+
+        // Drain stderr in parallel (uvicorn writes startup banners + errors here).
+        let mut stderr_reader = BufReader::new(stderr).lines();
+        tokio::spawn(async move {
+            while let Ok(Some(line)) = stderr_reader.next_line().await {
+                tracing::warn!(target: "sidecar.stderr", "{line}");
+            }
+        });
 
         let base_url = format!("http://{}:{}", spec.host, port);
         let me = Self {
