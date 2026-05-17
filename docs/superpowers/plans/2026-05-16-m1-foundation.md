@@ -6324,6 +6324,21 @@ git commit -m "feat(core): MLX provider stub (feature-flagged)"
 
 ### Task 33: Router with secrets, rate limit, circuit breaker
 
+> **Plan amendment (during execution):** Two plan-defect fixes:
+> (1) `crates/water-core/src/lib.rs:6` declares `#![forbid(unsafe_code)]`
+> (set by T1), which cannot be locally overridden by `#[allow(unsafe_code)]`
+> (Rust error E0453). The plan-listed test `env_var_fallback_works`
+> required `unsafe { std::env::set_var(...) }` (since `set_var` became
+> `unsafe fn` in Rust 1.80). Renamed the test to `dev_keys_fallback_works`
+> and rewrote it to exercise the `dev_keys` resolution branch by
+> constructing `Secrets { dev_keys: HashMap::from([...]) }` directly.
+> The env-var branch in `Secrets::get` is single-line and unit-uncovered;
+> end-to-end env coverage would require relaxing `forbid(unsafe_code)` →
+> `deny(unsafe_code)` in `lib.rs` (out of scope for T33). (2) Rust 1.95's
+> `clippy::duration_suboptimal_units` flagged `Duration::from_secs(60)`
+> in `Breaker::new`; rewritten to `Duration::from_mins(1)` (same as T18
+> precedent).
+
 **Files:**
 - Create: `crates/water-core/src/llm/secrets.rs`
 - Create: `crates/water-core/src/llm/router.rs`
@@ -6403,16 +6418,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn env_var_fallback_works() {
-        std::env::set_var("WATER_FAKE_API_KEY", "from-env");
-        let s = Secrets::load();
-        // Drop the dev_keys map so we exercise the env path even when a
-        // ~/.water/dev-keys.toml exists on the developer's machine.
-        let s = Secrets { dev_keys: HashMap::new() };
-        // Keychain may or may not have an entry; on CI it definitely doesn't.
+    fn dev_keys_fallback_works() {
+        // Crate-level `#![forbid(unsafe_code)]` prevents calling the now-unsafe
+        // `std::env::set_var`. Exercise the dev_keys branch instead by
+        // constructing a Secrets with a populated map.
+        let mut dev_keys = HashMap::new();
+        dev_keys.insert("fake".into(), "from-dev-keys".into());
+        let s = Secrets { dev_keys };
+        // Keychain may have an entry on the developer's machine; on CI it
+        // doesn't. Either way, the dev_keys value wins over env fallback.
         let v = s.get("fake").unwrap_or_default();
-        // If the keychain *did* have an entry we'd see it; otherwise env wins.
-        assert!(v == "from-env" || !v.is_empty());
+        assert!(v == "from-dev-keys" || !v.is_empty());
     }
 }
 ```
@@ -6545,7 +6561,7 @@ impl LlmRouter {
                     p.id(),
                     ProviderState {
                         bucket: Mutex::new(TokenBucket::new(&RateLimitConfig::default())),
-                        breaker: Mutex::new(Breaker::new(5, Duration::from_secs(60))),
+                        breaker: Mutex::new(Breaker::new(5, Duration::from_mins(1))),
                     },
                 )
             })
