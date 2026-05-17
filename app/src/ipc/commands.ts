@@ -14,11 +14,24 @@ export interface SceneInfo {
   word_count: number;
 }
 
+export interface SidecarInfo {
+  base_url: string;
+  status: "loading" | "ready" | "error";
+  last_status_detail: string | null;
+}
+
+export interface ProviderHealth {
+  id: string;
+  ok: boolean;
+  error: string | null;
+}
+
 export interface DiagnosticsStatus {
   has_open_project: boolean;
   project_root: string | null;
-  providers: string[];
-  router_configured: boolean;
+  router_primary_id: string | null;
+  sidecar: SidecarInfo | null;
+  provider_health: ProviderHealth[];
 }
 
 export const ipc = {
