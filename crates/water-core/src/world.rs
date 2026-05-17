@@ -23,6 +23,16 @@ impl<'a> WorldStore<'a> {
         Self { db, project_root }
     }
 
+    /// Upserts a world segment.
+    ///
+    /// The `slug` parameter is overloaded: if it parses as a valid ULID, it's
+    /// used as the segment id and the call is idempotent via `ON CONFLICT(id)`
+    /// — the existing row's `name`/`ordering`/`is_collection` are updated. If `slug`
+    /// is anything else (e.g. a human label like `"concept"`), a fresh ULID is
+    /// generated and a new row is inserted on every call.
+    ///
+    /// Callers that want idempotent upsert MUST pass a stable ULID as `slug`.
+    /// The M1 surface is permissive; M2 may tighten this.
     pub fn upsert_segment(
         &self,
         project_id: &Id,
@@ -105,5 +115,27 @@ mod tests {
         assert_eq!(list[0].name, "Concept");
         assert!(!list[0].is_collection);
         assert!(list[1].is_collection);
+    }
+
+    #[test]
+    fn upsert_segment_with_ulid_slug_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let p = ProjectStore::new(&db).insert("P").unwrap();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        // Use a fresh ULID as the slug so the ON CONFLICT(id) path fires.
+        let ulid_slug = Id::new();
+        let id1 = store
+            .upsert_segment(&p.id, ulid_slug.as_str(), "First", 0, false)
+            .unwrap();
+        let id2 = store
+            .upsert_segment(&p.id, ulid_slug.as_str(), "Renamed", 5, true)
+            .unwrap();
+        assert_eq!(id1, id2, "same ULID slug must yield same id");
+        let list = store.list_segments(&p.id).unwrap();
+        assert_eq!(list.len(), 1, "second upsert must update, not insert");
+        assert_eq!(list[0].name, "Renamed");
+        assert_eq!(list[0].ordering, 5);
+        assert!(list[0].is_collection);
     }
 }
