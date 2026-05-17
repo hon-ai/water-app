@@ -27,6 +27,9 @@ pub use project::{Manuscript, ManuscriptStore, Project, ProjectStore};
 pub mod water_toml;
 pub use water_toml::WaterToml;
 
+pub mod scene_md;
+pub use scene_md::{SceneFile, SceneFrontmatter};
+
 #[cfg(test)]
 mod tests {
     use super::*;
