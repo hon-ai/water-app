@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability granting access to the core Tauri APIs for the main window. Custom commands defined in the water-app crate are auto-permitted as part of `core:default`.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
