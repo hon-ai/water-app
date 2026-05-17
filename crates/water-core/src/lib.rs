@@ -13,3 +13,14 @@ pub use error::{Error, Result};
 
 /// Crate version, exposed for diagnostics surfaces.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_is_non_empty() {
+        assert!(!VERSION.is_empty(), "VERSION must be exposed for diagnostics");
+    }
+}
+
