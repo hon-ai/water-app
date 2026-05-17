@@ -43,4 +43,28 @@ Each entry has:
 
 ---
 
+## 2. Block-id duplicate tolerance
+
+**What it is.** `ensure_block_ids` (in `crates/water-core/src/block.rs`) does not
+de-duplicate colliding `^bk-XXXX` tokens within a single scene body. If the
+writer manually edits the file and creates two blocks with the same id, both
+ids are preserved.
+
+**Where it lives.** `crates/water-core/src/block.rs::ensure_block_ids`.
+
+**Why it's fragile.** Pill anchoring uses the snippet (Section 3.3 of the spec)
+as canonical, so duplicate ids do not actually break pill resolution. But
+duplicate ids would confuse a future block-id-keyed feature (e.g., paragraph-
+level metric pinning).
+
+**What success looks like.** No false positives reported by writers; the
+duplicate case is rare because Water never *introduces* duplicates.
+
+**First-look mitigations.**
+1. If duplicates cause downstream confusion, upgrade `ensure_block_ids` to
+   rename the second occurrence on next save.
+2. Add a one-shot repair option to renumber all duplicates.
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
