@@ -28,3 +28,8 @@ def health() -> HealthResponse:
         uptime_seconds=time.time() - _started_at,
         pid=os.getpid(),
     )
+
+
+from .routes import analyze as analyze_route
+
+app.include_router(analyze_route.router)
