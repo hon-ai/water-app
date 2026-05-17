@@ -2,11 +2,12 @@ use crate::state::{AppState, OpenProject};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::State;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 use water_core::{
     chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, ActiveScene, Db,
-    ManuscriptStore, ProjectStore, SnapshotScheduler,
+    ManuscriptStore, ProjectStore, Sidecar, SidecarSpec, SidecarSupervisor, SnapshotScheduler,
 };
 
 #[derive(Serialize)]
@@ -19,6 +20,7 @@ pub struct OpenProjectInfo {
 
 #[tauri::command]
 pub async fn create_project(
+    app: AppHandle,
     state: State<'_, AppState>,
     parent_dir: String,
     name: String,
@@ -71,6 +73,7 @@ pub async fn create_project(
         .map_err(|e| e.to_string())?;
 
     let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
+    let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -84,12 +87,15 @@ pub async fn create_project(
         db,
         default_manuscript_id: manuscript_id.to_string(),
         scheduler,
+        sidecar,
+        supervisor,
     });
     Ok(info)
 }
 
 #[tauri::command]
 pub async fn open_project(
+    app: AppHandle,
     state: State<'_, AppState>,
     root: String,
 ) -> Result<OpenProjectInfo, String> {
@@ -153,6 +159,8 @@ pub async fn open_project(
             .await;
     }
 
+    let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
+
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
         name: water.name.clone(),
@@ -165,6 +173,8 @@ pub async fn open_project(
         db,
         default_manuscript_id,
         scheduler,
+        sidecar,
+        supervisor,
     });
     Ok(info)
 }
@@ -176,8 +186,15 @@ pub async fn close_project(state: State<'_, AppState>) -> Result<(), String> {
         // Fire OnClose snapshots for all registered scenes, then stop the loop.
         let _ = project.scheduler.on_close().await;
         let _ = project.scheduler.stop().await;
-        // `project` (and its db Arc) drops here; the scheduler's spawned task
-        // exits once the channel closes from stop().
+        if let Some(sup) = project.supervisor {
+            sup.stop();
+        }
+        // `project.sidecar` (Arc<Sidecar>) drops here; kill_on_drop(true)
+        // on the underlying tokio::process::Child terminates the uvicorn
+        // worker. If another Arc clone is held by the supervisor's forwarder
+        // task, the worker terminates when the LAST clone drops — which
+        // happens within the same tokio runtime tick once sup.stop() runs.
+        drop(project.sidecar);
     }
     Ok(())
 }
@@ -188,4 +205,59 @@ fn sanitize_dir_name(name: &str) -> String {
         .collect::<String>()
         .trim()
         .replace(' ', "-")
+}
+
+/// Resolve the sidecar workspace path in dev mode.
+///
+/// In dev, the working dir is `app/src-tauri/`, so the sidecar lives at
+/// `../../sidecar`. Resolved at compile time via `CARGO_MANIFEST_DIR` for
+/// stability. For packaged builds we'll need `tauri::path::resource_dir`;
+/// that lands with the packaging work outside M1.1.
+fn dev_sidecar_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("sidecar")
+}
+
+/// Best-effort sidecar boot. Returns `(None, None)` if `uv` is missing or
+/// the spawn fails — we log and continue without blocking the project open.
+async fn boot_sidecar_for_project(
+    app: &AppHandle,
+) -> (Option<Arc<Sidecar>>, Option<SidecarSupervisor>) {
+    let uv_path = match which::which("uv") {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "uv not found on PATH; sidecar disabled for this session");
+            return (None, None);
+        }
+    };
+    let spec = SidecarSpec {
+        working_dir: dev_sidecar_dir(),
+        uv_bin: uv_path,
+        port: 18765,
+        host: "127.0.0.1".into(),
+        boot_timeout: Duration::from_secs(20),
+    };
+    let sc = match Sidecar::spawn(spec).await {
+        Ok(sc) => Arc::new(sc),
+        Err(e) => {
+            tracing::warn!(error = %e, "sidecar failed to spawn; continuing without sidecar");
+            return (None, None);
+        }
+    };
+    let (sup, mut rx) = SidecarSupervisor::spawn(sc.clone());
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        loop {
+            if rx.changed().await.is_err() {
+                break;
+            }
+            let evt = rx.borrow().clone();
+            // Best-effort emit; if no listener, the renderer just polls
+            // diagnostics_status instead.
+            let _ = app_clone.emit("sidecar:status", &evt);
+        }
+    });
+    (Some(sc), Some(sup))
 }

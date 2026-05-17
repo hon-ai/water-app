@@ -19,3 +19,4 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
+which = "6"
