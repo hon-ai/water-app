@@ -1,0 +1,133 @@
+use crate::state::{AppState, OpenProject};
+use serde::Serialize;
+use std::path::PathBuf;
+use tauri::State;
+use water_core::{
+    chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, Db,
+    ManuscriptStore, ProjectStore,
+};
+
+#[derive(Serialize)]
+pub struct OpenProjectInfo {
+    pub root: String,
+    pub name: String,
+    pub project_id: String,
+    pub default_manuscript_id: String,
+}
+
+#[tauri::command]
+pub async fn create_project(
+    state: State<'_, AppState>,
+    parent_dir: String,
+    name: String,
+) -> Result<OpenProjectInfo, String> {
+    let parent = PathBuf::from(&parent_dir);
+    let safe = sanitize_dir_name(&name);
+    let root = parent.join(format!("{safe}.water"));
+    if root.exists() {
+        return Err(format!("directory already exists: {}", root.display()));
+    }
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(root.join("manuscript").join("scenes"))
+        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(root.join("characters")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(root.join("world")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(root.join("snapshots")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(root.join(".water").join("cache")).map_err(|e| e.to_string())?;
+
+    let db_path = root.join("project.db");
+    let db = Db::open(&db_path).map_err(|e| e.to_string())?;
+    let project = ProjectStore::new(&db)
+        .insert(&name)
+        .map_err(|e| e.to_string())?;
+    let manuscript = ManuscriptStore::new(&db)
+        .insert(&project.id, "Manuscript", 0)
+        .map_err(|e| e.to_string())?;
+    ProjectStore::new(&db)
+        .set_default_manuscript(&project.id, &manuscript.id)
+        .map_err(|e| e.to_string())?;
+
+    WaterToml {
+        schema_version: 1,
+        project_id: project.id.clone(),
+        name: project.name.clone(),
+        default_manuscript_id: Some(manuscript.id.clone()),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    }
+    .write(&root)
+    .map_err(|e| e.to_string())?;
+
+    ChaptersFile::empty()
+        .write(root.join("manuscript").join("chapters.toml"))
+        .map_err(|e| e.to_string())?;
+
+    let info = OpenProjectInfo {
+        root: root.to_string_lossy().to_string(),
+        name: project.name.clone(),
+        project_id: project.id.to_string(),
+        default_manuscript_id: manuscript.id.to_string(),
+    };
+    let mut g = state.project.lock().await;
+    *g = Some(OpenProject {
+        root,
+        db,
+        default_manuscript_id: manuscript.id.to_string(),
+    });
+    Ok(info)
+}
+
+#[tauri::command]
+pub async fn open_project(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<OpenProjectInfo, String> {
+    let root = PathBuf::from(root);
+    let water = WaterToml::read(&root).map_err(|e| e.to_string())?;
+    let db_path = root.join("project.db");
+
+    let (db, default_manuscript_id) = if db_path.exists() {
+        let db = Db::open(&db_path).map_err(|e| e.to_string())?;
+        let manuscript_id = water
+            .default_manuscript_id
+            .as_ref()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        (db, manuscript_id)
+    } else {
+        let (db, _stats) = rebuild_from_truth(&root).map_err(|e| e.to_string())?;
+        let manuscript_id = water
+            .default_manuscript_id
+            .as_ref()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        (db, manuscript_id)
+    };
+
+    repair::run(&db, &root).map_err(|e| e.to_string())?;
+
+    let info = OpenProjectInfo {
+        root: root.to_string_lossy().to_string(),
+        name: water.name.clone(),
+        project_id: water.project_id.to_string(),
+        default_manuscript_id: default_manuscript_id.clone(),
+    };
+    let mut g = state.project.lock().await;
+    *g = Some(OpenProject { root, db, default_manuscript_id });
+    Ok(info)
+}
+
+#[tauri::command]
+pub async fn close_project(state: State<'_, AppState>) -> Result<(), String> {
+    let mut g = state.project.lock().await;
+    *g = None;
+    Ok(())
+}
+
+fn sanitize_dir_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
+        .collect::<String>()
+        .trim()
+        .replace(' ', "-")
+}
