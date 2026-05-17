@@ -45,6 +45,9 @@ pub use character::{CharacterFile, CharacterRow, CharacterStore};
 pub mod world;
 pub use world::{WorldSegmentRow, WorldStore};
 
+pub mod snapshot;
+pub use snapshot::{SnapshotRow, SnapshotStore, SnapshotTrigger};
+
 #[cfg(test)]
 mod tests {
     use super::*;
