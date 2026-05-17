@@ -3280,6 +3280,17 @@ git commit -m "feat(core): snapshot writer with zstd compression"
 
 ### Task 17: Snapshot retention pruner
 
+> **Plan amendment (during execution):** The original test fixture was
+> time-of-day dependent — `base = now - 2 days` plus a 27-minute span
+> would cross an hour boundary whenever `now`'s minute ≥ 33, breaking
+> the "all 10 in one hour bucket" assumption and the `pruned == 9`
+> assertion. The listing below anchors `base` to UTC midnight via
+> `.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc()` so the test
+> is deterministic regardless of wall-clock time. The implementation
+> also requires `use chrono::Datelike;` inside `prune` for
+> `iso_week().year()/.week()` access, and the test for-loops use
+> `0i64..` to match `chrono::Duration::minutes(i64)`.
+
 **Files:**
 - Modify: `crates/water-core/src/snapshot.rs`
 
@@ -3294,11 +3305,11 @@ Append to the `tests` module in `crates/water-core/src/snapshot.rs`:
     fn prune_keeps_recent_drops_redundant_hourly() {
         // Manually craft snapshot rows at well-known timestamps so we can
         // assert exact retention behaviour. We don't write real files.
-        let (_dir, db, _m_id, s_id) = fixture();
+        let (dir, db, _m_id, s_id) = fixture();
         // Insert 30 rows at 5-minute intervals over the last 3 hours (all
         // within the 24h window so all are kept).
         let now = chrono::Utc::now();
-        for i in 0..30 {
+        for i in 0i64..30 {
             let ts = now - chrono::Duration::minutes(i * 5);
             db.conn()
                 .execute(
@@ -3309,9 +3320,15 @@ Append to the `tests` module in `crates/water-core/src/snapshot.rs`:
                 .unwrap();
         }
         // Insert 10 rows in the 24h..7d window, all at the same hour (only
-        // one per hour should survive).
-        let base = now - chrono::Duration::days(2);
-        for i in 0..10 {
+        // one per hour should survive). Anchor `base` to UTC midnight so
+        // the 27-minute span never crosses an hour boundary regardless of
+        // `now`'s minute-of-hour.
+        let base = (now - chrono::Duration::days(2))
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        for i in 0i64..10 {
             let ts = base + chrono::Duration::minutes(i * 3);
             db.conn()
                 .execute(
@@ -3322,7 +3339,7 @@ Append to the `tests` module in `crates/water-core/src/snapshot.rs`:
                 .unwrap();
         }
 
-        let store = SnapshotStore::new(&db, _dir.path().to_path_buf());
+        let store = SnapshotStore::new(&db, dir.path().to_path_buf());
         let pruned = store.prune(&s_id, now).unwrap();
         // All 30 within last 24h kept; only 1 of the 10 same-hour group kept;
         // so total deleted = 9.
@@ -3351,6 +3368,7 @@ Append to `impl<'a> SnapshotStore<'a>` in `crates/water-core/src/snapshot.rs`:
         scene_id: &Id,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<usize> {
+        use chrono::Datelike;
         let rows = self.list(scene_id)?;
         let mut to_keep: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         let mut seen_bucket: std::collections::HashSet<(u8, String)> =
