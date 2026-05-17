@@ -1,7 +1,7 @@
-# M1 Foundation — Resume Handoff (v2)
+# M1 Foundation — Resume Handoff (v3)
 
-**Updated:** 2026-05-16 (session 2 closed)
-**Reason:** Session 2 completed Tasks 3-8 and approached its context budget. A fresh session resumes at Task 9.
+**Updated:** 2026-05-17 (session 3 closed)
+**Reason:** Session 3 completed Tasks 9-12 and approached its context budget. A fresh session resumes at Task 13.
 
 This document is everything a new controller needs to pick up where I left off without re-reading the prior conversation.
 
@@ -9,229 +9,199 @@ This document is everything a new controller needs to pick up where I left off w
 
 ## TL;DR
 
-- Plan lives at `docs/superpowers/plans/2026-05-16-m1-foundation.md`. 40 tasks. **Tasks 1-8 are done.** Resume at **Task 9**.
-- Spec lives at `docs/superpowers/specs/2026-05-16-water-design.md`. Locked. Do not change without explicit user approval.
-- The user chose **subagent-driven development** (`superpowers:subagent-driven-development` skill). Continue that workflow.
-- Toolchain is installed and verified working. No fresh installs needed.
-- Branch: `master`. No worktree. Plan executes directly on master with frequent commits.
+- Plan: `docs/superpowers/plans/2026-05-16-m1-foundation.md`. 40 tasks. **Tasks 1-12 are done.** Resume at **Task 13**.
+- Spec: `docs/superpowers/specs/2026-05-16-water-design.md`. Locked.
+- Workflow: **subagent-driven-development** (`superpowers:subagent-driven-development` skill).
+- Branch: `master`. No worktree. Plan executes directly on master.
 
 ---
 
 ## Repo state
 
-### Commit history (newest first)
+### Session 3 commit history (newest first)
 
 | SHA | What |
 |---|---|
-| `f880dc6` | **feat(core): full v1 schema (16 tables)** (Task 8) |
-| `7d30770` | plan(T7): amend Task 7 to add `#[must_use]` / pedantic accommodations |
-| `b305c2a` | **feat(core): SQLite connection + migration runner** (Task 7) |
-| `b279f71` | plan(T6): amend Task 6 to add `#[must_use]` for clippy::pedantic |
-| `ca7e8e5` | fix(core): add `#[must_use]` to `Id::new` and `Id::as_str` for clippy::pedantic |
-| `a2ea103` | **feat(core): ULID-backed Id type** (Task 6) |
-| `20d1d3c` | plan(T5): amend Task 5 to include tsconfig noEmit fix |
-| `88d5890` | **test: renderer + core sanity tests** (Task 5) |
-| `d15133d` | fix(app): set noEmit so `tsc -b` stops shadowing TS sources with `.js` |
-| `bf36688` | plan(T4): amend Task 4 to include vite.config.ts import fix |
-| `e147d28` | fix(app): import `defineConfig` from `vitest/config` so `tsc -b` passes |
-| `fbd57f8` | **feat(app): wire Tailwind 4 with placeholder tokens** (Task 4) |
-| `4429902` | **chore: pnpm workspace + root scripts + editorconfig** (Task 3) |
-| `318fbec` | docs: handoff for M1 resume at Task 3 (session-1 handoff doc) |
-| `8830071` | plan(T2): drop `[lib]` block, drop log-plugin shim, require `icon.ico` |
-| `ac88d9c` | **feat(app): scaffold Tauri 2 + Vite + React shell** (Task 2) |
-| `d226aa9` | chore: commit `Cargo.lock` and document workspace-member deviation |
-| `5a06322` | **feat(core): initialize water-core crate and Cargo workspace** (Task 1) |
-| `94e1494` | plan: pin rust-toolchain to `stable` (verified locally on 1.95) |
-| `6875267` | Add M1 Foundation implementation plan |
-| `5310f7e` | Add Water v1 design spec and repo skeleton |
+| `391ddbb` | **feat(core): block-id maintenance for scene bodies** (Task 12) |
+| `5b43969` | **feat(core): scene .md frontmatter + body codec** (Task 11) |
+| `a68c17f` | plan(T10): amend Task 10 to wrap toml parse errors with file path |
+| `f208904` | fix(core): include file path in water.toml parse errors |
+| `31c3747` | **feat(core): water.toml read/write** (Task 10) |
+| `661d571` | plan(T9): amend Task 9 with set_default_manuscript fix and added tests |
+| `d3f46b2` | fix(core): enforce project<->manuscript relationship and add coverage |
+| `f9268ca` | **feat(core): Project + Manuscript stores** (Task 9) |
+| `352471c` | docs: handoff v2 for M1 resume at Task 9 (session-2 handoff) |
 
-### Tree summary (significant files only)
+Earlier commits documented in handoff v2 (in git history, search for "session-1 handoff" and "session-2 handoff" SHAs).
+
+### Tree summary (significant files only, additions in session 3 marked ★)
 
 ```
 Water/
-├── Cargo.toml                       ← workspace; members ["app/src-tauri", "crates/water-core"]
-├── Cargo.lock                       ← committed; unchanged since T1 housekeeping
+├── Cargo.toml                       ← workspace; deps unchanged from v2
+├── Cargo.lock                       ← committed; unchanged this session
 ├── rust-toolchain.toml              ← stable
-├── pnpm-workspace.yaml              ← packages: ["app"]
-├── pnpm-lock.yaml                   ← generated, committed (Task 3)
-├── package.json                     ← 7 root scripts (dev/build/test/lint/fmt)
+├── pnpm-workspace.yaml
+├── pnpm-lock.yaml
+├── package.json                     ← 7 root scripts
 ├── .editorconfig
-├── .gitignore                       ← includes pnpm, Tauri build, app/dist/
+├── .gitignore
 ├── README.md
-├── KNOWN_FRAGILE.md                 ← initial char_dissonance entry only
+├── KNOWN_FRAGILE.md                 ★ entry 2 appended (block-id duplicate tolerance)
 ├── docs/superpowers/
 │   ├── specs/2026-05-16-water-design.md
-│   ├── plans/2026-05-16-m1-foundation.md  ← amended 5 times (T2, T4, T5, T6, T7)
-│   └── handoff/m1-resume.md         ← this file (v2)
+│   ├── plans/2026-05-16-m1-foundation.md  ← amended 7 times (T2,T4,T5,T6,T7,T9,T10)
+│   └── handoff/m1-resume.md         ← this file (v3)
 ├── crates/water-core/
-│   ├── Cargo.toml                   ← all workspace deps wired; ulid + rusqlite + rusqlite_migration in use
-│   ├── sql/v1_init.sql              ← full 16-table schema (Task 8)
+│   ├── Cargo.toml                   ← unchanged this session
+│   ├── sql/v1_init.sql              ← full 16-table schema (T8)
 │   └── src/
-│       ├── lib.rs                   ← re-exports Error, Result, Id, Db
-│       ├── error.rs                 ← 13-variant Error enum (from T1)
-│       ├── id.rs                    ← Id newtype + #[must_use] (Task 6)
-│       ├── db.rs                    ← Db wrapper, open/open_in_memory/conn/conn_mut (Task 7)
-│       └── migrations.rs            ← rusqlite_migration runner (Task 7)
-└── app/
-    ├── package.json
-    ├── tsconfig.json                ← has "noEmit": true (Task 5 amendment)
-    ├── vite.config.ts               ← imports defineConfig from "vitest/config" (Task 4 amendment)
-    ├── postcss.config.cjs           ← @tailwindcss/postcss + autoprefixer (Task 4)
-    ├── tailwind.config.ts           ← borderRadius + fontFamily (Task 4)
+│       ├── lib.rs                   ← re-exports + #![allow(clippy::missing_errors_doc)]
+│       ├── error.rs                 ← 13-variant Error enum
+│       ├── id.rs                    ← ULID Id newtype
+│       ├── db.rs                    ← Db wrapper
+│       ├── migrations.rs            ← rusqlite_migration runner
+│       ├── project.rs               ★ ProjectStore + ManuscriptStore (T9, 6 tests)
+│       ├── water_toml.rs            ★ WaterToml read/write (T10, 2 tests)
+│       ├── scene_md.rs              ★ SceneFile + SceneFrontmatter codec (T11, 4 tests)
+│       └── block.rs                 ★ Block + ensure_block_ids/split_blocks (T12, 5 tests)
+└── app/                              ← unchanged this session
+    ├── package.json, tsconfig.json, vite.config.ts, postcss.config.cjs, tailwind.config.ts
     ├── index.html
-    ├── src/
-    │   ├── main.tsx
-    │   ├── App.tsx                  ← renders <h1>Water</h1>; has unused className="water-shell"
-    │   ├── test-setup.ts            ← imports @testing-library/jest-dom/vitest (Task 5)
-    │   ├── App.test.tsx             ← 1 test (Task 5)
-    │   └── styles/tokens.css        ← @import "tailwindcss" + placeholder vars (Task 4)
-    └── src-tauri/
-        ├── Cargo.toml
-        ├── tauri.conf.json
-        ├── build.rs
-        ├── icons/icon.ico           ← 766-byte placeholder; replace in M7
-        ├── gen/                     ← gitignored
-        └── src/main.rs
+    ├── src/ (App.tsx, App.test.tsx, test-setup.ts, main.tsx, styles/tokens.css)
+    └── src-tauri/ (Cargo.toml, tauri.conf.json, build.rs, icons/icon.ico, src/main.rs)
 ```
 
-### Verified working at HEAD (`f880dc6`)
+### Verified working at HEAD (`391ddbb`)
 
 - `cargo build -p water-core` → succeeds.
-- `cargo build -p water-app` → succeeds.
-- `cargo test -p water-core` → **9 passed** (version + 4 ULID + 4 db/migration).
+- `cargo test -p water-core` → **26 passed** (was 9 at end of session 2; +17 across T9-T12).
 - `cargo clippy -p water-core --all-targets -- -D warnings` → clean.
-- `cargo clippy --all-targets -- -D warnings` (full workspace) → clean (confirmed after T6 fix; not re-confirmed every task).
-- `pnpm --filter @water/app test` → 1 passed (vitest).
-- `pnpm --filter @water/app build` → succeeds end-to-end (tsc -b + vite build).
+- App-side stack (`cargo build -p water-app`, `pnpm --filter @water/app test`, `pnpm --filter @water/app build`) — not re-verified this session (T9-T12 are core-only). Last verified at end of session 2.
 
 ---
 
 ## Toolchain inventory
 
-All confirmed working as of handoff:
+Unchanged from handoff v2. Confirmed still working:
 
 | Tool | Version | Path |
 |---|---|---|
-| rustc | 1.95.0 | `%USERPROFILE%\.cargo\bin\rustc.exe` |
-| cargo | 1.95.0 | `%USERPROFILE%\.cargo\bin\cargo.exe` |
-| rustup | 1.29.0 | `%USERPROFILE%\.cargo\bin\rustup.exe` |
-| node | v22.14.0 | `C:\Program Files\nodejs\node.exe` |
-| pnpm | 9.15.9 | `%APPDATA%\npm\pnpm.cmd` |
-| uv | (latest) | `C:\Users\H BLAUNTE\.local\bin\uv.exe` |
-| git | latest | `C:\Program Files\Git\cmd\git.exe` |
+| rustc / cargo | 1.95.0 | `%USERPROFILE%\.cargo\bin\` |
+| node | v22.14.0 | `C:\Program Files\nodejs\` |
+| pnpm | 9.15.9 | `%APPDATA%\npm\` |
+| uv | (latest) | `C:\Users\H BLAUNTE\.local\bin\` |
+| git | latest | `C:\Program Files\Git\cmd\` |
 
-**PowerShell PATH note:** Each `bash` tool invocation is a fresh PowerShell. `cargo` is normally on user PATH but fresh sessions may not see it. Workaround used in subagent prompts:
-
+**PowerShell PATH workaround still required** for each bash invocation that runs cargo:
 ```powershell
 $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 ```
-
-`pnpm` is reliably on PATH via `%APPDATA%\npm`.
-
-MSVC linker / Visual Studio Build Tools: verified present (Tauri 2 build succeeded multiple times).
 
 ---
 
 ## Plan amendments made during execution
 
-The plan file has been amended **five times** during execution. Each amendment is a separate git commit and is reflected in the plan file content at HEAD — re-read the plan and you'll see all amendments already applied.
+The plan file has been amended **seven times** during execution (was 5 at end of session 2; +2 this session). Each amendment is a separate git commit, and the plan content at HEAD already reflects all of them.
 
 | Commit | Amendment |
 |---|---|
-| `94e1494` | T1 prerequisites: pin `rust-toolchain.toml` to `stable` (not `1.78`). |
-| `8830071` | T2: drop `[lib]` block from `app/src-tauri/Cargo.toml`; drop `tauri_plugin_log_init` shim from `main.rs`; require `"icons/icon.ico"` in `tauri.conf.json` bundle.icon. |
-| `bf36688` | T4: add Step 0 — change `app/vite.config.ts` `defineConfig` import from `"vite"` to `"vitest/config"` so `tsc -b` types the `test` block. |
-| `20d1d3c` | T5: add Step 0 — add `"noEmit": true` to `app/tsconfig.json` so `tsc -b` doesn't shadow TS sources. |
-| `b279f71` | T6: add `#[must_use]` to `Id::new` and `Id::as_str` (clippy::pedantic `must_use_candidate`). |
-| `7d30770` | T7: add `#[must_use]` to `migrations::all`, `Db::conn`, `Db::conn_mut`; backtick `` `SQLite` `` in db.rs module doc (clippy::pedantic `doc_markdown`). |
+| `94e1494` | T1 prereq: pin toolchain to `stable`. |
+| `8830071` | T2: drop `[lib]` block; drop log-plugin shim; require `icons/icon.ico`. |
+| `bf36688` | T4: vite.config.ts imports `defineConfig` from `vitest/config`. |
+| `20d1d3c` | T5: add `"noEmit": true` to `app/tsconfig.json`. |
+| `b279f71` | T6: add `#[must_use]` to `Id::new` / `Id::as_str`. |
+| `7d30770` | T7: `#[must_use]` on `migrations::all` / `Db::conn` / `Db::conn_mut`; backtick `` `SQLite` ``. |
+| `661d571` | **T9: `set_default_manuscript` UPDATE now carries `AND EXISTS` subquery against `manuscript.project_id`; error names both ids; +2 tests; +2 assertions on round-trip test. Total T9 tests = 6 (was 4).** |
+| `a68c17f` | **T10: `WaterToml::read` wraps `toml::from_str` errors in `Error::InvalidProject(format!("parse {} ...", path.display()))` so on-disk path is named symmetrically with io errors.** |
 
-**Pattern observed:** Plan listings that were written without running `cargo clippy --all-targets -- -D warnings` repeatedly trip pedantic lints on new code. The next controller should **proactively add `#[must_use]` to plan-listed methods returning non-`Result` owned values or references** when dispatching implementers, to avoid round-trips.
+**Patterns observed in session 3:**
+
+- The "fix the code review finding + amend the plan" pattern matured into a stable 3-commit shape per task when needed: `feat(...)` (impl) → `fix(...)` (code review patch) → `plan(TN): amend ...` (plan listing updated to match). T9 and T10 both took this shape. T11 and T12 were clean DONEs with no follow-ups.
+- The `clippy::pedantic` warning gate continues to be the dominant source of plan amendments. Proactive `#[must_use]` hints in implementer prompts now consistently save a fix round.
+- **`lib.rs` declares `#![allow(clippy::missing_errors_doc)]`** at line 8 — `pub fn` returning `Result` does NOT need `/// # Errors` docs. (Discovered this session, removed the `Errors`-doc proactive guidance from later prompts.)
 
 ---
 
 ## Sharp edges / known issues
 
-1. **CRLF/LF git warnings** on every `git add` — environmental, ignore.
-2. **Cargo.lock is committed.** New deps modify it; include in `git add` if you add deps. Tasks T1-T8 haven't needed new deps; all workspace deps were pre-declared in `Cargo.toml`.
-3. **`app/src-tauri/icons/icon.ico`** is a 766-byte placeholder; replace in M7.
-4. **`Error::Other(String)` variant** in `crates/water-core/src/error.rs` is a known footgun (T1 review). T6's `Id::FromStr` uses it; future tasks should prefer `Error::InvalidId` or similar named variants. Acceptable for v1; revisit at M7.
-5. **`clippy::pedantic` is enabled** at crate level in `water-core/src/lib.rs`. Frequent fires: `must_use_candidate`, `doc_markdown`. Test code is exempt from many; library code is not. Pattern: add `#[must_use]` to plan-listed pub fns proactively.
-6. **Plan invocation command bug:** plan T7 Step 5 says `cargo test -p water-core db::tests migrations` — cargo test accepts ONE filter, not multiple. The implementer ran without args; the test names were specific enough. Future plan-invocations may have similar quirks; trust the test result, not the invocation text.
-7. **Commit message wording:** plan T8 Step 5 prescribed `feat(core): v1 schema migration with all spec tables`. Controller dispatched `feat(core): full v1 schema (16 tables)` instead — accepted as defensible. **Lesson for next controller: quote plan's exact commit-message string in dispatch prompts.**
-8. **Unused className "water-shell"** in `app/src/App.tsx` (line 3). No CSS rule targets it. T34/T35 (design tokens + ThemeProvider) will likely replace `App.tsx` or wire styles; not blocking.
-9. **stale `.js` artifacts** were a problem prior to T5's `noEmit:true` fix. They no longer appear; if any reappear, something regressed.
-10. **WAL sidecars** in tempfile tests: `Db::open` enables WAL mode, which creates `<path>-wal` and `<path>-shm` siblings. The test `file_db_persists_across_opens` deletes only the main `.db` file; siblings leak to tmp. Plan-acknowledged, harmless.
-11. **`schema_version` table** is hand-managed (T8 SQL inserts row `(1)`), independent from `rusqlite_migration`'s `PRAGMA user_version` tracking. **V2+ migrations must `INSERT INTO schema_version` manually**, or the library won't do it. Worth a one-line comment in `migrations.rs` when V2 lands.
-12. **Cascade index gaps**: `scene_character_presence(character_id)`, `world_entry(segment_id)`, `pinned_pill(scene_id)`, `block_metrics(scene_id)` all rely on full scans for FK CASCADE on the parent side. Acceptable at M1 volumes. Add indexes if cascade latency surfaces.
-13. **`schema_version_row_is_one` test** uses `query_row` which returns the first arbitrary row; would silently pass if a future migration inserts `version=2`. When V2 lands, retighten to `MAX(version)` or `COUNT(*)=1 AND version=1`.
+Existing entries from handoff v2 (still apply):
+
+1. **CRLF/LF git warnings** — ignore.
+2. **Cargo.lock is committed.** New deps modify it.
+3. **`app/src-tauri/icons/icon.ico`** is a placeholder — replace at M7.
+4. **`Error::Other(String)` overuse footgun** — accept for v1, revisit at M7.
+5. **`clippy::pedantic` is warn at crate root.** Frequent fires: `must_use_candidate`, `doc_markdown`, `single_match_else`, `implicit_hasher`. Add `#[must_use]` proactively in prompts; backtick code-like identifiers (`SQLite`, `YAML`, `Markdown`, `ULID`, `.md`) in doc comments.
+6. **Plan invocation command bug:** plan T7 uses two-filter `cargo test` syntax which is invalid. Trust the test result, not the invocation text.
+7. **Commit message wording:** quote plan's exact commit-message string in dispatch prompts.
+8. **Unused className `"water-shell"`** in `app/src/App.tsx` — T34/T35 territory.
+9. **stale `.js` artifacts** — were a problem prior to T5; should not recur.
+10. **WAL sidecars** in tempfile tests — harmless.
+11. **`schema_version` table is hand-managed**, separate from `PRAGMA user_version`. V2+ migrations must INSERT their version row manually.
+12. **Cascade index gaps** — acceptable at M1 volumes.
+13. **`schema_version_row_is_one` test** uses `query_row` — silently passes if a future migration inserts version=2.
+
+New entries from session 3:
+
+14. **`set_default_manuscript` now enforces project↔manuscript pairing** via `AND EXISTS (SELECT 1 FROM manuscript WHERE id = ?2 AND project_id = ?1)`. Future code that wants to *unset* the default (clear it back to NULL) does not have a method yet — add `clear_default_manuscript` if needed.
+15. **`WaterToml::read` wraps both io and toml-de errors in `Error::InvalidProject`**. The `Error::TomlDe` variant is no longer reachable via `WaterToml::read`. Other callers (e.g., `chapters.toml` in T14, character TOML in T15) may either follow the same pattern or use bare `?` — choose deliberately per task. The asymmetry in error envelope across modules is acceptable for M1.
+16. **`WaterToml::write` does NOT create parent directories.** Callers must `create_dir_all` themselves. T13/T14/T15 will likely all need to bear this responsibility.
+17. **`SceneFile::to_string` has `#[allow(clippy::inherent_to_string)]`** since clippy fires on the inherent-vs-Display pattern even for `Result<String>` returns. Don't try to "fix" by implementing Display — the signature mismatch makes that wrong.
+18. **`SceneFile` writes are not atomic** — no temp+rename. Snapshot system (T16-T19) covers recovery.
+19. **`fresh_block_id` takes `&HashSet<String, S: BuildHasher>`** — generalized signature courtesy of `clippy::implicit_hasher`. Callers using default-hasher `HashSet` work transparently.
+20. **`ensure_block_ids` does NOT deduplicate colliding `^bk-XXXX` tokens.** Documented in `KNOWN_FRAGILE.md` entry 2. The test `ensure_dedupes_colliding_ids` is misleadingly named — it asserts duplicate **preservation** (intentional for v1; pill anchoring is snippet-based per spec §3.3).
+21. **`block.rs::fresh_block_id`** has a `unwrap_or("xxxx")` fallback that's unreachable in practice (ULIDs are always 26 chars). Defensive code; harmless.
+22. **No integration tests yet** cross-coupling Project↔Manuscript↔Scene↔Block — first one comes in T13 SceneStore. Watch for it.
 
 ---
 
-## Subagent prompt conventions established this session
+## Subagent prompt conventions (refined this session)
 
-The controller settled on a stable shape for prompts; the next controller should reuse it:
+The v2 conventions still hold. Session 3 added:
 
-**Implementer prompt:**
-- Inline the full task text verbatim from the plan.
-- Inline the "Context" block: working directory + workdir reminder, branch, current commit, prior-state file pointers, sharp edges relevant to the task.
-- Inline proactive clippy guidance for any plan-listed `pub fn` returning non-`Result` owned values or references — tell them to add `#[must_use]` to specific named functions to avoid the lint round-trip.
-- Inline an explicit "Self-Review Checklist."
-- Ask for a concise report (DONE status + summary + files + SHA + test/clippy tails + concerns).
-- Pre-authorize obvious follow-on changes that flow naturally from the task (like T8's update to `in_memory_db_runs_migrations` — the placeholder test from T7 had to change because T7's placeholder table no longer exists).
-
-**Spec reviewer prompt:**
-- Inline the full task spec.
-- Inline the implementer's claims (commit SHA + file count + test count).
-- Tell them to read files at HEAD and compare line-by-line.
-- Tell them to confirm commits match (split, message, file list).
-- Tell them to re-run tests + clippy themselves.
-- Acknowledge any controller-induced known divergences (like T8's commit message) up front so the reviewer flags but doesn't churn.
-
-**Code quality reviewer prompt:**
-- Base SHA + Head SHA of the task's commits.
-- Categorize concerns: Critical / Important / Minor.
-- "Don't flag" list to keep the review focused on this task's contributions.
+- **Combined spec + code-quality review** in one dispatch is appropriate when the implementer reports DONE first try AND the listing was copied near-verbatim. T11 and T12 used this — clean and fast. Don't combine when there's any signal of friction (NEEDS_CONTEXT, DONE_WITH_CONCERNS, multiple lint fires).
+- **`lib.rs` has `#![allow(clippy::missing_errors_doc)]`** — drop the "/// # Errors" proactive guidance from prompts; only add `#[must_use]` guidance for non-Result pub fns.
+- **Pre-authorize lint fixes by name** in the prompt body so the implementer doesn't have to escalate every `clippy::pedantic` fire. Session 3 saw `implicit_hasher`, `single_match_else`, `inherent_to_string`, `doc_markdown` all auto-resolved this way.
+- **Track expected total test counts** in prompts (e.g., "after this task: 26 passed"). Lets the implementer self-validate without consulting the plan.
+- **Quote commit messages verbatim** continues to be a discipline worth maintaining. No commit-message divergences this session.
 
 ---
 
 ## How to resume — exact next-step prompt
 
-Open a fresh session. After acknowledging the conversation start (per `using-superpowers`), the next controller should issue this prompt to itself or to a fresh subagent:
+Open a fresh session. After acknowledging the conversation start (per `using-superpowers`), issue this prompt:
 
-> Resume execution of the Water M1 Foundation plan at Task 9.
+> Resume execution of the Water M1 Foundation plan at Task 13.
 >
 > - Plan: `docs/superpowers/plans/2026-05-16-m1-foundation.md`
 > - Spec: `docs/superpowers/specs/2026-05-16-water-design.md`
-> - Handoff context: `docs/superpowers/handoff/m1-resume.md` (this file, v2)
-> - Tasks 1-8 are committed on `master`. HEAD is `f880dc6`.
-> - Use the `superpowers:subagent-driven-development` skill — fresh implementer subagent per task with full task text inlined; spec reviewer; code quality reviewer; mark complete; next task.
-> - Continuous execution per the skill's rule. Stop only for BLOCKED, ambiguity, or context exhaustion.
-> - When context starts to run low, write another handoff doc and stop cleanly.
+> - Handoff context: `docs/superpowers/handoff/m1-resume.md` (this file, v3)
+> - Tasks 1-12 are committed on `master`. HEAD is `391ddbb`.
+> - Use the `superpowers:subagent-driven-development` skill.
+> - When context starts to run low, write another handoff doc (v4) and stop cleanly.
 >
 > Start by:
 > 1. Loading the `subagent-driven-development` skill.
-> 2. Reading this handoff doc and the plan's Task 9 section (around line 1375).
-> 3. Updating the TodoWrite (T1-T8 completed, T9 in progress, T10-T40 + final review pending).
-> 4. Dispatching the Task 9 implementer with full task text inlined.
-> 5. Following the subagent prompt conventions documented above (proactive `#[must_use]` guidance for any new pub fns).
+> 2. Reading this handoff doc and the plan's Task 13 section (line 2198).
+> 3. Updating the TodoWrite (T1-T12 completed, T13 in progress, T14-T40 + final review pending).
+> 4. Dispatching the Task 13 implementer with full task text inlined.
+> 5. Following the subagent prompt conventions documented above.
+>
+> Note: Task 13 (SceneStore) is the first task that composes prior CRUD pieces (DB schema, ProjectStore/ManuscriptStore, water.toml, SceneFile, Block). It will likely surface integration issues that weren't visible in earlier unit tests. Expect at least one fix round.
 
 ---
 
 ## Remaining task index
 
-32 remaining tasks + final review:
+28 remaining tasks + final review:
 
 | # | Phase | Task | Notes |
 |---|---|---|---|
-| 9 | B | ProjectStore + ManuscriptStore CRUD | TDD; first real CRUD against the schema |
-| 10 | C | `water.toml` read/write | TDD |
-| 11 | C | Scene Markdown codec (frontmatter + body) | YAML frontmatter via serde_yaml |
-| 12 | C | `^bk-XXXX` block-ID maintenance | Will append entry 2 to KNOWN_FRAGILE.md |
-| 13 | C | SceneStore (create/read/write_body/move_to/list) | Composes blocks + scene_md + DB |
+| 13 | C | SceneStore (create/read/write_body/move_to/list) | First integration of all prior pieces. Composes blocks + scene_md + DB. Expect non-trivial. |
 | 14 | C | `chapters.toml` read/write | TDD |
 | 15 | C | CharacterStore + WorldStore | M1 thin TOML-only surface |
 | 16 | D | Snapshot writer (zstd) | TDD |
-| 17 | D | Snapshot retention pruner | Hourly/daily/weekly policy |
+| 17 | D | Snapshot retention pruner | Hourly/daily/weekly |
 | 18 | D | Snapshot scheduler (tokio task) | `tokio::test(start_paused=true)` |
 | 19 | D | Snapshot restore (creates pre-restore) | TDD |
 | 20 | E | Rebuild-from-truth (scan folder → repopulate) | Integration-shaped test |
@@ -248,28 +218,42 @@ Open a fresh session. After acknowledging the conversation start (per `using-sup
 | 31 | H | llama.cpp adapter | wiremock |
 | 32 | H | MLX adapter (feature-flagged stub) | `--features mlx` |
 | 33 | H | Router with secrets, rate limit, circuit breaker | TDD |
-| 34 | I | Pastel-glow design tokens (CSS variables) | **Watch for:** add `2xl: '40px'` and `3xl: '64px'` (or appropriate) to tailwind.config.ts borderRadius — T4 code review flagged that extend.borderRadius doesn't override Tailwind defaults for `2xl`/`3xl` |
-| 35 | I | ThemeProvider (light/dark/auto) | React Testing Library tests |
+| 34 | I | Pastel-glow design tokens (CSS variables) | **Watch for:** `tailwind.config.ts borderRadius extend.2xl/3xl gap** flagged in T4 code review |
+| 35 | I | ThemeProvider (light/dark/auto) | RTL tests |
 | 36 | J | AppState + project commands | Tauri commands |
 | 37 | J | Scene + provider + diagnostics commands | Tauri commands |
 | 38 | J | SceneList + Diagnostics UI + IPC client | First end-user surfaces |
 | 39 | K | M1 exit-criteria integration tests | 4 tests + 1 `#[ignore]` |
 | 40 | K | Manual acceptance checklist + final sanity | docs + build |
-| — | — | Final code review of entire M1 implementation | Per skill end gate |
+| — | — | Final code review of entire M1 implementation | End gate |
 
 ---
 
-## Session 2 statistics
+## Session statistics
 
 For calibration of the next controller's budget planning:
 
-- **Tasks completed:** T3, T4, T5, T6, T7, T8 (six tasks).
-- **Mid-execution plan amendments required:** five (T4, T5, T6, T7, plus T8 had a controller-only commit message divergence).
-- **Implementer "DONE" first time, no fixes:** T3, T5, T8 (3/6).
-- **Implementer "DONE_WITH_CONCERNS" requiring a follow-on fix:** T4 (vite.config typing), T6 (clippy must_use), T7 (3 pedantic fires) — 3/6.
-- **Average commits per task:** 2 (one feat + one plan amendment).
-- **Build/test pipeline health:** consistently green at end of each task. Tests grew from 1 → 9. Clippy clean.
+### Session 3 (this one)
 
-**Heuristic:** A task with a 200-line plan listing + tests consumes roughly 12-20k tokens of controller context end-to-end (implementer + 2 reviewers + my reasoning). Five-task budgets per session are realistic.
+- **Tasks completed:** T9, T10, T11, T12 (four tasks).
+- **Commits this session:** 8 (4 feats + 2 fixes + 2 plan amendments) plus this handoff = 9.
+- **Implementer DONE first time, no fixes:** T11, T12 (2/4 = 50%).
+- **Tasks that needed a follow-up `fix(...)` commit from code-quality review findings:** T9, T10 (2/4 = 50%).
+- **Plan amendments needed:** 2 (T9 cross-project foot-gun, T10 path-context wrap).
+- **Combined spec+quality reviews used:** T11, T12 (worked well for clean-first-try cases).
+- **Tests grew:** 9 → 26 (+17 across four tasks).
+- **No build/test regressions** at any point.
 
-If the user asks "where are we" the answer is: **"T1-T8 done, T9 next. Six tasks completed in session 2 + two in session 1 = 8 of 40. Plan amended five times. See `docs/superpowers/handoff/m1-resume.md`."**
+### Cumulative across sessions
+
+- **Tasks complete:** 12 of 40 (30%).
+- **Plan amendments total:** 7.
+- **Tests in `water-core`:** 26 passing.
+
+### Heuristic for next controller
+
+A "clean DONE first-try" task (like T11 or T12) cost roughly **18-25k controller tokens** end-to-end (implementer + combined review). A "DONE with code-review fix loop" task (like T9 or T10) cost roughly **35-50k tokens** (implementer + spec review + quality review + fix + plan amendment). **Plan for ~30-40k average.**
+
+If T13 lives up to its "first integration task" billing, expect closer to 50k tokens. Consider stopping after T13 if budget tightens.
+
+**If the user asks "where are we"** the answer is: **"T1-T12 done, T13 (SceneStore) next. Tests at 26 passing. Plan amended 7 times. See `docs/superpowers/handoff/m1-resume.md`."**
