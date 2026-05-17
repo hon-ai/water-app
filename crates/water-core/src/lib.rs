@@ -51,6 +51,9 @@ pub use snapshot::{SnapshotRow, SnapshotStore, SnapshotTrigger};
 pub mod snapshot_scheduler;
 pub use snapshot_scheduler::{ActiveScene, SnapshotScheduler};
 
+pub mod rebuild;
+pub use rebuild::{rebuild_from_truth, RebuildStats};
+
 #[cfg(test)]
 mod tests {
     use super::*;
