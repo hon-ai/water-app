@@ -36,6 +36,9 @@ pub use block::Block;
 pub mod scene;
 pub use scene::{NewScene, SceneRow, SceneStore};
 
+pub mod chapters;
+pub use chapters::{Chapter, ChaptersFile};
+
 #[cfg(test)]
 mod tests {
     use super::*;
