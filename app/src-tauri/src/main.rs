@@ -1,5 +1,9 @@
-// Prevents additional console window on Windows in release; do not remove.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod commands;
+mod state;
+
+use state::AppState;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -10,7 +14,19 @@ fn main() {
         .init();
 
     tauri::Builder::default()
-        .setup(|_app| Ok(()))
+        .manage(AppState::new())
+        .invoke_handler(tauri::generate_handler![
+            commands::project::create_project,
+            commands::project::open_project,
+            commands::project::close_project,
+            commands::scene::scene_create,
+            commands::scene::scene_read,
+            commands::scene::scene_write_body,
+            commands::scene::scene_list,
+            commands::provider::provider_test,
+            commands::provider::provider_set_key,
+            commands::diagnostics::diagnostics_status,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
