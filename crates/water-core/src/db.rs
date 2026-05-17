@@ -1,0 +1,81 @@
+//! `SQLite` connection wrapper for a single Water project.
+
+use crate::{migrations, Error, Result};
+use rusqlite::{Connection, OpenFlags};
+use std::path::Path;
+
+pub struct Db {
+    conn: Connection,
+}
+
+impl Db {
+    /// Open (and migrate) the project DB at `path`. Creates the file if
+    /// it does not exist. WAL mode is enabled for cloud-sync-folder safety.
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
+            | OpenFlags::SQLITE_OPEN_CREATE
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let mut conn = Connection::open_with_flags(path, flags)?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+
+        let migrations = migrations::all();
+        migrations
+            .to_latest(&mut conn)
+            .map_err(Error::Migration)?;
+
+        Ok(Self { conn })
+    }
+
+    /// In-memory DB for tests.
+    pub fn open_in_memory() -> Result<Self> {
+        let mut conn = Connection::open_in_memory()?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        let migrations = migrations::all();
+        migrations.to_latest(&mut conn).map_err(Error::Migration)?;
+        Ok(Self { conn })
+    }
+
+    #[must_use]
+    pub fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    #[must_use]
+    pub fn conn_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn in_memory_db_runs_migrations() {
+        let db = Db::open_in_memory().unwrap();
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_marker'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "schema_marker table should exist after migration");
+    }
+
+    #[test]
+    fn file_db_persists_across_opens() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_owned();
+        drop(tmp); // we need the path, not the file
+        {
+            let _db = Db::open(&path).unwrap();
+        }
+        let _db2 = Db::open(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+    }
+}
