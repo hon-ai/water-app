@@ -981,9 +981,20 @@ git commit -m "feat(core): ULID-backed Id type"
 
 ### Task 7: SQLite connection wrapper and migration runner
 
+> **Plan amendment (during execution):** Three pedantic-clean fixes were
+> required against `cargo clippy -p water-core --all-targets -- -D warnings`:
+> (1) `migrations::all()` needs `#[must_use]` (`must_use_candidate`);
+> (2) `Db::conn` and `Db::conn_mut` need `#[must_use]` (`must_use_candidate`
+> on reference returns); (3) the `db.rs` module docstring must wrap `SQLite`
+> in backticks (`doc_markdown`). The code listings below have been updated
+> to the canonical lint-clean version. `Db::open` and `Db::open_in_memory`
+> return `Result`, which is already `#[must_use]`, so no attribute is needed
+> there.
+
 **Files:**
 - Create: `crates/water-core/src/db.rs`
 - Create: `crates/water-core/src/migrations.rs`
+- Create: `crates/water-core/sql/v1_init.sql`
 - Modify: `crates/water-core/src/lib.rs`
 
 - [ ] **Step 1: Define a migration runner**
@@ -999,6 +1010,7 @@ Create `crates/water-core/src/migrations.rs`:
 
 use rusqlite_migration::{Migrations, M};
 
+#[must_use]
 pub fn all() -> Migrations<'static> {
     Migrations::new(vec![M::up(V1_INIT)])
 }
@@ -1021,7 +1033,7 @@ CREATE TABLE schema_marker (
 Create `crates/water-core/src/db.rs`:
 
 ```rust
-//! SQLite connection wrapper for a single Water project.
+//! `SQLite` connection wrapper for a single Water project.
 
 use crate::{migrations, Error, Result};
 use rusqlite::{Connection, OpenFlags};
@@ -1061,10 +1073,12 @@ impl Db {
         Ok(Self { conn })
     }
 
+    #[must_use]
     pub fn conn(&self) -> &Connection {
         &self.conn
     }
 
+    #[must_use]
     pub fn conn_mut(&mut self) -> &mut Connection {
         &mut self.conn
     }
