@@ -59,12 +59,12 @@ mod tests {
         let count: i64 = db
             .conn()
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_marker'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='project'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 1, "schema_marker table should exist after migration");
+        assert_eq!(count, 1, "project table should exist after migration");
     }
 
     #[test]
@@ -77,5 +77,49 @@ mod tests {
         }
         let _db2 = Db::open(&path).unwrap();
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn migration_creates_all_spec_tables() {
+        let db = Db::open_in_memory().unwrap();
+        let expected = [
+            "schema_version",
+            "project",
+            "manuscript",
+            "chapter",
+            "scene",
+            "scene_character_presence",
+            "character",
+            "world_segment",
+            "world_entry",
+            "pinned_pill",
+            "scene_metrics",
+            "block_metrics",
+            "snapshot",
+            "settings",
+            "provider_config",
+            "telemetry_event",
+        ];
+        for name in expected {
+            let count: i64 = db
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [name],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "missing table {name}");
+        }
+    }
+
+    #[test]
+    fn schema_version_row_is_one() {
+        let db = Db::open_in_memory().unwrap();
+        let v: i64 = db
+            .conn()
+            .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 1);
     }
 }
