@@ -54,6 +54,9 @@ pub use snapshot_scheduler::{ActiveScene, SnapshotScheduler};
 pub mod rebuild;
 pub use rebuild::{rebuild_from_truth, RebuildStats};
 
+pub mod repair;
+pub use repair::{run as repair, RepairReport};
+
 #[cfg(test)]
 mod tests {
     use super::*;
