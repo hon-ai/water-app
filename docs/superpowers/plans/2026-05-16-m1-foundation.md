@@ -654,10 +654,34 @@ git commit -m "chore: pnpm workspace + root scripts + editorconfig"
 
 ### Task 4: Tailwind 4 wiring + base styles
 
+> **Plan amendment (during execution):** T4 also includes a one-line fix to
+> `app/vite.config.ts` — switch `defineConfig` import from `"vite"` to
+> `"vitest/config"`. This is required for Step 4 (`pnpm --filter @water/app build`)
+> to succeed, because the file's `test` block (added in T2) needs Vitest's
+> extended config typing.
+
 **Files:**
 - Create: `app/postcss.config.cjs`
 - Create: `app/tailwind.config.ts`
 - Modify: `app/src/styles/tokens.css`
+- Modify: `app/vite.config.ts` (amendment — see note above)
+
+- [ ] **Step 0: Fix carried-over typing bug in `vite.config.ts`**
+
+In `app/vite.config.ts`, change the first line from:
+
+```ts
+import { defineConfig } from "vite";
+```
+
+to:
+
+```ts
+import { defineConfig } from "vitest/config";
+```
+
+`vitest/config` re-exports `defineConfig` with the Vitest `test` field typed,
+which is necessary because T2 introduced a `test` block in this file.
 
 - [ ] **Step 1: Create the PostCSS config**
 
