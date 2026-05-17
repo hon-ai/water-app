@@ -17,7 +17,17 @@ impl Secrets {
     pub fn load() -> Self {
         let path = dev_keys_path();
         let dev_keys = match std::fs::read_to_string(&path) {
-            Ok(text) => toml::from_str::<HashMap<String, String>>(&text).unwrap_or_default(),
+            Ok(text) => {
+                let (map, err) = parse_dev_keys(&text);
+                if let Some(msg) = err {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %msg,
+                        "dev-keys.toml exists but failed to parse; falling back to empty map",
+                    );
+                }
+                map
+            }
             Err(_) => HashMap::new(),
         };
         Self { dev_keys }
@@ -63,6 +73,19 @@ impl Secrets {
     }
 }
 
+/// Parse the dev-keys.toml contents into a flat string-to-string map.
+///
+/// Returns the (possibly empty) map and an optional human-readable error
+/// describing why parsing failed. The error is surfaced upward (currently as
+/// a `tracing::warn!` from `Secrets::load`) so an internal tester with a typo
+/// in their dev-keys file gets a hint instead of a downstream `NotFound`.
+pub(super) fn parse_dev_keys(text: &str) -> (HashMap<String, String>, Option<String>) {
+    match toml::from_str::<HashMap<String, String>>(text) {
+        Ok(map) => (map, None),
+        Err(e) => (HashMap::new(), Some(e.to_string())),
+    }
+}
+
 fn dev_keys_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".water").join("dev-keys.toml")
@@ -87,5 +110,20 @@ mod tests {
         // entry for "fake", that value wins — still non-empty.
         let v = s.get("fake").unwrap();
         assert!(v == "from-dev-keys" || !v.is_empty());
+    }
+
+    #[test]
+    fn parse_dev_keys_returns_map_on_valid_toml() {
+        let (map, err) = parse_dev_keys("anthropic = \"sk-test\"\nopenai = \"sk-other\"\n");
+        assert_eq!(map.get("anthropic").map(String::as_str), Some("sk-test"));
+        assert_eq!(map.get("openai").map(String::as_str), Some("sk-other"));
+        assert!(err.is_none());
+    }
+
+    #[test]
+    fn parse_dev_keys_returns_empty_map_and_error_on_garbage() {
+        let (map, err) = parse_dev_keys("this is not [valid] toml = = =");
+        assert!(map.is_empty(), "garbage should yield empty map");
+        assert!(err.is_some(), "garbage should yield a parse error message");
     }
 }
