@@ -13,16 +13,18 @@ pub struct SceneInfo {
 
 #[tauri::command]
 pub async fn scene_create(state: State<'_, AppState>, name: String) -> Result<SceneInfo, String> {
-    let proj = state.project.lock().await;
-    let project = proj.as_ref().ok_or("no project open")?;
-    let manuscript_id: Id = project
-        .default_manuscript_id
-        .parse()
-        .map_err(|e: water_core::Error| e.to_string())?;
-    let store = SceneStore::new(&project.db, project.root.clone());
-    // Ordering at end of manuscript.
-    let count: i64 = project
-        .db
+    let (db, root, manuscript_id) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        let manuscript_id: Id = project
+            .default_manuscript_id
+            .parse()
+            .map_err(|e: water_core::Error| e.to_string())?;
+        (project.db.clone(), project.root.clone(), manuscript_id)
+    };
+    let db_guard = db.lock().await;
+    let store = SceneStore::new(&db_guard, root);
+    let count: i64 = db_guard
         .conn()
         .query_row(
             "SELECT COUNT(*) FROM scene WHERE manuscript_id = ?1",
@@ -48,10 +50,16 @@ pub async fn scene_create(state: State<'_, AppState>, name: String) -> Result<Sc
 
 #[tauri::command]
 pub async fn scene_read(state: State<'_, AppState>, id: String) -> Result<String, String> {
-    let proj = state.project.lock().await;
-    let project = proj.as_ref().ok_or("no project open")?;
-    let id: Id = id.parse().map_err(|e: water_core::Error| e.to_string())?;
-    let store = SceneStore::new(&project.db, project.root.clone());
+    let (db, root) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        (project.db.clone(), project.root.clone())
+    };
+    let id: Id = id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let db_guard = db.lock().await;
+    let store = SceneStore::new(&db_guard, root);
     let file: SceneFile = store.read(&id).map_err(|e| e.to_string())?;
     Ok(file.body)
 }
@@ -62,10 +70,16 @@ pub async fn scene_write_body(
     id: String,
     body: String,
 ) -> Result<SceneInfo, String> {
-    let proj = state.project.lock().await;
-    let project = proj.as_ref().ok_or("no project open")?;
-    let id: Id = id.parse().map_err(|e: water_core::Error| e.to_string())?;
-    let store = SceneStore::new(&project.db, project.root.clone());
+    let (db, root) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        (project.db.clone(), project.root.clone())
+    };
+    let id: Id = id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let db_guard = db.lock().await;
+    let store = SceneStore::new(&db_guard, root);
     let row = store.write_body(&id, &body).map_err(|e| e.to_string())?;
     Ok(SceneInfo {
         id: row.id.to_string(),
@@ -77,13 +91,17 @@ pub async fn scene_write_body(
 
 #[tauri::command]
 pub async fn scene_list(state: State<'_, AppState>) -> Result<Vec<SceneInfo>, String> {
-    let proj = state.project.lock().await;
-    let project = proj.as_ref().ok_or("no project open")?;
-    let manuscript_id: Id = project
-        .default_manuscript_id
-        .parse()
-        .map_err(|e: water_core::Error| e.to_string())?;
-    let store = SceneStore::new(&project.db, project.root.clone());
+    let (db, root, manuscript_id) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        let manuscript_id: Id = project
+            .default_manuscript_id
+            .parse()
+            .map_err(|e: water_core::Error| e.to_string())?;
+        (project.db.clone(), project.root.clone(), manuscript_id)
+    };
+    let db_guard = db.lock().await;
+    let store = SceneStore::new(&db_guard, root);
     let rows = store.list(&manuscript_id).map_err(|e| e.to_string())?;
     Ok(rows
         .into_iter()

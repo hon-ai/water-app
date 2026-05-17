@@ -2,24 +2,25 @@
 //! `&` to a single shared value across commands. `OpenProject` is never
 //! constructed via `Default` (the DB requires a path) — the state holds an
 //! `Option<OpenProject>` so the "no project open" state is the `None` arm.
-//!
-//! Note: `water_core::Db` wraps a `rusqlite::Connection`, which is `Send` but
-//! `!Sync`. `tokio::sync::RwLock<T>: Sync` requires `T: Send + Sync`, but
-//! `tokio::sync::Mutex<T>: Sync` only requires `T: Send`. We therefore use
-//! `Mutex` here so that `AppState: Send + Sync` (required by `tauri::State`).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use water_core::llm::LlmRouter;
-use water_core::Db;
+use water_core::{llm::LlmRouter, Db};
 
 pub struct OpenProject {
     pub root: PathBuf,
-    pub db: Db,
+    /// Wrapped in `Arc<Mutex<Db>>` so subsystems (snapshot scheduler, sidecar
+    /// supervisor) that need to hold the DB across tasks can share ownership.
+    /// `Db` is `Send + !Sync` (`rusqlite::Connection` contains `RefCell`), so
+    /// `tokio::sync::Mutex` is the only correct sharing primitive here.
+    pub db: Arc<Mutex<Db>>,
     pub default_manuscript_id: String,
 }
 
+// `tokio::sync::Mutex` (not `RwLock`) because `Db: Send + !Sync`
+// (rusqlite::Connection contains RefCell). `tauri::State<T>` requires
+// `T: Send + Sync`, and `Mutex<T>: Sync` needs only `T: Send`.
 pub struct AppState {
     pub project: Mutex<Option<OpenProject>>,
     pub router: Mutex<Option<Arc<LlmRouter>>>,

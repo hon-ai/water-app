@@ -1,7 +1,9 @@
 use crate::state::{AppState, OpenProject};
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::State;
+use tokio::sync::Mutex;
 use water_core::{
     chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, Db,
     ManuscriptStore, ProjectStore,
@@ -36,22 +38,28 @@ pub async fn create_project(
     std::fs::create_dir_all(root.join(".water").join("cache")).map_err(|e| e.to_string())?;
 
     let db_path = root.join("project.db");
-    let db = Db::open(&db_path).map_err(|e| e.to_string())?;
-    let project = ProjectStore::new(&db)
-        .insert(&name)
-        .map_err(|e| e.to_string())?;
-    let manuscript = ManuscriptStore::new(&db)
-        .insert(&project.id, "Manuscript", 0)
-        .map_err(|e| e.to_string())?;
-    ProjectStore::new(&db)
-        .set_default_manuscript(&project.id, &manuscript.id)
-        .map_err(|e| e.to_string())?;
+    let db_raw = Db::open(&db_path).map_err(|e| e.to_string())?;
+    let db = Arc::new(Mutex::new(db_raw));
+
+    let (project_id, project_name, manuscript_id) = {
+        let db_guard = db.lock().await;
+        let project = ProjectStore::new(&db_guard)
+            .insert(&name)
+            .map_err(|e| e.to_string())?;
+        let manuscript = ManuscriptStore::new(&db_guard)
+            .insert(&project.id, "Manuscript", 0)
+            .map_err(|e| e.to_string())?;
+        ProjectStore::new(&db_guard)
+            .set_default_manuscript(&project.id, &manuscript.id)
+            .map_err(|e| e.to_string())?;
+        (project.id.clone(), project.name.clone(), manuscript.id.clone())
+    };
 
     WaterToml {
         schema_version: 1,
-        project_id: project.id.clone(),
-        name: project.name.clone(),
-        default_manuscript_id: Some(manuscript.id.clone()),
+        project_id: project_id.clone(),
+        name: project_name.clone(),
+        default_manuscript_id: Some(manuscript_id.clone()),
         created_at: chrono::Utc::now().to_rfc3339(),
         updated_at: chrono::Utc::now().to_rfc3339(),
     }
@@ -64,15 +72,15 @@ pub async fn create_project(
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
-        name: project.name.clone(),
-        project_id: project.id.to_string(),
-        default_manuscript_id: manuscript.id.to_string(),
+        name: project_name,
+        project_id: project_id.to_string(),
+        default_manuscript_id: manuscript_id.to_string(),
     };
     let mut g = state.project.lock().await;
     *g = Some(OpenProject {
         root,
         db,
-        default_manuscript_id: manuscript.id.to_string(),
+        default_manuscript_id: manuscript_id.to_string(),
     });
     Ok(info)
 }
@@ -86,25 +94,29 @@ pub async fn open_project(
     let water = WaterToml::read(&root).map_err(|e| e.to_string())?;
     let db_path = root.join("project.db");
 
-    let (db, default_manuscript_id) = if db_path.exists() {
-        let db = Db::open(&db_path).map_err(|e| e.to_string())?;
+    let (db_raw, default_manuscript_id) = if db_path.exists() {
+        let db_raw = Db::open(&db_path).map_err(|e| e.to_string())?;
         let manuscript_id = water
             .default_manuscript_id
             .as_ref()
             .map(|id| id.to_string())
             .unwrap_or_default();
-        (db, manuscript_id)
+        (db_raw, manuscript_id)
     } else {
-        let (db, _stats) = rebuild_from_truth(&root).map_err(|e| e.to_string())?;
+        let (db_raw, _stats) = rebuild_from_truth(&root).map_err(|e| e.to_string())?;
         let manuscript_id = water
             .default_manuscript_id
             .as_ref()
             .map(|id| id.to_string())
             .unwrap_or_default();
-        (db, manuscript_id)
+        (db_raw, manuscript_id)
     };
 
-    repair::run(&db, &root).map_err(|e| e.to_string())?;
+    let db = Arc::new(Mutex::new(db_raw));
+    {
+        let db_guard = db.lock().await;
+        repair::run(&db_guard, &root).map_err(|e| e.to_string())?;
+    }
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -113,7 +125,11 @@ pub async fn open_project(
         default_manuscript_id: default_manuscript_id.clone(),
     };
     let mut g = state.project.lock().await;
-    *g = Some(OpenProject { root, db, default_manuscript_id });
+    *g = Some(OpenProject {
+        root,
+        db,
+        default_manuscript_id,
+    });
     Ok(info)
 }
 
