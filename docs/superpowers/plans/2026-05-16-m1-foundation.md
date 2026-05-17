@@ -771,7 +771,17 @@ git commit -m "feat(app): wire Tailwind 4 with placeholder tokens"
 
 ### Task 5: Test scaffolding (Rust + renderer sanity tests)
 
+> **Plan amendment (during execution):** T5 also includes a one-line fix to
+> `app/tsconfig.json` — add `"noEmit": true` to `compilerOptions`. Without it,
+> `tsc -b` (run by the `build` script) emits `.js` files next to TS sources,
+> which then shadow them at resolution time. The T4 code review flagged this;
+> introducing `App.test.tsx` in this task would have compounded the problem.
+> Vite handles actual JS emission; `tsc -b` is now type-check-only. Tests still
+> run because Vitest uses esbuild, not `tsc`. This was committed separately as
+> `fix(app): set noEmit so tsc -b stops shadowing TS sources with .js`.
+
 **Files:**
+- Modify: `app/tsconfig.json` (amendment — see note above)
 - Create: `app/src/test-setup.ts`
 - Create: `app/src/App.test.tsx`
 - Modify: `crates/water-core/src/lib.rs`
