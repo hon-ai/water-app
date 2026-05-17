@@ -6843,6 +6843,16 @@ git commit -m "feat(app): pastel-glow design token set with light+dark+reduced-m
 
 ### Task 35: Theme provider + light/dark/auto switching
 
+> **Plan amendment (during execution):** Two test selectors used
+> `screen.getByText("light")` / `getByText("dark")`. Under jsdom there's
+> no `window.matchMedia` → `systemPrefersDark()` returns `false` →
+> `effective` is `"light"`, which collides with the `<button>light</button>`
+> text. The result is `TestingLibraryElementError: Found multiple
+> elements with the text: light`. Switched both ambiguous selectors to
+> `screen.getByRole("button", { name: "light" })` / `"dark"` (the
+> recommended RTL pattern for button interaction). Intent preserved;
+> the first test (which only reads) is unchanged.
+
 **Files:**
 - Create: `app/src/theme/ThemeProvider.tsx`
 - Create: `app/src/theme/useTheme.ts`
@@ -6895,7 +6905,7 @@ describe("ThemeProvider", () => {
       </ThemeProvider>
     );
     act(() => {
-      screen.getByText("dark").click();
+      screen.getByRole("button", { name: "dark" }).click();
     });
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(screen.getByTestId("effective")).toHaveTextContent("dark");
@@ -6908,7 +6918,7 @@ describe("ThemeProvider", () => {
       </ThemeProvider>
     );
     act(() => {
-      screen.getByText("light").click();
+      screen.getByRole("button", { name: "light" }).click();
     });
     unmount();
     render(
