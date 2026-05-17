@@ -13,33 +13,47 @@ pub struct SceneInfo {
 
 #[tauri::command]
 pub async fn scene_create(state: State<'_, AppState>, name: String) -> Result<SceneInfo, String> {
-    let (db, root, manuscript_id) = {
-        let proj = state.project.lock().await;
-        let project = proj.as_ref().ok_or("no project open")?;
-        let manuscript_id: Id = project
-            .default_manuscript_id
-            .parse()
-            .map_err(|e: water_core::Error| e.to_string())?;
-        (project.db.clone(), project.root.clone(), manuscript_id)
+    let proj = state.project.lock().await;
+    let project = proj.as_ref().ok_or("no project open")?;
+    let manuscript_id: Id = project
+        .default_manuscript_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let db = project.db.clone();
+    let root = project.root.clone();
+
+    let row = {
+        let db_guard = db.lock().await;
+        let store = SceneStore::new(&db_guard, root.clone());
+        let count: i64 = db_guard
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM scene WHERE manuscript_id = ?1",
+                [manuscript_id.as_str()],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        store
+            .create(NewScene {
+                manuscript_id,
+                chapter_id: None,
+                name,
+                ordering: count,
+            })
+            .map_err(|e| e.to_string())?
     };
-    let db_guard = db.lock().await;
-    let store = SceneStore::new(&db_guard, root);
-    let count: i64 = db_guard
-        .conn()
-        .query_row(
-            "SELECT COUNT(*) FROM scene WHERE manuscript_id = ?1",
-            [manuscript_id.as_str()],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    let row = store
-        .create(NewScene {
-            manuscript_id,
-            chapter_id: None,
-            name,
-            ordering: count,
+
+    // Register the new scene with the scheduler so hourly + on-close snapshots
+    // include it. We're still holding the project guard, which is the easiest
+    // way to reach project.scheduler without restructuring ownership.
+    project
+        .scheduler
+        .register(water_core::ActiveScene {
+            scene_id: row.id.clone(),
+            file_path: row.file_path.clone(),
         })
-        .map_err(|e| e.to_string())?;
+        .await;
+
     Ok(SceneInfo {
         id: row.id.to_string(),
         name: row.name,

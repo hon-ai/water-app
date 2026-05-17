@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use water_core::{llm::LlmRouter, Db};
+use water_core::{llm::LlmRouter, Db, SnapshotScheduler};
 
 pub struct OpenProject {
     pub root: PathBuf,
@@ -16,6 +16,9 @@ pub struct OpenProject {
     /// `tokio::sync::Mutex` is the only correct sharing primitive here.
     pub db: Arc<Mutex<Db>>,
     pub default_manuscript_id: String,
+    /// Per-project snapshot scheduler. Lives as long as the project is open.
+    /// On `close_project`, we fire OnClose snapshots then stop the task.
+    pub scheduler: SnapshotScheduler,
 }
 
 // `tokio::sync::Mutex` (not `RwLock`) because `Db: Send + !Sync`
