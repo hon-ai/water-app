@@ -67,4 +67,101 @@ duplicate case is rare because Water never *introduces* duplicates.
 
 ---
 
+## 3. `serde_yaml` is unmaintained
+
+**What it is.** `crates/water-core/Cargo.toml` depends on `serde_yaml` for scene
+frontmatter parsing. The crate has been advisory-flagged as unmaintained
+(RUSTSEC-2024-0320) since mid-2024.
+
+**Where it lives.** `crates/water-core/src/scene_md.rs` (YAML frontmatter
+serialize/deserialize). No other module uses YAML.
+
+**Why it's fragile.** No active maintainer means no security fixes. Surface is
+small (the deserialization input is trusted writer-authored TOML+YAML in their
+own project folder), so exposure is low.
+
+**What success looks like.** Migrating to a maintained fork (`serde_norway` or
+`serde_yml`) without changing the on-disk frontmatter format. Round-trip tests
+should pass before and after.
+
+**First-look mitigations.** None needed for M1. Plan the migration for M2 if
+the lint trips a downstream consumer.
+
+---
+
+## 4. `Secrets::load` warns-but-doesn't-fail on malformed dev-keys.toml
+
+**What it is.** After M1.1 fix A4, a parse failure in `~/.water/dev-keys.toml`
+emits a `tracing::warn!` and falls back to an empty map. The user gets a
+downstream "no secret for provider" rather than a hard parse error.
+
+**Where it lives.** `crates/water-core/src/llm/secrets.rs::Secrets::load`.
+
+**Why it's fragile.** A user with a typo gets a confusing two-step diagnostic:
+first the warning (often missed in console output), then the downstream
+NotFound. We prefer "don't crash on a typo" to "crash on every minor issue"
+but the friction is real.
+
+**What success looks like.** Tracing subscriber that surfaces warnings to the
+user via a Diagnostics page toast in M2+. For now, manual log inspection.
+
+**First-look mitigations.**
+1. Document the parse-warn behavior in the developer setup notes.
+2. Add a "View logs" Tauri command in M1.x or M2 to expose tracing output to
+   the renderer.
+
+---
+
+## 5. IPC schema drift between Rust `water_core::ipc` and Python sidecar
+
+**What it is.** The Pydantic models in `sidecar/src/water_sidecar/routes/analyze.py`
+and the serde structs in `crates/water-core/src/ipc.rs` are kept in sync by
+hand. The only tripwire is a single hand-pinned JSON literal in
+`ipc.rs::tests::analyze_response_matches_sidecar_schema`.
+
+**Where it lives.** `crates/water-core/src/ipc.rs` (Rust side),
+`sidecar/src/water_sidecar/routes/analyze.py` (Python side).
+
+**Why it's fragile.** A new field added to one side and forgotten on the other
+will silently drop on deserialization. A renamed field will fail loudly the
+first time the renderer requests it.
+
+**What success looks like.** M2 adds a CI step that posts a known-bad payload
+to the running sidecar and asserts both ends reject it. Eventually a generated
+schema (`ts-rs` or similar) so the contract has one source of truth.
+
+**First-look mitigations.**
+1. Keep the test fixture in `ipc.rs::tests` exhaustive (every field, every
+   variant of `status`).
+2. When changing the contract on one side, search-and-update the other before
+   committing.
+
+---
+
+## 6. `SnapshotScheduler` and `SidecarSupervisor` are stop-on-close-only
+
+**What it is.** After M1.1 wires both subsystems into `open_project`, neither
+auto-restarts on crash. `SnapshotScheduler`'s loop has no failure mode that
+warrants restart (it's tokio-only). `SidecarSupervisor`'s 3-consecutive-failure
+arm sends a final Error event and breaks the loop — no respawn.
+
+**Where it lives.** `crates/water-core/src/sidecar_supervisor.rs` (3-strike
+break at line ~85). `app/src-tauri/src/commands/project.rs::boot_sidecar_for_project`
+(no restart logic).
+
+**Why it's fragile.** If the sidecar crashes (panics, OOM, killed by user)
+the user sees `sidecar:status: error` and the diagnostics page shows `error`
+until they close + reopen the project. No automatic recovery.
+
+**What success looks like.** M2 adds respawn-with-backoff to the supervisor,
+or wraps the boot helper in a higher-level loop that retries on the Error
+final event.
+
+**First-look mitigations.**
+1. The user can `close` + `open` to manually respawn.
+2. The diagnostics page surfaces the error detail (T10 added
+   `last_status_detail`).
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
