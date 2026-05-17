@@ -1,21 +1,117 @@
 @import "tailwindcss";
 
-/* design tokens populated in Task 34 */
+/* =====================================================================
+   Water design tokens — placeholder values that compile and render
+   correctly. Final shades are pinned in M7 polish.
+   ===================================================================== */
+
 :root {
   color-scheme: light dark;
-  --water-bg: #fbfaf7;     /* paper light */
-  --water-fg: #161616;
+
+  /* Substrate — neutral Apple-minimal */
+  --water-bg-paper:      #fbfaf7;   /* warm paper-white */
+  --water-bg-canvas:     #f5f3ee;
+  --water-fg-default:    #161a1f;
+  --water-fg-muted:      #5a6168;
+  --water-fg-faint:      #9aa0a6;
+
+  /* Glow — semantic */
+  --water-hue-flow:           #b8e4d9;   /* mint-cyan */
+  --water-hue-coherence:      #c8c5ea;   /* periwinkle */
+  --water-hue-intensity:      #e6b5b5;   /* dusk-rose */
+  --water-hue-valence-pos:    #f1c8a3;   /* peach */
+  --water-hue-valence-neg:    #d9d2ec;   /* icy-lavender */
+  --water-hue-pace:           #efe6c4;   /* warm vanilla */
+  --water-hue-drift:           #e0a59a;  /* dim coral */
+
+  --water-hue-muse:           #efc9bb;   /* Echo: pale rose-gold */
+  --water-hue-architect:      #c5d4bd;   /* Architect: quiet sage */
+  --water-hue-editor:          #cbc4d8;  /* Editor: lilac-grey */
+  --water-hue-cartographer:   #e0c397;   /* Cartographer: dune amber */
+  --water-hue-chorus:          #e8e3da;  /* Chorus: pearl */
+
+  /* Radii — aggressive Notion/Apple-fluid */
+  --water-r-8:   8px;
+  --water-r-16: 16px;
+  --water-r-24: 24px;
+  --water-r-32: 32px;
+
+  /* Typography scale */
+  --water-fs-display: 28px; --water-lh-display: 36px;
+  --water-fs-title:   20px; --water-lh-title:   28px;
+  --water-fs-body:    16px; --water-lh-body:    26px;
+  --water-fs-ui:      14px; --water-lh-ui:      20px;
+  --water-fs-meta:    12px; --water-lh-meta:    18px;
+
+  /* Motion */
+  --water-ease-out-soft:    cubic-bezier(0.16, 1, 0.3, 1);
+  --water-ease-in-out-water: cubic-bezier(0.45, 0, 0.15, 1);
+  --water-dur-tiny:   120ms;
+  --water-dur-small:  240ms;
+  --water-dur-medium: 380ms;
+  --water-dur-long:   720ms;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --water-bg: #0d0e12;    /* liminal */
-    --water-fg: #ececec;
+    /* Liminal glowing space */
+    --water-bg-paper:      #0d0e12;
+    --water-bg-canvas:     #0a0b0e;
+    --water-fg-default:    #ecedef;
+    --water-fg-muted:      #9aa0a6;
+    --water-fg-faint:      #6a6f76;
+
+    /* Glow chroma boosted ~15% */
+    --water-hue-flow:           #9ce5d1;
+    --water-hue-coherence:      #b8b5ee;
+    --water-hue-intensity:      #f0b1b1;
+    --water-hue-valence-pos:    #f7c89e;
+    --water-hue-valence-neg:    #d6cef0;
+    --water-hue-pace:           #f6e8b8;
+    --water-hue-drift:          #ef9b8d;
+
+    --water-hue-muse:           #f5c8b7;
+    --water-hue-architect:      #b4d5a5;
+    --water-hue-editor:          #cbc1e3;
+    --water-hue-cartographer:    #efc592;
+    --water-hue-chorus:          #f1ece1;
+  }
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --water-bg-paper:    #fbfaf7;
+  --water-bg-canvas:   #f5f3ee;
+  --water-fg-default:  #161a1f;
+  --water-fg-muted:    #5a6168;
+  --water-fg-faint:    #9aa0a6;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --water-bg-paper:    #0d0e12;
+  --water-bg-canvas:   #0a0b0e;
+  --water-fg-default:  #ecedef;
+  --water-fg-muted:    #9aa0a6;
+  --water-fg-faint:    #6a6f76;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --water-dur-tiny:   1ms;
+    --water-dur-small:  1ms;
+    --water-dur-medium: 1ms;
+    --water-dur-long:   1ms;
   }
 }
 
 body {
-  background: var(--water-bg);
-  color: var(--water-fg);
-  font-family: theme(fontFamily.sans);
+  background: var(--water-bg-paper);
+  color: var(--water-fg-default);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: var(--water-fs-body);
+  line-height: var(--water-lh-body);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
