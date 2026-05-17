@@ -26,6 +26,7 @@ tracing.workspace = true
 ulid.workspace = true
 zstd.workspace = true
 sha2 = "0.10"
+async-trait = "0.1"
 
 [dev-dependencies]
 pretty_assertions.workspace = true

@@ -65,6 +65,9 @@ pub use sidecar::{Sidecar, SidecarSpec};
 pub mod sidecar_supervisor;
 pub use sidecar_supervisor::{SidecarStatus, SidecarStatusEvent, SidecarSupervisor};
 
+pub mod llm;
+pub use llm::{BouquetRequest, BouquetVariant, CannedProvider, LlmProvider, ProviderId};
+
 #[cfg(test)]
 mod tests {
     use super::*;
