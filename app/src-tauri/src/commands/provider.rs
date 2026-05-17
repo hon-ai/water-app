@@ -12,7 +12,9 @@ pub async fn provider_test(
     provider_id: String,
 ) -> Result<Vec<String>, String> {
     let provider = build_provider(&provider_id)?;
-    let router = LlmRouter::new(vec![provider]);
+    // Clone the Arc so we can both run the test and persist a router that
+    // uses the SAME provider instance.
+    let router = Arc::new(LlmRouter::new(vec![provider.clone()]));
     let req = BouquetRequest {
         system: "You are testing the provider. Be reactive and concise.".into(),
         user: "Return three angles on the act of looking out of a window.".into(),
@@ -26,9 +28,9 @@ pub async fn provider_test(
         .generate_bouquet(&req)
         .await
         .map_err(|e| e.to_string())?;
-    // Keep the router for later use as the new "primary".
+    // Persist the router that actually contains the tested provider — not a canned stand-in.
     let mut g = state.router.lock().await;
-    *g = Some(Arc::new(LlmRouter::new(vec![Arc::new(CannedProvider)])));
+    *g = Some(router);
     Ok(variants.into_iter().map(|v| v.text).collect())
 }
 
