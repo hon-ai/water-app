@@ -850,6 +850,15 @@ git commit -m "test: renderer + core sanity tests"
 
 ### Task 6: ULID utilities
 
+> **Plan amendment (during execution):** Both `Id::new` and `Id::as_str` need
+> `#[must_use]` attributes. The original listing omitted them, but
+> `water-core` has `#![warn(clippy::pedantic)]` enabled (from T1), and the
+> root `package.json`'s `lint:rust` script runs
+> `cargo clippy -p water-core --all-targets -- -D warnings`, which promotes
+> the pedantic `must_use_candidate` lint to an error for both methods. The
+> code listing in Step 1 below has been updated to the canonical
+> lint-clean version.
+
 **Files:**
 - Create: `crates/water-core/src/id.rs`
 - Modify: `crates/water-core/src/lib.rs`
@@ -871,10 +880,12 @@ pub struct Id(String);
 
 impl Id {
     /// Mint a new ULID-backed Id.
+    #[must_use]
     pub fn new() -> Self {
         Self(ulid::Ulid::new().to_string())
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
