@@ -10,10 +10,12 @@ pub struct Id(String);
 
 impl Id {
     /// Mint a new ULID-backed Id.
+    #[must_use]
     pub fn new() -> Self {
         Self(ulid::Ulid::new().to_string())
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
