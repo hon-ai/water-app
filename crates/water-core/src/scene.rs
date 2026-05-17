@@ -142,6 +142,11 @@ impl<'a> SceneStore<'a> {
         file.frontmatter.order = new_ordering;
         file.frontmatter.updated_at = now;
         file.write(&path)?;
+        let file_hash = hash_file(&path)?;
+        self.db.conn().execute(
+            "UPDATE scene SET file_hash = ?2 WHERE id = ?1",
+            (id.as_str(), &file_hash),
+        )?;
         Ok(())
     }
 
@@ -295,9 +300,11 @@ mod tests {
                 ordering: 0,
             })
             .unwrap();
+        let hash_before = scene.file_hash.clone();
         store.move_to(&scene.id, None, 99).unwrap();
         let row = store.list(&m_id).unwrap();
         assert_eq!(row[0].ordering, 99);
+        assert_ne!(row[0].file_hash, hash_before, "file_hash should refresh after move_to");
         let file = store.read(&scene.id).unwrap();
         assert_eq!(file.frontmatter.order, 99);
     }
