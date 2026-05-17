@@ -24,6 +24,9 @@ pub use db::Db;
 pub mod project;
 pub use project::{Manuscript, ManuscriptStore, Project, ProjectStore};
 
+pub mod water_toml;
+pub use water_toml::WaterToml;
+
 #[cfg(test)]
 mod tests {
     use super::*;
