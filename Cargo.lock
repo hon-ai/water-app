@@ -4581,6 +4581,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "water-core",
+ "which",
 ]
 
 [[package]]

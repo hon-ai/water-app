@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use water_core::{llm::LlmRouter, Db, SnapshotScheduler};
+use water_core::{llm::LlmRouter, Db, Sidecar, SidecarSupervisor, SnapshotScheduler};
 
 pub struct OpenProject {
     pub root: PathBuf,
@@ -19,6 +19,12 @@ pub struct OpenProject {
     /// Per-project snapshot scheduler. Lives as long as the project is open.
     /// On `close_project`, we fire OnClose snapshots then stop the task.
     pub scheduler: SnapshotScheduler,
+    /// Spawned sidecar process. `None` if `uv` was unavailable or the spawn
+    /// failed — we don't block project open on the sidecar.
+    pub sidecar: Option<Arc<Sidecar>>,
+    /// Watches the sidecar's /health and emits status events. `None` whenever
+    /// `sidecar` is `None`.
+    pub supervisor: Option<SidecarSupervisor>,
 }
 
 // `tokio::sync::Mutex` (not `RwLock`) because `Db: Send + !Sync`
