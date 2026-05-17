@@ -27,6 +27,13 @@ build/
 .cache/
 *.tsbuildinfo
 
+# pnpm
+.pnpm-store/
+pnpm-lock.yaml.bak
+
+# Tauri build output
+app/dist/
+
 # Python sidecar (arrives in M1)
 __pycache__/
 *.py[cod]
