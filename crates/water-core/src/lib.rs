@@ -39,6 +39,12 @@ pub use scene::{NewScene, SceneRow, SceneStore};
 pub mod chapters;
 pub use chapters::{Chapter, ChaptersFile};
 
+pub mod character;
+pub use character::{CharacterFile, CharacterRow, CharacterStore};
+
+pub mod world;
+pub use world::{WorldSegmentRow, WorldStore};
+
 #[cfg(test)]
 mod tests {
     use super::*;
