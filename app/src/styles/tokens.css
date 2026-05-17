@@ -1,2 +1,21 @@
+@import "tailwindcss";
+
 /* design tokens populated in Task 34 */
-:root { color-scheme: light dark; }
+:root {
+  color-scheme: light dark;
+  --water-bg: #fbfaf7;     /* paper light */
+  --water-fg: #161616;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --water-bg: #0d0e12;    /* liminal */
+    --water-fg: #ececec;
+  }
+}
+
+body {
+  background: var(--water-bg);
+  color: var(--water-fg);
+  font-family: theme(fontFamily.sans);
+}
