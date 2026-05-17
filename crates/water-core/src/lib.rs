@@ -33,6 +33,9 @@ pub use scene_md::{SceneFile, SceneFrontmatter};
 pub mod block;
 pub use block::Block;
 
+pub mod scene;
+pub use scene::{NewScene, SceneRow, SceneStore};
+
 #[cfg(test)]
 mod tests {
     use super::*;
