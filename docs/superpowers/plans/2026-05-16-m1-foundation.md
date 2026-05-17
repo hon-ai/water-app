@@ -2197,6 +2197,15 @@ git commit -m "feat(core): block-id maintenance for scene bodies"
 
 ### Task 13: SceneStore — create / read / write / move / list
 
+> **Plan amendment (during execution):** T13 code-quality review surfaced
+> a small DB/disk consistency gap: `move_to` rewrote the `.md` file's
+> frontmatter (chapter_id / order / updated_at) but did not refresh
+> `scene.file_hash` in SQLite. The listing below updates `move_to` to
+> recompute the file hash and `UPDATE` the column after the disk write,
+> and strengthens `move_to_updates_both_db_and_frontmatter` to assert
+> `file_hash` changes. Test count for this task stays at 4. Total
+> after T13 is 30 passed.
+
 **Files:**
 - Create: `crates/water-core/src/scene.rs`
 - Modify: `crates/water-core/src/lib.rs`
@@ -2349,6 +2358,12 @@ impl<'a> SceneStore<'a> {
         file.frontmatter.order = new_ordering;
         file.frontmatter.updated_at = now;
         file.write(&path)?;
+        // Refresh file_hash so DB/disk invariant holds without T20 repair.
+        let file_hash = hash_file(&path)?;
+        self.db.conn().execute(
+            "UPDATE scene SET file_hash = ?2 WHERE id = ?1",
+            (id.as_str(), &file_hash),
+        )?;
         Ok(())
     }
 
@@ -2501,9 +2516,11 @@ mod tests {
                 ordering: 0,
             })
             .unwrap();
+        let hash_before = scene.file_hash.clone();
         store.move_to(&scene.id, None, 99).unwrap();
         let row = store.list(&m_id).unwrap();
         assert_eq!(row[0].ordering, 99);
+        assert_ne!(row[0].file_hash, hash_before, "file_hash should refresh after move_to");
         let file = store.read(&scene.id).unwrap();
         assert_eq!(file.frontmatter.order, 99);
     }
