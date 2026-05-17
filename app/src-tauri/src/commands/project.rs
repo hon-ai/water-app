@@ -5,8 +5,8 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 use water_core::{
-    chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, Db,
-    ManuscriptStore, ProjectStore,
+    chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, ActiveScene, Db,
+    ManuscriptStore, ProjectStore, SnapshotScheduler,
 };
 
 #[derive(Serialize)]
@@ -70,6 +70,8 @@ pub async fn create_project(
         .write(root.join("manuscript").join("chapters.toml"))
         .map_err(|e| e.to_string())?;
 
+    let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
+
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
         name: project_name,
@@ -81,6 +83,7 @@ pub async fn create_project(
         root,
         db,
         default_manuscript_id: manuscript_id.to_string(),
+        scheduler,
     });
     Ok(info)
 }
@@ -118,6 +121,38 @@ pub async fn open_project(
         repair::run(&db_guard, &root).map_err(|e| e.to_string())?;
     }
 
+    let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
+
+    // Register every existing scene so hourly + on-close snapshots fire for them.
+    // The DB query is scoped in its own block so the `Statement` (which is
+    // `!Send`) is fully dropped before the `.await` calls in the registration
+    // loop below — otherwise the compiler conservatively considers it held
+    // across awaits and the future stops being `Send`.
+    let rows: Vec<(String, String)> = {
+        let db_guard = db.lock().await;
+        let mut stmt = db_guard
+            .conn()
+            .prepare("SELECT id, file_path FROM scene")
+            .map_err(|e| e.to_string())?;
+        let collected: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        collected
+    };
+    for (id_s, path_s) in rows {
+        let scene_id: water_core::Id = id_s
+            .parse()
+            .map_err(|e: water_core::Error| e.to_string())?;
+        scheduler
+            .register(ActiveScene {
+                scene_id,
+                file_path: std::path::PathBuf::from(path_s),
+            })
+            .await;
+    }
+
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
         name: water.name.clone(),
@@ -129,6 +164,7 @@ pub async fn open_project(
         root,
         db,
         default_manuscript_id,
+        scheduler,
     });
     Ok(info)
 }
@@ -136,7 +172,13 @@ pub async fn open_project(
 #[tauri::command]
 pub async fn close_project(state: State<'_, AppState>) -> Result<(), String> {
     let mut g = state.project.lock().await;
-    *g = None;
+    if let Some(project) = g.take() {
+        // Fire OnClose snapshots for all registered scenes, then stop the loop.
+        let _ = project.scheduler.on_close().await;
+        let _ = project.scheduler.stop().await;
+        // `project` (and its db Arc) drops here; the scheduler's spawned task
+        // exits once the channel closes from stop().
+    }
     Ok(())
 }
 
