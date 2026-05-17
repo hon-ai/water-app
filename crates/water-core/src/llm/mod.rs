@@ -10,3 +10,8 @@ pub use llamacpp::LlamaCppProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAiProvider;
 pub use provider::*;
+
+#[cfg(feature = "mlx")]
+pub mod mlx;
+#[cfg(feature = "mlx")]
+pub use mlx::MlxProvider;
