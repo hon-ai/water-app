@@ -74,11 +74,15 @@ impl<'a> ProjectStore<'a> {
     pub fn set_default_manuscript(&self, project_id: &Id, manuscript_id: &Id) -> Result<()> {
         let now = Utc::now().to_rfc3339();
         let n = self.db.conn().execute(
-            "UPDATE project SET default_manuscript_id = ?2, updated_at = ?3 WHERE id = ?1",
+            "UPDATE project SET default_manuscript_id = ?2, updated_at = ?3
+             WHERE id = ?1
+               AND EXISTS (SELECT 1 FROM manuscript WHERE id = ?2 AND project_id = ?1)",
             (project_id.as_str(), manuscript_id.as_str(), now),
         )?;
         if n == 0 {
-            return Err(Error::NotFound(format!("project {project_id}")));
+            return Err(Error::NotFound(format!(
+                "project {project_id} or manuscript {manuscript_id} not in project"
+            )));
         }
         Ok(())
     }
@@ -194,6 +198,8 @@ mod tests {
         assert_eq!(got.id, p.id);
         assert_eq!(got.name, "Test Project");
         assert!(got.default_manuscript_id.is_none());
+        assert_eq!(got.created_at, p.created_at);
+        assert_eq!(got.updated_at, p.updated_at);
     }
 
     #[test]
@@ -226,5 +232,28 @@ mod tests {
         ps.set_default_manuscript(&p.id, &m.id).unwrap();
         let p2 = ps.get(&p.id).unwrap();
         assert_eq!(p2.default_manuscript_id, Some(m.id));
+    }
+
+    #[test]
+    fn set_default_manuscript_rejects_cross_project_manuscript() {
+        let db = fresh_db();
+        let ps = ProjectStore::new(&db);
+        let ms = ManuscriptStore::new(&db);
+        let a = ps.insert("A").unwrap();
+        let b = ps.insert("B").unwrap();
+        let m_in_b = ms.insert(&b.id, "B's MS", 0).unwrap();
+        let err = ps.set_default_manuscript(&a.id, &m_in_b.id).unwrap_err();
+        assert!(matches!(err, Error::NotFound(_)));
+        // confirm A's default wasn't actually set
+        let a_after = ps.get(&a.id).unwrap();
+        assert!(a_after.default_manuscript_id.is_none());
+    }
+
+    #[test]
+    fn manuscript_insert_rejects_unknown_project() {
+        let db = fresh_db();
+        let ms = ManuscriptStore::new(&db);
+        let err = ms.insert(&Id::new(), "ghost", 0).unwrap_err();
+        assert!(matches!(err, Error::Sqlite(_)));
     }
 }
