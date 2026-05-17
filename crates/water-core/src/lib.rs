@@ -17,6 +17,10 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub mod id;
 pub use id::Id;
 
+pub mod db;
+pub mod migrations;
+pub use db::Db;
+
 #[cfg(test)]
 mod tests {
     use super::*;
