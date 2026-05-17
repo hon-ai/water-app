@@ -1,0 +1,14 @@
+{
+  "name": "water",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @water/app tauri dev",
+    "build:app": "pnpm --filter @water/app tauri build",
+    "test:app": "pnpm --filter @water/app test",
+    "test:core": "cargo test -p water-core",
+    "test:all": "pnpm test:core && pnpm test:app",
+    "lint:rust": "cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings",
+    "fmt:rust": "cargo fmt --all"
+  }
+}
