@@ -21,6 +21,9 @@ pub mod db;
 pub mod migrations;
 pub use db::Db;
 
+pub mod project;
+pub use project::{Manuscript, ManuscriptStore, Project, ProjectStore};
+
 #[cfg(test)]
 mod tests {
     use super::*;
