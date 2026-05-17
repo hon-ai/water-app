@@ -14,6 +14,9 @@ pub use error::{Error, Result};
 /// Crate version, exposed for diagnostics surfaces.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub mod id;
+pub use id::Id;
+
 #[cfg(test)]
 mod tests {
     use super::*;
