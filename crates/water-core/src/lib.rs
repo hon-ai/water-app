@@ -62,6 +62,9 @@ pub mod ipc;
 pub mod sidecar;
 pub use sidecar::{Sidecar, SidecarSpec};
 
+pub mod sidecar_supervisor;
+pub use sidecar_supervisor::{SidecarStatus, SidecarStatusEvent, SidecarSupervisor};
+
 #[cfg(test)]
 mod tests {
     use super::*;
