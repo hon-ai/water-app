@@ -48,6 +48,9 @@ pub use world::{WorldSegmentRow, WorldStore};
 pub mod snapshot;
 pub use snapshot::{SnapshotRow, SnapshotStore, SnapshotTrigger};
 
+pub mod snapshot_scheduler;
+pub use snapshot_scheduler::{ActiveScene, SnapshotScheduler};
+
 #[cfg(test)]
 mod tests {
     use super::*;
