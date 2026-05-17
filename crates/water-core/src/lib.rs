@@ -30,6 +30,9 @@ pub use water_toml::WaterToml;
 pub mod scene_md;
 pub use scene_md::{SceneFile, SceneFrontmatter};
 
+pub mod block;
+pub use block::Block;
+
 #[cfg(test)]
 mod tests {
     use super::*;
