@@ -27,6 +27,7 @@ ulid.workspace = true
 zstd.workspace = true
 sha2 = "0.10"
 async-trait = "0.1"
+dirs = "5"
 
 [dev-dependencies]
 pretty_assertions.workspace = true
