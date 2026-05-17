@@ -7062,6 +7062,24 @@ git commit -m "feat(app): ThemeProvider with light/dark/auto + persistence"
 
 ### Task 36: AppState + project commands
 
+> **Plan amendment (during execution):** Three plan-defect fixes:
+> (1) **`Db: !Sync`** — `rusqlite::Connection` contains `RefCell`, so
+> `Db` is `Send + !Sync`. `tokio::sync::RwLock<T>` requires `T: Send + Sync`
+> for `RwLock<T>: Sync`, and `tauri::State<T>` requires `T: Send + Sync`.
+> The plan's `RwLock<Option<OpenProject>>` failed to compile with 60+
+> errors. **Fix:** use `tokio::sync::Mutex` instead — `Mutex<T>: Sync`
+> only requires `T: Send`. Functionally equivalent (Tauri commands
+> always hold exclusive guards anyway). Same change for the
+> `router: Mutex<Option<Arc<LlmRouter>>>` field. Listing below reflects
+> this. (2) `LlmRouter` is NOT re-exported at the `water_core` top
+> level — only inside `water_core::llm::*`. Import path is
+> `water_core::llm::LlmRouter`. (3) `Id` is imported but unused in
+> `project.rs`; trim from the import list (`unused_imports` warning).
+> `Cargo.lock` is updated by adding `thiserror` + `chrono` to
+> water-app's dep list (metadata-only, no version churn). Build emits
+> two `dead_code` warnings on `OpenProject.db` / `OpenProject.default_manuscript_id`
+> / `AppState.router` — these fields are consumed in T37; leave as-is.
+
 **Files:**
 - Modify: `app/src-tauri/Cargo.toml`
 - Create: `app/src-tauri/src/state.rs`
@@ -7091,8 +7109,8 @@ Create `app/src-tauri/src/state.rs`:
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use water_core::{Db, LlmRouter};
+use tokio::sync::Mutex;
+use water_core::{llm::LlmRouter, Db};
 
 pub struct OpenProject {
     pub root: PathBuf,
@@ -7100,16 +7118,20 @@ pub struct OpenProject {
     pub default_manuscript_id: String,
 }
 
+// `tokio::sync::Mutex` (not `RwLock`) because `Db: Send + !Sync`
+// (rusqlite::Connection contains RefCell). `tauri::State<T>` requires
+// `T: Send + Sync`, and `Mutex<T>: Sync` needs only `T: Send`.
 pub struct AppState {
-    pub project: RwLock<Option<OpenProject>>,
-    pub router: RwLock<Option<Arc<LlmRouter>>>,
+    pub project: Mutex<Option<OpenProject>>,
+    pub router: Mutex<Option<Arc<LlmRouter>>>,
 }
 
 impl AppState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
-            project: RwLock::new(None),
-            router: RwLock::new(None),
+            project: Mutex::new(None),
+            router: Mutex::new(None),
         }
     }
 }
@@ -7140,7 +7162,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use tauri::State;
 use water_core::{
-    chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, Db, Id,
+    chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, Db,
     ManuscriptStore, ProjectStore,
 };
 
@@ -7205,7 +7227,7 @@ pub async fn create_project(
         project_id: project.id.to_string(),
         default_manuscript_id: manuscript.id.to_string(),
     };
-    let mut g = state.project.write().await;
+    let mut g = state.project.lock().await;
     *g = Some(OpenProject {
         root,
         db,
@@ -7249,14 +7271,14 @@ pub async fn open_project(
         project_id: water.project_id.to_string(),
         default_manuscript_id: default_manuscript_id.clone(),
     };
-    let mut g = state.project.write().await;
+    let mut g = state.project.lock().await;
     *g = Some(OpenProject { root, db, default_manuscript_id });
     Ok(info)
 }
 
 #[tauri::command]
 pub async fn close_project(state: State<'_, AppState>) -> Result<(), String> {
-    let mut g = state.project.write().await;
+    let mut g = state.project.lock().await;
     *g = None;
     Ok(())
 }
@@ -7376,7 +7398,7 @@ pub struct DiagnosticsStatus {
 
 #[tauri::command]
 pub async fn diagnostics_status(state: State<'_, AppState>) -> Result<DiagnosticsStatus, String> {
-    let proj = state.project.read().await;
+    let proj = state.project.lock().await;
     let has = proj.is_some();
     let root = proj.as_ref().map(|p| p.root.to_string_lossy().to_string());
     Ok(DiagnosticsStatus {
@@ -7433,7 +7455,7 @@ pub struct SceneInfo {
 
 #[tauri::command]
 pub async fn scene_create(state: State<'_, AppState>, name: String) -> Result<SceneInfo, String> {
-    let proj = state.project.read().await;
+    let proj = state.project.lock().await;
     let project = proj.as_ref().ok_or("no project open")?;
     let manuscript_id: Id = project.default_manuscript_id.parse().map_err(|e: water_core::Error| e.to_string())?;
     let store = SceneStore::new(&project.db, project.root.clone());
@@ -7465,7 +7487,7 @@ pub async fn scene_create(state: State<'_, AppState>, name: String) -> Result<Sc
 
 #[tauri::command]
 pub async fn scene_read(state: State<'_, AppState>, id: String) -> Result<String, String> {
-    let proj = state.project.read().await;
+    let proj = state.project.lock().await;
     let project = proj.as_ref().ok_or("no project open")?;
     let id: Id = id.parse().map_err(|e: water_core::Error| e.to_string())?;
     let store = SceneStore::new(&project.db, project.root.clone());
@@ -7479,7 +7501,7 @@ pub async fn scene_write_body(
     id: String,
     body: String,
 ) -> Result<SceneInfo, String> {
-    let proj = state.project.read().await;
+    let proj = state.project.lock().await;
     let project = proj.as_ref().ok_or("no project open")?;
     let id: Id = id.parse().map_err(|e: water_core::Error| e.to_string())?;
     let store = SceneStore::new(&project.db, project.root.clone());
@@ -7494,7 +7516,7 @@ pub async fn scene_write_body(
 
 #[tauri::command]
 pub async fn scene_list(state: State<'_, AppState>) -> Result<Vec<SceneInfo>, String> {
-    let proj = state.project.read().await;
+    let proj = state.project.lock().await;
     let project = proj.as_ref().ok_or("no project open")?;
     let manuscript_id: Id = project.default_manuscript_id.parse().map_err(|e: water_core::Error| e.to_string())?;
     let store = SceneStore::new(&project.db, project.root.clone());
@@ -7542,7 +7564,7 @@ pub async fn provider_test(
     };
     let (_id, variants) = router.generate_bouquet(&req).await.map_err(|e| e.to_string())?;
     // Keep the router for later use as the new "primary".
-    let mut g = state.router.write().await;
+    let mut g = state.router.lock().await;
     *g = Some(Arc::new(LlmRouter::new(vec![Arc::new(CannedProvider)])));
     Ok(variants.into_iter().map(|v| v.text).collect())
 }
@@ -7606,8 +7628,8 @@ pub struct DiagnosticsStatus {
 
 #[tauri::command]
 pub async fn diagnostics_status(state: State<'_, AppState>) -> Result<DiagnosticsStatus, String> {
-    let proj = state.project.read().await;
-    let router = state.router.read().await;
+    let proj = state.project.lock().await;
+    let router = state.router.lock().await;
     Ok(DiagnosticsStatus {
         has_open_project: proj.is_some(),
         project_root: proj.as_ref().map(|p| p.root.to_string_lossy().to_string()),
