@@ -58,6 +58,9 @@ logs/
 ~/.water/dev-keys.toml
 local-test-projects/
 
+# Water-format project directories created during manual testing.
+*.water/
+
 # Bundled models (kept out of git; downloaded or built into installers)
 models/
 *.gguf
