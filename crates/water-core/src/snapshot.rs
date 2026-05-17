@@ -149,6 +149,58 @@ impl<'a> SnapshotStore<'a> {
             .map_err(|e| Error::Other(format!("zstd decode: {e}")))?;
         Ok(plain)
     }
+
+    /// Apply the v1 retention policy. Returns the number of rows deleted.
+    ///
+    /// - All snapshots taken within the last 24h are kept.
+    /// - Between 24h and 7d, the newest snapshot per `UTC` hour is kept.
+    /// - Between 7d and 90d, the newest snapshot per `UTC` day is kept.
+    /// - Older than 90d, the newest snapshot per `ISO` week is kept.
+    pub fn prune(&self, scene_id: &Id, now: chrono::DateTime<chrono::Utc>) -> Result<usize> {
+        use chrono::Datelike;
+        let rows = self.list(scene_id)?;
+        let mut to_keep: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut seen_bucket: std::collections::HashSet<(u8, String)> =
+            std::collections::HashSet::new();
+
+        for r in &rows {
+            let ts = chrono::DateTime::parse_from_rfc3339(&r.taken_at)
+                .map_err(|e| Error::Other(format!("snapshot timestamp: {e}")))?
+                .with_timezone(&chrono::Utc);
+            let age = now.signed_duration_since(ts);
+            if age <= chrono::Duration::hours(24) {
+                to_keep.insert(r.id.to_string());
+            } else if age <= chrono::Duration::days(7) {
+                let bucket = (1u8, ts.format("%Y-%m-%dT%H").to_string());
+                if seen_bucket.insert(bucket) {
+                    to_keep.insert(r.id.to_string());
+                }
+            } else if age <= chrono::Duration::days(90) {
+                let bucket = (2u8, ts.format("%Y-%m-%d").to_string());
+                if seen_bucket.insert(bucket) {
+                    to_keep.insert(r.id.to_string());
+                }
+            } else {
+                let iso = ts.iso_week();
+                let bucket = (3u8, format!("{}-W{:02}", iso.year(), iso.week()));
+                if seen_bucket.insert(bucket) {
+                    to_keep.insert(r.id.to_string());
+                }
+            }
+        }
+
+        let mut deleted = 0usize;
+        for r in rows {
+            if !to_keep.contains(r.id.as_str()) {
+                std::fs::remove_file(&r.file_path).ok();
+                self.db
+                    .conn()
+                    .execute("DELETE FROM snapshot WHERE id = ?1", [r.id.as_str()])?;
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
+    }
 }
 
 #[cfg(test)]
@@ -207,5 +259,49 @@ mod tests {
             .unwrap();
         let restored = store.read_decompressed(&snap.id).unwrap();
         assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn prune_keeps_recent_drops_redundant_hourly() {
+        // Manually craft snapshot rows at well-known timestamps so we can
+        // assert exact retention behaviour. We don't write real files.
+        let (dir, db, _m_id, s_id) = fixture();
+        // Insert 30 rows at 5-minute intervals over the last 3 hours (all
+        // within the 24h window so all are kept).
+        let now = chrono::Utc::now();
+        for i in 0i64..30 {
+            let ts = now - chrono::Duration::minutes(i * 5);
+            db.conn()
+                .execute(
+                    "INSERT INTO snapshot (id, scene_id, taken_at, trigger, file_path, byte_size)
+                     VALUES (?1, ?2, ?3, 'autosave', '/tmp/x', 1)",
+                    (Id::new().as_str(), s_id.as_str(), ts.to_rfc3339()),
+                )
+                .unwrap();
+        }
+        // Insert 10 rows in the 24h..7d window, all at the same hour (only
+        // one per hour should survive). Anchor to the start of an hour so
+        // the 3-minute intervals (0..27) never cross an hour boundary.
+        let base = (now - chrono::Duration::days(2))
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        for i in 0i64..10 {
+            let ts = base + chrono::Duration::minutes(i * 3);
+            db.conn()
+                .execute(
+                    "INSERT INTO snapshot (id, scene_id, taken_at, trigger, file_path, byte_size)
+                     VALUES (?1, ?2, ?3, 'autosave', '/tmp/x', 1)",
+                    (Id::new().as_str(), s_id.as_str(), ts.to_rfc3339()),
+                )
+                .unwrap();
+        }
+
+        let store = SnapshotStore::new(&db, dir.path().to_path_buf());
+        let pruned = store.prune(&s_id, now).unwrap();
+        // All 30 within last 24h kept; only 1 of the 10 same-hour group kept;
+        // so total deleted = 9.
+        assert_eq!(pruned, 9);
     }
 }
