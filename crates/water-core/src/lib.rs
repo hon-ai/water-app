@@ -59,6 +59,9 @@ pub use repair::{run as repair, RepairReport};
 
 pub mod ipc;
 
+pub mod sidecar;
+pub use sidecar::{Sidecar, SidecarSpec};
+
 #[cfg(test)]
 mod tests {
     use super::*;
