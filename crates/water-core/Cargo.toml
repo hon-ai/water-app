@@ -25,6 +25,7 @@ toml.workspace = true
 tracing.workspace = true
 ulid.workspace = true
 zstd.workspace = true
+sha2 = "0.10"
 
 [dev-dependencies]
 pretty_assertions.workspace = true
