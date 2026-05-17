@@ -57,6 +57,8 @@ pub use rebuild::{rebuild_from_truth, RebuildStats};
 pub mod repair;
 pub use repair::{run as repair, RepairReport};
 
+pub mod ipc;
+
 #[cfg(test)]
 mod tests {
     use super::*;
