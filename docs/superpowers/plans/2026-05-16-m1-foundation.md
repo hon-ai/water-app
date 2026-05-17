@@ -1374,6 +1374,19 @@ git commit -m "feat(core): v1 schema migration with all spec tables"
 
 ### Task 9: ProjectStore and ManuscriptStore CRUD
 
+> **Plan amendment (during execution):** T9 code-quality review surfaced a
+> real cross-project foot-gun in `set_default_manuscript` and two
+> coverage gaps. The listing below has been updated to reflect the fix:
+> the UPDATE now carries an `AND EXISTS (...)` subquery so a manuscript
+> from another project is rejected; the error message names both ids;
+> the test module gains two new tests
+> (`set_default_manuscript_rejects_cross_project_manuscript`,
+> `manuscript_insert_rejects_unknown_project`) and
+> `insert_and_get_project_round_trip` additionally asserts that
+> `created_at` / `updated_at` survive the RFC3339 round-trip. Total
+> tests for this task are now **6** (was 4), so `cargo test -p water-core`
+> reports 15 passed across the crate.
+
 **Files:**
 - Create: `crates/water-core/src/project.rs`
 - Modify: `crates/water-core/src/lib.rs`
@@ -1460,11 +1473,15 @@ impl<'a> ProjectStore<'a> {
     pub fn set_default_manuscript(&self, project_id: &Id, manuscript_id: &Id) -> Result<()> {
         let now = Utc::now().to_rfc3339();
         let n = self.db.conn().execute(
-            "UPDATE project SET default_manuscript_id = ?2, updated_at = ?3 WHERE id = ?1",
+            "UPDATE project SET default_manuscript_id = ?2, updated_at = ?3
+             WHERE id = ?1
+               AND EXISTS (SELECT 1 FROM manuscript WHERE id = ?2 AND project_id = ?1)",
             (project_id.as_str(), manuscript_id.as_str(), now),
         )?;
         if n == 0 {
-            return Err(Error::NotFound(format!("project {project_id}")));
+            return Err(Error::NotFound(format!(
+                "project {project_id} or manuscript {manuscript_id} not in project"
+            )));
         }
         Ok(())
     }
@@ -1579,6 +1596,16 @@ mod tests {
         assert_eq!(got.id, p.id);
         assert_eq!(got.name, "Test Project");
         assert!(got.default_manuscript_id.is_none());
+        assert_eq!(got.created_at, p.created_at);
+        assert_eq!(got.updated_at, p.updated_at);
+    }
+
+    #[test]
+    fn manuscript_insert_rejects_unknown_project() {
+        let db = fresh_db();
+        let ms = ManuscriptStore::new(&db);
+        let err = ms.insert(&Id::new(), "ghost", 0).unwrap_err();
+        assert!(matches!(err, Error::Sqlite(_)));
     }
 
     #[test]
@@ -1612,6 +1639,21 @@ mod tests {
         let p2 = ps.get(&p.id).unwrap();
         assert_eq!(p2.default_manuscript_id, Some(m.id));
     }
+
+    #[test]
+    fn set_default_manuscript_rejects_cross_project_manuscript() {
+        let db = fresh_db();
+        let ps = ProjectStore::new(&db);
+        let ms = ManuscriptStore::new(&db);
+        let a = ps.insert("A").unwrap();
+        let b = ps.insert("B").unwrap();
+        let m_in_b = ms.insert(&b.id, "B's MS", 0).unwrap();
+        let err = ps.set_default_manuscript(&a.id, &m_in_b.id).unwrap_err();
+        assert!(matches!(err, Error::NotFound(_)));
+        // confirm A's default wasn't actually set
+        let a_after = ps.get(&a.id).unwrap();
+        assert!(a_after.default_manuscript_id.is_none());
+    }
 }
 ```
 
@@ -1627,7 +1669,7 @@ pub use project::{Manuscript, ManuscriptStore, Project, ProjectStore};
 - [ ] **Step 3: Run tests**
 
 Run: `cargo test -p water-core project::tests`
-Expected: 4 passed.
+Expected: 6 passed.
 
 - [ ] **Step 4: Commit**
 
