@@ -1684,6 +1684,12 @@ git commit -m "feat(core): Project + Manuscript stores"
 
 ### Task 10: `water.toml` project metadata
 
+> **Plan amendment (during execution):** T10 code-quality review surfaced
+> asymmetric path context in `WaterToml::read` — io errors were wrapped
+> in `Error::InvalidProject` with the file path, but `toml::from_str`
+> errors propagated via bare `?` losing the path. The listing below has
+> been updated to wrap both failure modes the same way.
+
 **Files:**
 - Create: `crates/water-core/src/water_toml.rs`
 - Modify: `crates/water-core/src/lib.rs`
@@ -1729,7 +1735,8 @@ impl WaterToml {
         let path = dir.as_ref().join(FILE_NAME);
         let text = std::fs::read_to_string(&path)
             .map_err(|e| Error::InvalidProject(format!("read {}: {e}", path.display())))?;
-        let parsed: Self = toml::from_str(&text)?;
+        let parsed: Self = toml::from_str(&text)
+            .map_err(|e| Error::InvalidProject(format!("parse {}: {e}", path.display())))?;
         if parsed.schema_version > CURRENT_SCHEMA_VERSION {
             return Err(Error::InvalidProject(format!(
                 "project {} requires Water schema version {} (we are {})",
