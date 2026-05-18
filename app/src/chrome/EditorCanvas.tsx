@@ -52,10 +52,13 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
   }, [sceneId]);
 
   // Load title (via list lookup) and body on mount or scene switch.
+  // After body load, push a fresh SceneState into the orchestrator so the
+  // first telemetry tick can already build an excerpt.
   useEffect(() => {
     setBodyDirty(false);
     setSavedAt(null);
     let cancelled = false;
+    let loadedWordCount = 0;
     (async () => {
       try {
         const list = await ipc.sceneList();
@@ -64,6 +67,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
         if (me) {
           setTitle(me.name);
           setTitleAtLastSave(me.name);
+          loadedWordCount = me.word_count;
         }
       } catch {
         /* swallow */
@@ -72,7 +76,23 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
     ipc
       .sceneRead(sceneId)
       .then((b) => {
-        if (!cancelled) setBody(b);
+        if (cancelled) return;
+        setBody(b);
+        // Best-effort: M2 only knows scene-level word_count + body. POV /
+        // location / present-characters / project-level counts arrive in
+        // M3/M4; ship 0 / empty until then.
+        ipc
+          .sceneState({
+            sceneId,
+            povCharacterId: null,
+            locationId: null,
+            charactersPresent: [],
+            wordCount: loadedWordCount,
+            bodyText: b,
+            characterCount: 0,
+            worldEntryCount: 0,
+          })
+          .catch(() => {});
       })
       .catch(() => {});
     return () => {
@@ -84,7 +104,10 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
     };
   }, [sceneId]);
 
-  // Body autosave (dirty-flag-gated, 2 s debounce).
+  // Body autosave (dirty-flag-gated, 2 s debounce). After each successful
+  // save we push the latest scene snapshot into the orchestrator so the
+  // prompt-excerpt cache stays current. Fire-and-forget on both the save
+  // and the snapshot push — UI doesn't surface either failure.
   useEffect(() => {
     if (!bodyDirty) return;
     if (bodyDebounce.current !== undefined) {
@@ -93,9 +116,21 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
     bodyDebounce.current = window.setTimeout(() => {
       ipc
         .sceneWriteBody(sceneId, body)
-        .then(() => {
+        .then((info) => {
           setSavedAt(Date.now());
           setBodyDirty(false);
+          ipc
+            .sceneState({
+              sceneId,
+              povCharacterId: null,
+              locationId: null,
+              charactersPresent: [],
+              wordCount: info.word_count,
+              bodyText: body,
+              characterCount: 0,
+              worldEntryCount: 0,
+            })
+            .catch(() => {});
         })
         .catch(() => {});
     }, 2000);

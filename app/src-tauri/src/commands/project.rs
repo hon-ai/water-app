@@ -80,6 +80,7 @@ pub async fn create_project(
 
     let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
+    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db).await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -96,6 +97,7 @@ pub async fn create_project(
         sidecar,
         supervisor,
         scene_write_locks: SceneWriteLocks::new(),
+        orchestrator,
     });
     Ok(info)
 }
@@ -172,6 +174,7 @@ pub async fn open_project(
     }
 
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
+    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db).await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -188,6 +191,7 @@ pub async fn open_project(
         sidecar,
         supervisor,
         scene_write_locks: SceneWriteLocks::new(),
+        orchestrator,
     });
     Ok(info)
 }
@@ -196,6 +200,13 @@ pub async fn open_project(
 pub async fn close_project(state: State<'_, AppState>) -> Result<(), String> {
     let mut g = state.project.lock().await;
     if let Some(project) = g.take() {
+        // Tell the orchestrator to wind down first so any in-flight
+        // generate task finishes against the still-live router/app rather
+        // than racing the rest of close.
+        if let Some(orch) = &project.orchestrator {
+            orch.send(crate::orchestrator_service::OrchestratorRequest::Shutdown)
+                .await;
+        }
         // Fire OnClose snapshots for all registered scenes, then stop the loop.
         let _ = project.scheduler.on_close().await;
         let _ = project.scheduler.stop().await;
@@ -210,6 +221,38 @@ pub async fn close_project(state: State<'_, AppState>) -> Result<(), String> {
         drop(project.sidecar);
     }
     Ok(())
+}
+
+/// Build the persona registry from the per-project DB and spawn the
+/// orchestrator service. Wired into both `create_project` and `open_project`.
+///
+/// Returns `None` only if `PersonaRegistry::from_db` fails — which is
+/// effectively a corrupt-DB condition. We log and continue without an
+/// orchestrator rather than blocking project open; the renderer just sees
+/// no pills.
+async fn spawn_orchestrator_for_project(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    db: &Arc<Mutex<water_core::Db>>,
+) -> Option<crate::orchestrator_service::OrchestratorHandle> {
+    let personas = {
+        let g = db.lock().await;
+        match water_core::voice::registry::PersonaRegistry::from_db(&g) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "persona registry load failed; orchestrator disabled");
+                return None;
+            }
+        }
+    };
+    // The orchestrator holds a CLONE of AppState.router (Arc<Mutex<...>>),
+    // so any `provider_test` reconfig published into that slot is observed
+    // on the orchestrator's next LLM dispatch without restarting the
+    // project.
+    let shared: crate::orchestrator_service::SharedRouter = state.router.clone();
+    let handle =
+        crate::orchestrator_service::OrchestratorService::start(app.clone(), shared, personas);
+    Some(handle)
 }
 
 fn sanitize_dir_name(name: &str) -> String {

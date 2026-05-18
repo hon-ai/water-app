@@ -1,5 +1,8 @@
-//! Pill verbs invoked from the renderer. M2 Phase E ships:
-//! - `pill_expand` / `pill_regenerate`: stubbed bouquets (Phase F replaces).
+//! Pill verbs invoked from the renderer. M2 Phase F wires:
+//! - `pill_expand` / `pill_regenerate`: dispatch into the per-project
+//!   `OrchestratorService`, which assembles the bouquet prompt, calls the
+//!   primary LLM provider, anti-loop-filters the result, and emits
+//!   `bouquet:ready`.
 //! - `pill_pin`: writes to `pinned_pill` + emits `pill:pinned`.
 //! - `pill_dismiss`: deletes from `pinned_pill` (if present) + emits both
 //!   `pill:dismissed` and `pill:unpinned`.
@@ -7,21 +10,10 @@
 //!   mount to rehydrate the existing pin set.
 
 use crate::events::emit;
+use crate::orchestrator_service::{parse_id, OrchestratorRequest};
+use crate::state::AppState;
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
-
-#[derive(Serialize, Clone)]
-struct BouquetReady {
-    parent_pill_id: String,
-    items: Vec<BouquetItem>,
-}
-
-#[derive(Serialize, Clone)]
-struct BouquetItem {
-    sub_pill_id: String,
-    angle: String,
-    text: String,
-}
+use tauri::{AppHandle, State};
 
 /// Payload mirrored on the renderer side as `Pill` (see
 /// `app/src/pill/types.ts`). Used as both the `pill_pin` input and the
@@ -37,39 +29,52 @@ pub struct PinnedPill {
 }
 
 #[tauri::command]
-pub async fn pill_expand(app: AppHandle, parent_pill_id: String) -> Result<(), String> {
-    let payload = BouquetReady {
-        parent_pill_id: parent_pill_id.clone(),
-        items: vec![
-            BouquetItem {
-                sub_pill_id: format!("{parent_pill_id}-1"),
-                angle: "feel".into(),
-                text: "(stub) feel something at the threshold".into(),
-            },
-            BouquetItem {
-                sub_pill_id: format!("{parent_pill_id}-2"),
-                angle: "notice".into(),
-                text: "(stub) the bell rings somewhere unseen".into(),
-            },
-            BouquetItem {
-                sub_pill_id: format!("{parent_pill_id}-3"),
-                angle: "wonder".into(),
-                text: "(stub) what is held in that pause".into(),
-            },
-        ],
+pub async fn pill_expand(
+    state: State<'_, AppState>,
+    parent_pill_id: String,
+) -> Result<(), String> {
+    let handle = {
+        let proj = state.project.lock().await;
+        proj.as_ref()
+            .and_then(|p| p.orchestrator.as_ref().cloned())
     };
-    emit(&app, "bouquet:ready", payload).map_err(|e| e.to_string())
+    if let Some(h) = handle {
+        let pid = parse_id(&parent_pill_id)?;
+        h.send(OrchestratorRequest::Expand {
+            parent_pill_id: pid,
+        })
+        .await;
+    }
+    // No-op when no project is open / orchestrator is missing. The
+    // renderer treats expand as fire-and-forget; events arrive
+    // asynchronously when the bouquet lands.
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn pill_regenerate(app: AppHandle, parent_pill_id: String) -> Result<(), String> {
-    pill_expand(app, parent_pill_id).await
+pub async fn pill_regenerate(
+    state: State<'_, AppState>,
+    parent_pill_id: String,
+) -> Result<(), String> {
+    let handle = {
+        let proj = state.project.lock().await;
+        proj.as_ref()
+            .and_then(|p| p.orchestrator.as_ref().cloned())
+    };
+    if let Some(h) = handle {
+        let pid = parse_id(&parent_pill_id)?;
+        h.send(OrchestratorRequest::Regenerate {
+            parent_pill_id: pid,
+        })
+        .await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn pill_pin(
     app: AppHandle,
-    state: tauri::State<'_, crate::state::AppState>,
+    state: State<'_, AppState>,
     pill: PinnedPill,
     scene_id: String,
     block_id: String,
@@ -111,7 +116,7 @@ pub async fn pill_pin(
 #[tauri::command]
 pub async fn pill_dismiss(
     app: AppHandle,
-    state: tauri::State<'_, crate::state::AppState>,
+    state: State<'_, AppState>,
     pill_id: String,
 ) -> Result<(), String> {
     // Delete from pinned_pill if present. "no project open" is not an
@@ -150,7 +155,7 @@ pub async fn pill_dismiss(
 
 #[tauri::command]
 pub async fn pinned_list(
-    state: tauri::State<'_, crate::state::AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<PinnedPill>, String> {
     let db = {
         let proj = state.project.lock().await;

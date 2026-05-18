@@ -1,7 +1,8 @@
 //! Router — primary/fallback chain with rate limiting + circuit breaker.
 
-use super::{BouquetRequest, BouquetVariant, LlmProvider, ProviderId};
+use super::{BouquetRequest, BouquetVariant, GenerateRequest, LlmProvider, ProviderId};
 use crate::{Error, Result};
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -138,6 +139,59 @@ impl LlmRouter {
         self.chain.first().map(|p| p.id())
     }
 
+    /// The primary (first) provider in the chain, cloned for shared use.
+    /// Returns `None` if the chain is empty. M2 single-shot paths
+    /// (`generate_raw_with_default`, `generate_structured_with_default`)
+    /// use this directly without going through the breaker/rate-limiter —
+    /// callers that want full fallback chaining should use
+    /// `generate_bouquet` instead.
+    #[must_use]
+    pub fn primary(&self) -> Option<Arc<dyn LlmProvider>> {
+        self.chain.first().cloned()
+    }
+
+    /// Single-shot text generation against the primary provider. Builds a
+    /// `GenerateRequest` from the supplied `system`/`user` strings; other
+    /// fields default. Returns the raw model output.
+    ///
+    /// # Errors
+    /// Returns `Error::Provider("no primary provider")` if the router was
+    /// constructed with an empty chain, or whatever error the provider's
+    /// `generate_raw` implementation returns.
+    pub async fn generate_raw_with_default(
+        &self,
+        system: String,
+        user: String,
+    ) -> Result<String> {
+        let primary = self
+            .primary()
+            .ok_or_else(|| Error::Provider("no primary provider".into()))?;
+        let req = GenerateRequest {
+            system,
+            user,
+            ..Default::default()
+        };
+        primary.generate_raw(req).await
+    }
+
+    /// Single-shot structured (JSON) generation against the primary
+    /// provider. Calls `generate_raw` and parses the result as `T`.
+    ///
+    /// # Errors
+    /// Returns `Error::Provider("no primary provider")` if the chain is
+    /// empty, propagates `generate_raw` errors, and returns
+    /// `Error::Provider("invalid json: …")` when the response fails to
+    /// deserialize as `T`.
+    pub async fn generate_structured_with_default<T: DeserializeOwned + Send>(
+        &self,
+        system: String,
+        user: String,
+    ) -> Result<T> {
+        let raw = self.generate_raw_with_default(system, user).await?;
+        serde_json::from_str::<T>(&raw)
+            .map_err(|e| Error::Provider(format!("invalid json: {e}; raw: {raw}")))
+    }
+
     /// Try each provider in order: skip if breaker open or rate-limited,
     /// otherwise call and on success return; on failure record + try next.
     ///
@@ -231,6 +285,48 @@ mod tests {
         let router = LlmRouter::new(vec![primary, secondary]);
         let (id, _) = router.generate_bouquet(&req()).await.unwrap();
         assert_eq!(id.as_str(), "canned");
+    }
+
+    #[tokio::test]
+    async fn generate_raw_with_default_hits_primary() {
+        let canned = Arc::new(CannedProvider::with_response("hello there"))
+            as Arc<dyn LlmProvider>;
+        let router = LlmRouter::new(vec![canned]);
+        let out = router
+            .generate_raw_with_default("sys".into(), "user".into())
+            .await
+            .unwrap();
+        assert_eq!(out, "hello there");
+    }
+
+    #[tokio::test]
+    async fn generate_structured_with_default_parses_primary_output() {
+        #[derive(serde::Deserialize)]
+        struct Pair {
+            angle: String,
+            #[allow(dead_code)]
+            text: String,
+        }
+        let canned = Arc::new(CannedProvider::with_response(
+            r#"[{"angle":"feel","text":"a"},{"angle":"notice","text":"b"}]"#,
+        )) as Arc<dyn LlmProvider>;
+        let router = LlmRouter::new(vec![canned]);
+        let out: Vec<Pair> = router
+            .generate_structured_with_default("sys".into(), "user".into())
+            .await
+            .unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].angle, "feel");
+    }
+
+    #[tokio::test]
+    async fn generate_with_default_errors_when_chain_empty() {
+        let router = LlmRouter::new(vec![]);
+        let err = router
+            .generate_raw_with_default("s".into(), "u".into())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Provider(_)));
     }
 
     #[tokio::test]

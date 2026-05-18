@@ -31,14 +31,24 @@ pub struct OpenProject {
     /// `SceneStore::rename` or `SceneStore::write_body`. Prevents the
     /// whole-file write race documented in KNOWN_FRAGILE #7.
     pub scene_write_locks: SceneWriteLocks,
+    /// Per-project orchestrator. `None` only on the (currently unreachable)
+    /// path where service spawn fails; in practice this is always `Some`
+    /// once `open_project`/`create_project` returns. Dropped on
+    /// `close_project` which terminates the service loop via `Shutdown`.
+    pub orchestrator: Option<crate::orchestrator_service::OrchestratorHandle>,
 }
 
 // `tokio::sync::Mutex` (not `RwLock`) because `Db: Send + !Sync`
 // (rusqlite::Connection contains RefCell). `tauri::State<T>` requires
 // `T: Send + Sync`, and `Mutex<T>: Sync` needs only `T: Send`.
+//
+// `router` is wrapped in `Arc<Mutex<...>>` (rather than a bare `Mutex`) so
+// the `OrchestratorService` can hold a clone of the SAME slot. Reconfigs
+// from `provider_test` are then visible to the orchestrator without
+// restarting the project — see `orchestrator_service::SharedRouter`.
 pub struct AppState {
     pub project: Mutex<Option<OpenProject>>,
-    pub router: Mutex<Option<Arc<LlmRouter>>>,
+    pub router: Arc<Mutex<Option<Arc<LlmRouter>>>>,
 }
 
 impl AppState {
@@ -46,7 +56,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             project: Mutex::new(None),
-            router: Mutex::new(None),
+            router: Arc::new(Mutex::new(None)),
         }
     }
 }
