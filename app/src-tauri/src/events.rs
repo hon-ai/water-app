@@ -29,6 +29,18 @@ pub struct SidecarStatusPayload {
     pub detail: Option<String>,
 }
 
+/// Payload for the `provider:status` event. Mirrors
+/// `WaterEventPayloads["provider:status"]` in `app/src/ipc/events.ts`.
+/// Emitted whenever an `LlmRouter` provider transitions success/failure
+/// state during a `generate_bouquet` call (currently exercised via
+/// `provider_test`).
+#[derive(Serialize, Clone)]
+pub struct ProviderStatusPayload {
+    pub provider_id: String,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
 /// Payload for the `typing:telemetry` event. Mirrors
 /// `WaterEventPayloads["typing:telemetry"]` in `app/src/ipc/events.ts`.
 /// Strings are closed sets — see the TS side for the allowed values.

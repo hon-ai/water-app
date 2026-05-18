@@ -11,6 +11,11 @@ export interface WaterEventPayloads {
     status: "loading" | "ready" | "error";
     detail: string | null;
   };
+  "provider:status": {
+    provider_id: string;
+    ok: boolean;
+    error: string | null;
+  };
   "typing:telemetry": {
     idle_for_ms: number;
     cursor_classification: "at_sentence_end" | "at_paragraph_end" | "mid_sentence";

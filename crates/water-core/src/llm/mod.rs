@@ -12,7 +12,7 @@ pub use llamacpp::LlamaCppProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAiProvider;
 pub use provider::*;
-pub use router::{LlmRouter, RateLimitConfig};
+pub use router::{LlmRouter, ProviderHealthChange, RateLimitConfig};
 pub use secrets::Secrets;
 
 #[cfg(feature = "mlx")]

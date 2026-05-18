@@ -30,12 +30,15 @@ export function SettingsSheet({ open, onClose }: Props) {
     }
   }, []);
 
-  // Initial snapshot fetch on open; then subscribe to sidecar:status events
-  // for incremental updates (no more 3-second polling).
+  // Initial snapshot fetch on open; then subscribe to sidecar:status +
+  // provider:status events for incremental updates (no more 3-second
+  // polling). Both subscriptions live in the same effect and share a
+  // single `cancelled` guard so a fast close-before-resolve does not leak.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    let unsub: (() => void) | undefined;
+    let unsubSidecar: (() => void) | undefined;
+    let unsubProvider: (() => void) | undefined;
     refresh();
     (async () => {
       const u = await onWaterEvent("sidecar:status", (p) => {
@@ -58,11 +61,40 @@ export function SettingsSheet({ open, onClose }: Props) {
         u();
         return;
       }
-      unsub = u;
+      unsubSidecar = u;
+    })();
+    (async () => {
+      const u = await onWaterEvent("provider:status", (p) => {
+        setStatus((prev) => {
+          if (prev === null) {
+            // Same cold-start race as sidecar:status — re-snapshot.
+            void refresh();
+            return prev;
+          }
+          // Locate the matching provider; if not present (router added a
+          // provider mid-session), append it so the UI still reflects the
+          // change.
+          const idx = prev.provider_health.findIndex((ph) => ph.id === p.provider_id);
+          const next = [...prev.provider_health];
+          if (idx === -1) {
+            next.push({ id: p.provider_id, ok: p.ok, error: p.error });
+          } else {
+            const existing = next[idx]!;
+            next[idx] = { id: existing.id, ok: p.ok, error: p.error };
+          }
+          return { ...prev, provider_health: next };
+        });
+      });
+      if (cancelled) {
+        u();
+        return;
+      }
+      unsubProvider = u;
     })();
     return () => {
       cancelled = true;
-      unsub?.();
+      unsubSidecar?.();
+      unsubProvider?.();
     };
   }, [open, refresh]);
 

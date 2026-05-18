@@ -6,7 +6,18 @@ use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, Mutex};
+
+/// Emitted by `LlmRouter` whenever a provider's health/circuit-breaker
+/// outcome changes during a `generate_bouquet` call. Subscribed to by
+/// `app/src-tauri` to fan out into the `provider:status` event bus.
+/// Mirrors `ProviderStatusPayload` in `app/src-tauri/src/events.rs`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProviderHealthChange {
+    pub provider_id: String,
+    pub ok: bool,
+    pub error: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
@@ -114,6 +125,12 @@ struct ProviderState {
 pub struct LlmRouter {
     chain: Vec<Arc<dyn LlmProvider>>,
     state: HashMap<ProviderId, ProviderState>,
+    /// Broadcasts provider health/CB transitions to any subscriber. The
+    /// channel is kept alive by the `Sender` stored here even when no
+    /// subscribers exist; sends are non-blocking and silently drop on
+    /// `NoSubscriber`/`Lagged` — this is a best-effort signal, not a
+    /// reliable queue.
+    status_tx: broadcast::Sender<ProviderHealthChange>,
 }
 
 impl LlmRouter {
@@ -131,7 +148,23 @@ impl LlmRouter {
                 )
             })
             .collect();
-        Self { chain, state }
+        // Capacity 32 is comfortable headroom for a single subscriber in the
+        // app process; backpressure here is a non-issue because the events
+        // are advisory.
+        let (status_tx, _rx) = broadcast::channel(32);
+        Self {
+            chain,
+            state,
+            status_tx,
+        }
+    }
+
+    /// Subscribe to provider health/CB transitions. Each `generate_bouquet`
+    /// success/failure publishes one `ProviderHealthChange` per provider
+    /// touched. The renderer-facing `provider:status` event mirrors this.
+    #[must_use]
+    pub fn subscribe_status(&self) -> broadcast::Receiver<ProviderHealthChange> {
+        self.status_tx.subscribe()
     }
 
     #[must_use]
@@ -218,10 +251,22 @@ impl LlmRouter {
             match p.generate_bouquet(req).await {
                 Ok(variants) => {
                     st.breaker.lock().await.record_success();
+                    // Best-effort broadcast; ignore NoSubscriber errors. The
+                    // subscriber side (renderer) treats this as advisory.
+                    let _ = self.status_tx.send(ProviderHealthChange {
+                        provider_id: id.as_str().to_string(),
+                        ok: true,
+                        error: None,
+                    });
                     return Ok((id, variants));
                 }
                 Err(e) => {
                     st.breaker.lock().await.record_failure();
+                    let _ = self.status_tx.send(ProviderHealthChange {
+                        provider_id: id.as_str().to_string(),
+                        ok: false,
+                        error: Some(e.to_string()),
+                    });
                     last_err = Some(e);
                 }
             }
@@ -327,6 +372,27 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, Error::Provider(_)));
+    }
+
+    #[tokio::test]
+    async fn subscribe_status_receives_health_change_on_state_transition() {
+        // RED: router currently has no subscribe_status. After adding it,
+        // a state transition (success after baseline) should publish a
+        // ProviderHealthChange.
+        let primary = Arc::new(AlwaysFails) as Arc<dyn LlmProvider>;
+        let secondary = Arc::new(CannedProvider::default()) as Arc<dyn LlmProvider>;
+        let router = LlmRouter::new(vec![primary, secondary]);
+        let mut rx = router.subscribe_status();
+        // Drive a call that will: try primary (failure → broadcast), then
+        // fall back to secondary (success → broadcast). At least one event
+        // should land on the subscriber.
+        let _ = router.generate_bouquet(&req()).await.unwrap();
+        let evt = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+            .await
+            .expect("expected at least one ProviderHealthChange")
+            .expect("channel closed unexpectedly");
+        // Whichever provider event we got, the struct is well-formed.
+        assert!(!evt.provider_id.is_empty());
     }
 
     #[tokio::test]
