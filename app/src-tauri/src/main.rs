@@ -35,6 +35,7 @@ fn main() {
             commands::pill::pill_regenerate,
             commands::pill::pill_pin,
             commands::pill::pill_dismiss,
+            commands::pill::pinned_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

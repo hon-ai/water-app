@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 interface Props {
@@ -8,15 +8,69 @@ interface Props {
   children: React.ReactNode;
 }
 
+type SheetState = "closed" | "opening" | "open" | "closing";
+
+// Roughly matches --water-dur-tiny used for the close transition. Kept as a
+// literal so the cleanup timer doesn't race with the CSS transition end on
+// platforms that don't fire `transitionend` reliably (jsdom).
+const CLOSE_MS = 280;
+
+/**
+ * Right-edge slide-in sheet. Uses an internal four-state machine driving a
+ * `transform: translateX(...)` transition; `data-state` is exposed for tests
+ * + downstream CSS hooks. Fixes M1.5 Review #14 (Sheet had no enter animation).
+ *
+ * State progression:
+ *   closed   -> off-screen, no transition
+ *   opening  -> off-screen for one frame, then flips to "open"
+ *   open     -> translateX(0), animated with --water-dur-small/--water-ease-out-soft
+ *   closing  -> back to off-screen, animated with --water-dur-tiny; after
+ *               CLOSE_MS, drops to "closed" + calls dialog.close().
+ */
 export function Sheet({ open, onClose, title, children }: Props) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const [state, setState] = useState<SheetState>("closed");
 
+  // Sync the requested `open` prop into the state machine.
+  useEffect(() => {
+    if (open) {
+      if (state === "closed" || state === "closing") {
+        setState("opening");
+      }
+    } else {
+      if (state === "open" || state === "opening") {
+        setState("closing");
+      }
+    }
+  }, [open, state]);
+
+  // Show/hide the underlying <dialog> based on the lifecycle phase.
+  // showModal() must happen while the dialog is still off-screen so the
+  // first paint shows it slid out, then the next frame transitions in.
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
-    if (open && !el.open) el.showModal();
-    if (!open && el.open) el.close();
-  }, [open]);
+    if (state === "opening" && !el.open) {
+      el.showModal();
+    }
+    // Flip opening -> open on the next frame so the transform transition runs.
+    if (state === "opening") {
+      const id = requestAnimationFrame(() => {
+        // requestAnimationFrame fires once before paint; bump one more frame
+        // so the browser commits the initial translateX(100%) first.
+        requestAnimationFrame(() => setState("open"));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    if (state === "closing") {
+      const id = window.setTimeout(() => {
+        setState("closed");
+        if (el.open) el.close();
+      }, CLOSE_MS);
+      return () => window.clearTimeout(id);
+    }
+    return undefined;
+  }, [state]);
 
   useEffect(() => {
     const el = dialogRef.current;
@@ -29,9 +83,28 @@ export function Sheet({ open, onClose, title, children }: Props) {
     return () => el.removeEventListener("cancel", handleCancel);
   }, [onClose]);
 
+  // Visual transform per phase.
+  // "open" is the only state with translateX(0); everything else is off-screen.
+  // The transition string differs by phase so opening (slow ease-out) feels
+  // different from closing (faster water-style ease).
+  let transform: string;
+  let transition: string;
+  if (state === "open") {
+    transform = "translateX(0)";
+    transition = "transform var(--water-dur-small) var(--water-ease-out-soft)";
+  } else if (state === "closing") {
+    transform = "translateX(100%)";
+    transition = "transform var(--water-dur-tiny) var(--water-ease-in-out-water)";
+  } else {
+    // closed | opening
+    transform = "translateX(100%)";
+    transition = "none";
+  }
+
   return (
     <dialog
       ref={dialogRef}
+      data-state={state}
       onClick={(e) => {
         // Click outside the inner content closes the sheet.
         if (e.target === e.currentTarget) onClose();
@@ -47,6 +120,8 @@ export function Sheet({ open, onClose, title, children }: Props) {
         background: "var(--water-bg-paper)",
         color: "var(--water-fg-default)",
         boxShadow: "-12px 0 32px color-mix(in srgb, var(--water-fg-default) 8%, transparent)",
+        transform,
+        transition,
       }}
     >
       <header

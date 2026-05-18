@@ -252,6 +252,7 @@ export function PillLayer() {
                   path={path}
                   onSubClick={(level, item) => onSubClick(p.pill_id, level, item)}
                   onClose={() => closeRabbitHole(p.pill_id)}
+                  rootPill={p}
                 />
               </div>
             );
