@@ -80,3 +80,28 @@ describe("blockIdPlugin", () => {
     expect(new Set(listItemIds).size).toBe(2);
   });
 });
+
+describe("schema marks", () => {
+  it("exposes strong, em, and link marks", () => {
+    expect(schema.marks.strong).toBeDefined();
+    expect(schema.marks.em).toBeDefined();
+    expect(schema.marks.link).toBeDefined();
+  });
+
+  it("link mark carries an href attr", () => {
+    const link = schema.marks.link;
+    expect(link).toBeDefined();
+    const linkMark = link!.create({ href: "https://example.com" });
+    expect(linkMark.attrs.href).toBe("https://example.com");
+  });
+
+  it("marks compose freely on text", () => {
+    const text = schema.text("hello", [
+      schema.marks.strong!.create(),
+      schema.marks.em!.create(),
+    ]);
+    expect(text.marks).toHaveLength(2);
+    expect(text.marks.some((m) => m.type.name === "strong")).toBe(true);
+    expect(text.marks.some((m) => m.type.name === "em")).toBe(true);
+  });
+});
