@@ -96,7 +96,36 @@ const blockNodes = basicSchema.spec.nodes
   .addToEnd("scene_break", sceneBreakSpec)
   .addToEnd("dialogue", dialogueSpec);
 
-const withLists = addListNodes(blockNodes, "paragraph block*", "block");
+const withListsBase = addListNodes(blockNodes, "paragraph block*", "block");
+
+// Extend `list_item` to carry a blockId attr. M2 spec § 5.2 requires list
+// items in both `list_ordered` and `list_unordered` to each carry their
+// own block-id (per-bullet block addressing). The block-id plugin recurses
+// into the list containers to find these.
+const baseListItem = withListsBase.get("list_item");
+if (!baseListItem) {
+  throw new Error("prosemirror-schema-list must define list_item");
+}
+
+const listItemSpec: NodeSpec = {
+  ...baseListItem,
+  attrs: blockAttrs,
+  parseDOM: [
+    {
+      tag: "li",
+      getAttrs: (d) => ({
+        blockId: (d as HTMLElement).getAttribute("data-bid") ?? "",
+      }),
+    },
+  ],
+  toDOM: (node): DOMOutputSpec => [
+    "li",
+    { "data-bid": node.attrs.blockId },
+    0,
+  ],
+};
+
+const withLists = withListsBase.update("list_item", listItemSpec);
 
 export const schema = new Schema({
   nodes: withLists,
