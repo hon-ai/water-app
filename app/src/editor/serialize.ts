@@ -7,10 +7,86 @@
 // paragraph. Trailing blank lines collapse to a single `\n` to keep diffs
 // stable.
 
-import type { Node as PMNode, Schema } from "prosemirror-model";
+import type { Mark as PMMark, Node as PMNode, Schema } from "prosemirror-model";
 
 const BID_RE = /^(\^bk-[A-Za-z0-9]{4})\s+/;
 const BID_ONLY = /^\^bk-[A-Za-z0-9]{4}$/;
+
+const MARK_OPEN: Record<string, (mark: PMMark) => string> = {
+  strong: () => "**",
+  em: () => "*",
+  link: () => `[`, // open of [text](url); close is special-cased below
+};
+
+const MARK_CLOSE: Record<string, (mark: PMMark) => string> = {
+  strong: () => "**",
+  em: () => "*",
+  link: (mark) => `](${mark.attrs.href as string})`,
+};
+
+// Marks emit in this nesting order (outermost → innermost).
+// Link wraps because [foo](url) is atomic in CommonMark; nesting inside
+// causes parsing pain. Strong wraps em because **bold *italic*** is the
+// canonical nested-emphasis form.
+const MARK_PRIORITY = ["link", "strong", "em"] as const;
+
+function escapeLiterals(text: string): string {
+  // Escape CommonMark inline metacharacters so literal `*`, `_`, `[`, `]`,
+  // `(`, `)`, `\` in the source text round-trip safely. We're conservative:
+  // every potential delimiter is escaped, even when context would parse it
+  // literally; the cost is a slightly noisier on-disk format, the win is
+  // bulletproof round-trip.
+  return text.replace(/([\\*_[\]()])/g, "\\$1");
+}
+
+export function inlineToMarkdown(blockNode: PMNode): string {
+  let out = "";
+  const openStack: Array<{ name: string; mark: PMMark }> = [];
+
+  function marksInPriorityOrder(marks: readonly PMMark[]) {
+    const byName = new Map<string, PMMark>();
+    for (const m of marks) byName.set(m.type.name, m);
+    const ordered: Array<{ name: string; mark: PMMark }> = [];
+    for (const name of MARK_PRIORITY) {
+      const m = byName.get(name);
+      if (m) ordered.push({ name, mark: m });
+    }
+    return ordered;
+  }
+
+  function closeUntil(targetSize: number) {
+    while (openStack.length > targetSize) {
+      const top = openStack.pop()!;
+      out += MARK_CLOSE[top.name]!(top.mark);
+    }
+  }
+
+  blockNode.forEach((child) => {
+    if (!child.isText) return;
+    const wanted = marksInPriorityOrder(child.marks);
+    // Find longest common prefix of openStack and wanted.
+    let common = 0;
+    while (
+      common < openStack.length &&
+      common < wanted.length &&
+      openStack[common]!.name === wanted[common]!.name &&
+      // For link, also require same href; bold/em don't have attrs.
+      (openStack[common]!.name !== "link" ||
+        openStack[common]!.mark.attrs.href === wanted[common]!.mark.attrs.href)
+    ) {
+      common += 1;
+    }
+    closeUntil(common);
+    for (let i = common; i < wanted.length; i++) {
+      const entry = wanted[i]!;
+      out += MARK_OPEN[entry.name]!(entry.mark);
+      openStack.push(entry);
+    }
+    out += escapeLiterals(child.text ?? "");
+  });
+  closeUntil(0);
+  return out;
+}
 
 export function markdownFromDoc(doc: PMNode): string {
   const lines: string[] = [];
@@ -18,11 +94,11 @@ export function markdownFromDoc(doc: PMNode): string {
     const bid: string = node.attrs?.blockId ? `${node.attrs.blockId} ` : "";
     switch (node.type.name) {
       case "paragraph":
-        lines.push(`${bid}${node.textContent}`);
+        lines.push(`${bid}${inlineToMarkdown(node)}`);
         lines.push("");
         break;
       case "heading":
-        lines.push(`${"#".repeat(node.attrs.level)} ${bid}${node.textContent}`);
+        lines.push(`${"#".repeat(node.attrs.level)} ${bid}${inlineToMarkdown(node)}`);
         lines.push("");
         break;
       case "scene_break":
@@ -30,25 +106,25 @@ export function markdownFromDoc(doc: PMNode): string {
         lines.push("");
         break;
       case "dialogue":
-        lines.push(`${bid}> ${node.textContent}`);
+        lines.push(`${bid}> ${inlineToMarkdown(node)}`);
         lines.push("");
         break;
       case "ordered_list":
         node.forEach((item, _o, i) => {
           const itemBid: string = item.attrs?.blockId ?? "";
-          lines.push(`${i + 1}. ${itemBid ? itemBid + " " : ""}${item.textContent}`);
+          lines.push(`${i + 1}. ${itemBid ? itemBid + " " : ""}${inlineToMarkdown(item)}`);
         });
         lines.push("");
         break;
       case "bullet_list":
         node.forEach((item) => {
           const itemBid: string = item.attrs?.blockId ?? "";
-          lines.push(`- ${itemBid ? itemBid + " " : ""}${item.textContent}`);
+          lines.push(`- ${itemBid ? itemBid + " " : ""}${inlineToMarkdown(item)}`);
         });
         lines.push("");
         break;
       default:
-        lines.push(node.textContent);
+        lines.push(inlineToMarkdown(node));
         lines.push("");
     }
   });
