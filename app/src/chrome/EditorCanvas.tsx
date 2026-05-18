@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type SceneInfo } from "../ipc/commands";
+import { Editor } from "../editor/Editor";
 
 interface Props {
   sceneId: string;
@@ -169,27 +170,13 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
             padding: 0,
           }}
         />
-        <textarea
+        <Editor
           value={body}
-          onChange={(e) => {
-            setBody(e.target.value);
+          onChange={(md) => {
+            setBody(md);
             setBodyDirty(true);
           }}
-          rows={20}
           placeholder="Begin where the universe begins."
-          style={{
-            width: "100%",
-            minHeight: 480,
-            border: "none",
-            outline: "none",
-            resize: "none",
-            background: "transparent",
-            color: "var(--water-fg-default)",
-            fontFamily: "var(--water-font-sans)",
-            fontSize: "var(--water-fs-body)",
-            lineHeight: "var(--water-lh-body)",
-            padding: 0,
-          }}
         />
       </div>
     </main>
