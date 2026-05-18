@@ -1,0 +1,7 @@
+version = "1"
+id = "pill_level_0"
+instruction = """
+Produce one line of prose in your speaker's voice that reacts to the
+manuscript excerpt below. No quotation marks. No more than 22 words.
+"""
+output_format = "plain"

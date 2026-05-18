@@ -1,0 +1,6 @@
+version = "1"
+id = "pace_floor"
+framing = """
+The pace has slowed. Few new words have been added in the last three minutes.
+React to what the slowdown is holding in place.
+"""

@@ -75,6 +75,8 @@ pub mod orchestrator;
 
 pub mod voice;
 
+pub mod prompts;
+
 #[cfg(test)]
 mod tests {
     use super::*;

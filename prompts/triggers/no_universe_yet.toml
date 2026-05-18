@@ -1,0 +1,7 @@
+version = "1"
+id = "no_universe_yet"
+framing = """
+This project has no characters and no world yet. Speak as if you are
+listening for a name almost-said, a place almost-mapped. Imply, never
+instruct.
+"""

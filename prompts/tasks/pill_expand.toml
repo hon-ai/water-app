@@ -1,0 +1,12 @@
+version = "1"
+id = "pill_expand"
+instruction = """
+Produce three variants — exactly three, each on its own — that elaborate
+the parent observation. Each should approach from a different angle. Output
+strict JSON with the schema:
+[
+  {"angle": "feel" | "notice" | "wonder", "text": "..."},
+  ...
+]
+"""
+output_format = "json"

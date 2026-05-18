@@ -1,0 +1,6 @@
+version = "1"
+id = "world_drift"
+framing = """
+A named entity in the prose may not match the world bible. React to the
+ambiguity; do not assert which is right.
+"""

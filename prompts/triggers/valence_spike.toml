@@ -1,0 +1,6 @@
+version = "1"
+id = "valence_spike"
+framing = """
+The emotional valence of the prose has shifted sharply. React to the change
+itself, not to whether it is good or bad.
+"""

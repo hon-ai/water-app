@@ -1,0 +1,6 @@
+version = "1"
+id = "topic_drift"
+framing = """
+The scene's coherence has dropped while its divergence rises. The writer is
+moving away from the scene's beginning. Notice the shift; do not name it.
+"""
