@@ -62,6 +62,40 @@ export const ipc = {
     invoke("pill_expand", { parentPillId: parent_pill_id }),
   pillRegenerate: (parent_pill_id: string): Promise<void> =>
     invoke("pill_regenerate", { parentPillId: parent_pill_id }),
+
+  /**
+   * Push the current scene + project snapshot into the orchestrator. The
+   * renderer should call this whenever a scene loads and after each
+   * successful body save; the orchestrator caches `bodyText` so subsequent
+   * `typing:telemetry` ticks can build prompt excerpts without re-reading
+   * from disk.
+   *
+   * `characterCount` and `worldEntryCount` are project-level and stay 0
+   * for M2 (the `no_universe_yet` trigger remains the eager-fire path
+   * until M3/M4 wire CharacterStore/WorldStore).
+   */
+  sceneState: (payload: {
+    sceneId: string;
+    povCharacterId?: string | null;
+    locationId?: string | null;
+    charactersPresent: string[];
+    wordCount: number;
+    bodyText: string;
+    characterCount: number;
+    worldEntryCount: number;
+  }): Promise<void> =>
+    invoke("scene_state", {
+      payload: {
+        scene_id: payload.sceneId,
+        pov_character_id: payload.povCharacterId ?? null,
+        location_id: payload.locationId ?? null,
+        characters_present: payload.charactersPresent,
+        word_count: payload.wordCount,
+        body_text: payload.bodyText,
+        character_count: payload.characterCount,
+        world_entry_count: payload.worldEntryCount,
+      },
+    }),
   pillPin: (
     pill: import("../pill/types").Pill,
     sceneId: string,

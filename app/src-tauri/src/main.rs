@@ -2,6 +2,7 @@
 
 mod commands;
 mod events;
+mod orchestrator_service;
 mod state;
 
 use state::AppState;
@@ -31,6 +32,7 @@ fn main() {
             commands::diagnostics::diagnostics_status,
             commands::events::bus_ping,
             commands::events::typing_telemetry,
+            commands::events::scene_state,
             commands::pill::pill_expand,
             commands::pill::pill_regenerate,
             commands::pill::pill_pin,
