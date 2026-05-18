@@ -30,6 +30,7 @@ fn main() {
             commands::provider::provider_set_key,
             commands::diagnostics::diagnostics_status,
             commands::events::bus_ping,
+            commands::events::typing_telemetry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

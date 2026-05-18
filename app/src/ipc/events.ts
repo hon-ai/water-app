@@ -11,7 +11,14 @@ export interface WaterEventPayloads {
     status: "loading" | "ready" | "error";
     detail: string | null;
   };
-  // typing:telemetry, pill:emerged, etc. added in later tasks
+  "typing:telemetry": {
+    idle_for_ms: number;
+    cursor_classification: "at_sentence_end" | "at_paragraph_end" | "mid_sentence";
+    block_id: string;
+    recent_word_delta: number;
+    structural_inflection: "new_scene" | "new_chapter" | "pov_change" | "location_change" | "none";
+  };
+  // pill:emerged, etc. added in later tasks
 }
 
 export type WaterEventName = keyof WaterEventPayloads;
