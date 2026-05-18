@@ -269,4 +269,66 @@ points at this gap.
 
 ---
 
+## 12. CommonMark emphasis tokenizer is pragmatic, not strict
+
+**What it is.** The M2.5 inline mark parser at `app/src/editor/serialize.ts::markdownToInlineNodes` recognizes `**`, `*`, and `[text](url)` with simplified left-/right-flanking rules. Three specific deviations from strict CommonMark:
+
+1. **Expanded flank-char class.** `isFlankCharOutside` includes `*`, `_`, `` ` ``, `~`, `\` (strict CommonMark would compute delimiter-run flanking differently).
+2. **Em-before-strong heuristic.** When encountering `***` and the innermost active mark is `em`, the parser prefers closing em (single `*`) first. This is coupled to T2's serializer `MARK_PRIORITY = ["link", "strong", "em"]` — if MARK_PRIORITY changes, this heuristic breaks.
+3. **Recursive mark parsing inside link text.** The spec § 6.2 says "Link span (atomic; doesn't nest)" but the parser DOES tokenize `*`/`**` inside `[...]` text. Required because T2's serializer emits marks inside link wrappers (e.g., a text run marked both link+strong serializes as `[**text**](url)`).
+
+Edge cases like `a*b*c` (intra-word emphasis without surrounding whitespace) still parse as literal asterisks rather than `<em>b</em>`.
+
+**Where it lives.** `app/src/editor/serialize.ts::tokenizeInline` and `::markdownToInlineNodes`. 50-iteration round-trip property test at `app/src/editor/serialize.test.ts`.
+
+**Why it's fragile.** Strict CommonMark spec is complex; the pragmatic subset shipped in M2.5 handles 99% of literary use. The remaining 1% are corner cases mostly seen in code/technical writing, which isn't Water's target.
+
+**What success looks like.** Writers don't encounter parse surprises in normal literary prose. The property test passes consistently. Round-trip from PM doc → markdown → PM doc → markdown produces identical second-pass output.
+
+**First-look mitigations.**
+
+1. If a writer hits an edge case, suggest wrapping with whitespace or using bold (`**`) instead.
+2. Upgrade path: replace `markdownToInlineNodes` with `markdown-it`-based tokenizer or adopt `prosemirror-markdown` library wholesale. ~80 LoC swap.
+
+---
+
+## 13. React 18 deleted-tree useEffect cleanup runs parent-first, not child-first
+
+**What it is.** In React 18, when a component subtree is unmounted as part of a deletion (e.g. parent re-renders without rendering the subtree), passive-effect cleanups inside the deleted subtree run **parent-first**, not child-first as commonly assumed. The path is `commitPassiveUnmountEffectsInsideOfDeletedTree_begin` (top-down) rather than the normal unmount path (bottom-up).
+
+**Where it lives.** Encountered during M2.5 T6 when `<SelectionToolbar>` (child of `<Editor>`) wraps the PM `EditorView`'s `dispatchTransaction` and tries to restore the original on cleanup. If `<Editor>` calls `view.destroy()` synchronously in its own effect cleanup, the toolbar's `setProps` call lands on an already-destroyed view → `view.docView` is null → crash.
+
+**Why it's fragile.** Standard React idioms ("clean up resources you own in your useEffect cleanup") implicitly assume children clean up first. Composing children that capture refs to imperative resources owned by the parent silently breaks under React 18's deleted-tree path.
+
+**Where the workarounds live.**
+
+1. `app/src/editor/Editor.tsx` defers `view.destroy()` to a `queueMicrotask` while immediately nulling `viewRef.current` and `setViewReady(false)`. Child cleanups (still synchronous) run first against a still-alive view; then the microtask destroys it.
+2. `app/src/editor/SelectionToolbar.tsx` has an `if (editorView.isDestroyed) return;` defense-in-depth guard at the start of its cleanup.
+
+**What success looks like.** Tests don't crash on Editor unmount. Both `Editor.test.tsx` and `SelectionToolbar.test.tsx` exercise the unmount path without errors.
+
+**First-look mitigations.**
+
+1. If a future refactor removes the microtask defer in Editor.tsx, the `isDestroyed` guard in SelectionToolbar.tsx catches the crash.
+2. If you add another child component that captures the PM view via wrapping (e.g., a future plugin manager or a debug overlay), copy the same guard pattern: check `view.isDestroyed` at the start of any cleanup that calls into the view.
+3. Future React versions may change the deleted-tree cleanup order; revisit assumptions when upgrading.
+
+---
+
+## 14. Link mark `toDOM` override drops user-supplied `title` attribute
+
+**What it is.** M2.5 T7 overrides the link mark's `toDOM` in `app/src/editor/schema.ts` to add a "Cmd-click to open" / "Ctrl-click to open" tooltip hint. The override unconditionally sets `title` to the hint text, so any user-supplied `title` attribute on a link mark would be silently replaced.
+
+**Where it lives.** `app/src/editor/schema.ts`'s link mark `toDOM`.
+
+**Why it's fragile.** The current LinkPopup UI doesn't accept a title input, so no user-supplied titles exist today. Benign in M2.5. Will bite if any feature adds title support (M7 settings, character voice prompts, world bible entries) without also updating the override.
+
+**What success looks like.** Either the override preserves user titles (`title: mark.attrs.title ?? hint`), OR the title input is never added without updating the override.
+
+**First-look mitigations.**
+
+1. Cheap fix: `title: mark.attrs.title ?? (isMac ? "Cmd-click to open" : "Ctrl-click to open")`. Land alongside any future feature that introduces title input.
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
