@@ -21,6 +21,13 @@ interface Props {
    * payload until T26 plumbs sub-pill records.
    */
   rootPill?: Pill;
+  /**
+   * Scene id threaded down from <PillLayer> so `<Bouquet>` can hand the
+   * real FK to `ipc.pillPin`. Without it the orchestrator's INSERT into
+   * `pinned_pill` violates the `scene_id NOT NULL REFERENCES scene(id)`
+   * constraint and the pin silently fails.
+   */
+  sceneId?: string;
 }
 
 /**
@@ -38,7 +45,7 @@ interface Props {
  * words) with " > ". The X (in the inner `<Bouquet>`) closes the whole
  * thread via `onClose`.
  */
-export function RabbitHole({ hueToken, path, onSubClick, onClose, rootPill }: Props) {
+export function RabbitHole({ hueToken, path, onSubClick, onClose, rootPill, sceneId }: Props) {
   // Siblings to collapse to glow lines: for each level except the last (the
   // currently-open one), every item whose sub_pill_id !== chosenSubId.
   const collapsedSiblings: Array<{ levelIdx: number; item: BouquetItem }> = [];
@@ -121,6 +128,12 @@ export function RabbitHole({ hueToken, path, onSubClick, onClose, rootPill }: Pr
           // Only pass the full Pill at depth 1 (current = root). At deeper
           // levels the "parent" is a sub-pill we don't have a full record for.
           pillForPinning={path.length === 1 ? rootPill : undefined}
+          sceneId={sceneId}
+          // The block_id is always the root pill's anchored block. Deeper
+          // sub-pills don't have their own block anchor in M2 — they're
+          // synthesised in the orchestrator and reuse the root's block for
+          // pin provenance. T26 will plumb real sub-pill records.
+          blockId={rootPill?.block_target_id ?? ""}
         />
       </div>
     </div>

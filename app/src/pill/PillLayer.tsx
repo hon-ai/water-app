@@ -54,9 +54,14 @@ interface PillLayerProps {
    *  triggers translucent capsules. Defaults to `0` so tests / standalone
    *  renders skip the fallback. */
   mainWidth?: number;
+  /** The current scene's id. Threaded down to <Bouquet> so pin payloads
+   *  carry the real FK (the `pinned_pill` table requires it). Optional so
+   *  standalone renders / tests can omit it; falls back to "" which the
+   *  pin path drops as a no-op. */
+  sceneId?: string;
 }
 
-export function PillLayer({ mainWidth = 0 }: PillLayerProps = {}) {
+export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) {
   const [pills, setPills] = useState<Pill[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Per-top-level-pill rabbit-hole path. An entry with one level is the
@@ -274,6 +279,7 @@ export function PillLayer({ mainWidth = 0 }: PillLayerProps = {}) {
                   onSubClick={(level, item) => onSubClick(p.pill_id, level, item)}
                   onClose={() => closeRabbitHole(p.pill_id)}
                   rootPill={p}
+                  sceneId={sceneId}
                 />
               </div>
             );

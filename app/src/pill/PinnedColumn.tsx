@@ -31,9 +31,14 @@ interface PinnedColumnProps {
    *  collapses to a 24 px tab. Defaults to `0` so tests / standalone
    *  renders skip the fallback. */
   mainWidth?: number;
+  /** Current scene id. PinnedColumn doesn't pin from this path (it only
+   *  displays existing pins + unpins), but the prop is accepted for
+   *  symmetry with <PillLayer> and to leave a hook for M3 when pinning
+   *  scoped to the visible scene becomes a per-scene operation. */
+  sceneId?: string;
 }
 
-export function PinnedColumn({ mainWidth = 0 }: PinnedColumnProps = {}) {
+export function PinnedColumn({ mainWidth = 0, sceneId: _sceneId = "" }: PinnedColumnProps = {}) {
   const [pins, setPins] = useState<Pill[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   // In tab mode the user must click the strip to reveal dots; otherwise the

@@ -82,6 +82,24 @@ mod tests {
     }
 
     #[test]
+    fn drops_this_is_good() {
+        let f = filter();
+        assert!(matches!(
+            f.evaluate("This is good prose."),
+            FilterDecision::Drop { .. }
+        ));
+    }
+
+    #[test]
+    fn drops_this_is_bad() {
+        let f = filter();
+        assert!(matches!(
+            f.evaluate("This is bad prose."),
+            FilterDecision::Drop { .. }
+        ));
+    }
+
+    #[test]
     fn passes_clean_pill() {
         let f = filter();
         assert_eq!(
