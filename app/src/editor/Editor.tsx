@@ -9,12 +9,12 @@
 // transactions (e.g. for analytics or pill insertion); production
 // EditorCanvas doesn't currently subscribe.
 
-import { useEffect, useRef } from "react";
-import { EditorState, type Transaction } from "prosemirror-state";
+import { useEffect, useRef, useState } from "react";
+import { EditorState, type Transaction, type EditorState as PMEditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { keymap } from "prosemirror-keymap";
 import { history, redo, undo } from "prosemirror-history";
-import { baseKeymap, splitBlock } from "prosemirror-commands";
+import { baseKeymap, splitBlock, toggleMark } from "prosemirror-commands";
 import { splitListItem } from "prosemirror-schema-list";
 import { schema } from "./schema";
 import { blockIdPlugin } from "./blockIdPlugin";
@@ -22,6 +22,8 @@ import { docFromMarkdown, markdownFromDoc } from "./serialize";
 import { classifyCursor } from "./cursorClassifier";
 import { useIdleDetector } from "./useIdleDetector";
 import { emitTypingTelemetry } from "./typingTelemetry";
+import { SelectionToolbar } from "./SelectionToolbar";
+import { LinkPopup } from "./LinkPopup";
 
 type StructuralInflection =
   | "new_scene"
@@ -37,9 +39,24 @@ interface Props {
   placeholder?: string;
 }
 
+type LinkPopupRequest = {
+  anchor: { left: number; top: number };
+  initialUrl: string;
+  editing: boolean;
+};
+
 export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // Popup request from Mod-K keymap or toolbar's Link icon click. Null
+  // closes the popup; setting an object opens it.
+  const [linkPopupReq, setLinkPopupRequest] = useState<LinkPopupRequest | null>(
+    null,
+  );
+  // Force a re-render after the view mounts so the conditional
+  // <SelectionToolbar editorView={...}> below can render (it needs a
+  // non-null view reference).
+  const [viewReady, setViewReady] = useState(false);
   // Track the latest props in refs so the persistent view (mounted once)
   // always reads fresh handlers without remounting on every render.
   const onChangeRef = useRef(onChange);
@@ -128,6 +145,104 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
   const idle = useIdleDetector(3000, () => emitFromCurrentState(3000));
   onActivityRef.current = idle.onActivity;
 
+  // ---- Link popup helpers ----------------------------------------------
+  // These close over `viewRef` (stable) and `setLinkPopupRequest` (stable
+  // React setter), so they're safe to reference from the persistent keymap
+  // closure created at mount time.
+
+  function computeAnchorForSelection(): { left: number; top: number } {
+    const view = viewRef.current;
+    if (!view) return { left: 0, top: 0 };
+    try {
+      const { from, to } = view.state.selection;
+      const fromCoords = view.coordsAtPos(from);
+      const toCoords = view.coordsAtPos(to);
+      const left = (fromCoords.left + toCoords.left) / 2;
+      const top = Math.max(fromCoords.bottom, toCoords.bottom) + 8;
+      return { left, top };
+    } catch {
+      return { left: 0, top: 0 };
+    }
+  }
+
+  function getExistingLinkHref(state: PMEditorState): string {
+    const $pos = state.doc.resolve(state.selection.from);
+    const link = $pos.marks().find((m) => m.type.name === "link");
+    const href = link?.attrs["href"];
+    return typeof href === "string" ? href : "";
+  }
+
+  function hasLinkUnderCursor(state: PMEditorState): boolean {
+    const $pos = state.doc.resolve(state.selection.from);
+    return $pos.marks().some((m) => m.type.name === "link");
+  }
+
+  function expandToLinkMark(
+    state: PMEditorState,
+  ): { from: number; to: number } | null {
+    const $pos = state.doc.resolve(state.selection.from);
+    const linkMark = $pos.marks().find((m) => m.type.name === "link");
+    if (!linkMark) return null;
+    let from = state.selection.from;
+    let to = state.selection.from;
+    const doc = state.doc;
+    while (from > 0) {
+      const $p = doc.resolve(from - 1);
+      if (
+        !$p
+          .marks()
+          .some(
+            (m) =>
+              m.type.name === "link" &&
+              m.attrs["href"] === linkMark.attrs["href"],
+          )
+      )
+        break;
+      from -= 1;
+    }
+    while (to < doc.content.size) {
+      const $p = doc.resolve(to + 1);
+      if (
+        !$p
+          .marks()
+          .some(
+            (m) =>
+              m.type.name === "link" &&
+              m.attrs["href"] === linkMark.attrs["href"],
+          )
+      )
+        break;
+      to += 1;
+    }
+    return { from, to };
+  }
+
+  const handleLinkApply = (url: string) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const { from, to } = view.state.selection;
+    const tr = view.state.tr.addMark(
+      from,
+      to,
+      schema.marks.link!.create({ href: url }),
+    );
+    view.dispatch(tr);
+  };
+
+  const handleLinkRemove = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const { from, to } = view.state.selection;
+    const range = from === to ? expandToLinkMark(view.state) : { from, to };
+    if (!range) return;
+    const tr = view.state.tr.removeMark(
+      range.from,
+      range.to,
+      schema.marks.link!,
+    );
+    view.dispatch(tr);
+  };
+
   // Mount once: create the PM view with the initial value.
   // We intentionally exclude `value` from deps; subsequent value changes
   // are handled by the sync effect below.
@@ -145,6 +260,22 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
           "Mod-z": undo,
           "Mod-y": redo,
           "Mod-Shift-z": redo,
+          "Mod-b": toggleMark(schema.marks.strong!),
+          "Mod-i": toggleMark(schema.marks.em!),
+          "Mod-k": (state) => {
+            // Mod-K opens the LinkPopup. If selection is collapsed and
+            // inside a link, open in edit mode; otherwise require a
+            // non-empty selection to add a link.
+            if (state.selection.empty) {
+              if (!hasLinkUnderCursor(state)) return false;
+            }
+            setLinkPopupRequest({
+              anchor: computeAnchorForSelection(),
+              initialUrl: getExistingLinkHref(state),
+              editing: !state.selection.empty || hasLinkUnderCursor(state),
+            });
+            return true;
+          },
           Enter: (s, dispatch) =>
             splitListItem(schema.nodes.list_item!)(s, dispatch) ||
             splitBlock(s, dispatch),
@@ -196,6 +327,7 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
       },
     });
     viewRef.current = view;
+    setViewReady(true);
     // Seed the rolling-history baseline so the first emit's delta is 0
     // (no words added in the previous 10 s) instead of `totalWords`.
     wordHistoryRef.current = [
@@ -207,8 +339,18 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     ];
 
     return () => {
-      view.destroy();
+      // Defer view.destroy() to a microtask so child components
+      // (SelectionToolbar) can run their useEffect cleanups against a
+      // still-alive view. React 18 runs passive-effect cleanups in a
+      // deleted subtree parent-first; without this defer, the toolbar's
+      // restoreDispatch cleanup would call setProps on a destroyed view
+      // and crash. Tests previously caught this as a docView-null error.
+      const dyingView = view;
       viewRef.current = null;
+      setViewReady(false);
+      queueMicrotask(() => {
+        dyingView.destroy();
+      });
     };
   }, []);
 
@@ -247,18 +389,45 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
   }, [value]);
 
   return (
-    <div
-      ref={hostRef}
-      className="water-editor"
-      data-placeholder={placeholder}
-      style={{
-        outline: "none",
-        minHeight: 480,
-        color: "var(--water-fg-default)",
-        fontFamily: "var(--water-font-sans)",
-        fontSize: "var(--water-fs-body)",
-        lineHeight: "var(--water-lh-body)",
-      }}
-    />
+    <>
+      <div
+        ref={hostRef}
+        className="water-editor"
+        data-placeholder={placeholder}
+        style={{
+          outline: "none",
+          minHeight: 480,
+          color: "var(--water-fg-default)",
+          fontFamily: "var(--water-font-sans)",
+          fontSize: "var(--water-fs-body)",
+          lineHeight: "var(--water-lh-body)",
+        }}
+      />
+      {viewReady && viewRef.current && (
+        <SelectionToolbar
+          editorView={viewRef.current}
+          onLinkClick={(anchor) => {
+            const view = viewRef.current;
+            if (!view) return;
+            setLinkPopupRequest({
+              anchor,
+              initialUrl: getExistingLinkHref(view.state),
+              editing:
+                hasLinkUnderCursor(view.state) || !view.state.selection.empty,
+            });
+          }}
+        />
+      )}
+      {linkPopupReq && (
+        <LinkPopup
+          anchor={linkPopupReq.anchor}
+          initialUrl={linkPopupReq.initialUrl}
+          editing={linkPopupReq.editing}
+          onApply={handleLinkApply}
+          onRemove={handleLinkRemove}
+          onClose={() => setLinkPopupRequest(null)}
+        />
+      )}
+    </>
   );
 }
