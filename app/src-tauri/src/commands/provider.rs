@@ -48,7 +48,7 @@ pub async fn provider_set_key(
 fn build_provider(provider_id: &str) -> Result<Arc<dyn LlmProvider>, String> {
     let secrets = Secrets::load();
     match provider_id {
-        "canned" => Ok(Arc::new(CannedProvider)),
+        "canned" => Ok(Arc::new(CannedProvider::default())),
         "anthropic" => {
             let key = secrets.get("anthropic").map_err(|e| e.to_string())?;
             Ok(Arc::new(AnthropicProvider::new(key)))

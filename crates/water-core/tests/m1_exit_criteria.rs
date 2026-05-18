@@ -107,7 +107,7 @@ fn exit_rebuild_from_truth_when_db_deleted() {
 
 #[tokio::test]
 async fn exit_provider_test_canned_round_trip_returns_three_variants() {
-    let provider = Arc::new(CannedProvider);
+    let provider = Arc::new(CannedProvider::default());
     let router = LlmRouter::new(vec![provider]);
     let req = BouquetRequest {
         system: "tone".into(),
