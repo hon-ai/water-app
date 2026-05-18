@@ -31,6 +31,10 @@ fn main() {
             commands::diagnostics::diagnostics_status,
             commands::events::bus_ping,
             commands::events::typing_telemetry,
+            commands::pill::pill_expand,
+            commands::pill::pill_regenerate,
+            commands::pill::pill_pin,
+            commands::pill::pill_dismiss,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

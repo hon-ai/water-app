@@ -57,4 +57,13 @@ export const ipc = {
 
   diagnosticsStatus: (): Promise<DiagnosticsStatus> =>
     invoke("diagnostics_status"),
+
+  pillExpand: (parent_pill_id: string): Promise<void> =>
+    invoke("pill_expand", { parentPillId: parent_pill_id }),
+  pillRegenerate: (parent_pill_id: string): Promise<void> =>
+    invoke("pill_regenerate", { parentPillId: parent_pill_id }),
+  pillPin: (pill_id: string): Promise<void> =>
+    invoke("pill_pin", { pillId: pill_id }),
+  pillDismiss: (pill_id: string): Promise<void> =>
+    invoke("pill_dismiss", { pillId: pill_id }),
 };
