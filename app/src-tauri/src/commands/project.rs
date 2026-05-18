@@ -1,14 +1,15 @@
+use crate::events::{emit, SidecarStatusPayload};
 use crate::state::{AppState, OpenProject};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 use water_core::{
     chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, ActiveScene, Db,
-    ManuscriptStore, ProjectStore, SceneWriteLocks, Sidecar, SidecarSpec, SidecarSupervisor,
-    SnapshotScheduler,
+    ManuscriptStore, ProjectStore, SceneWriteLocks, Sidecar, SidecarSpec, SidecarStatus,
+    SidecarSupervisor, SnapshotScheduler,
 };
 
 #[derive(Serialize)]
@@ -249,7 +250,9 @@ async fn boot_sidecar_for_project(
             return (None, None);
         }
     };
-    let (sup, mut rx) = SidecarSupervisor::spawn(sc.clone());
+    // 5s health-poll cadence matches the previous behavior; backoff inside
+    // the supervisor decouples retry pacing from this interval on failures.
+    let (sup, mut rx) = SidecarSupervisor::start(sc.clone(), Duration::from_secs(5));
     let app_clone = app.clone();
     tokio::spawn(async move {
         loop {
@@ -257,9 +260,19 @@ async fn boot_sidecar_for_project(
                 break;
             }
             let evt = rx.borrow().clone();
-            // Best-effort emit; if no listener, the renderer just polls
-            // diagnostics_status instead.
-            let _ = app_clone.emit("sidecar:status", &evt);
+            // Typed emit through the event bus. Mirrors
+            // `WaterEventPayloads["sidecar:status"]` in `events.ts`.
+            let payload = SidecarStatusPayload {
+                status: match evt.status {
+                    SidecarStatus::Loading => "loading".to_string(),
+                    SidecarStatus::Ready => "ready".to_string(),
+                    SidecarStatus::Error => "error".to_string(),
+                },
+                detail: evt.detail,
+            };
+            // Best-effort: errors here are usually "no window yet" during
+            // early boot — the renderer can still pull diagnostics_status.
+            let _ = emit(&app_clone, "sidecar:status", payload);
         }
     });
     (Some(sc), Some(sup))

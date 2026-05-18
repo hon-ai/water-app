@@ -162,6 +162,10 @@ final event.
 2. The diagnostics page surfaces the error detail (T10 added
    `last_status_detail`).
 
+**Resolved in M2 Task 3:** Replaced 3-strike-break with respawn-with-backoff
+(1s, 2s, 5s, 10s, 30s, 30s, ...; reset on success). Supervisor never gives
+up. `sidecar:status` Tauri events fire on every state change.
+
 ---
 
 ## 7. `SceneStore::rename` / `write_body` whole-file write race

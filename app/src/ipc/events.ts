@@ -7,7 +7,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
  */
 export interface WaterEventPayloads {
   "bus:ping": { tick: number };
-  // sidecar:status added in Task 3
+  "sidecar:status": {
+    status: "loading" | "ready" | "error";
+    detail: string | null;
+  };
   // typing:telemetry, pill:emerged, etc. added in later tasks
 }
 
