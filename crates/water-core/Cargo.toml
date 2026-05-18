@@ -28,6 +28,7 @@ zstd.workspace = true
 sha2 = "0.10"
 async-trait = "0.1"
 dirs = "5"
+dashmap = "6"
 
 [dev-dependencies]
 pretty_assertions.workspace = true

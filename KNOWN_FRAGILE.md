@@ -202,6 +202,15 @@ writes interleave their read/write windows.
    `rename` and `write_body` both acquire before touching disk. Drop the
    whole-file rewrite in favor of frontmatter-only rewrites where possible.
 
+**Resolved in M2 Task 2 (commit pending):** Per-scene `SceneWriteLocks` registry on `OpenProject`. Both `rename` and `write_body` acquire the lock before disk I/O. Concurrent 50-iteration property test in `scene.rs::tests` proves serialization.
+
+**Scope note:** `SceneStore::move_to` follows the same read-modify-write
+pattern and is NOT yet gated. Drag-reorder + body autosave concurrent on
+the same scene remains a theoretical race (low-likelihood in practice
+because move_to is user-initiated, autosave is timer-initiated, and the
+overlap window is small). A FIXME in `crates/water-core/src/scene.rs`
+points at this gap.
+
 ---
 
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*

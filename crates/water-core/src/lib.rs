@@ -36,6 +36,9 @@ pub use block::Block;
 pub mod scene;
 pub use scene::{NewScene, SceneRow, SceneStore};
 
+pub mod scene_locks;
+pub use scene_locks::SceneWriteLocks;
+
 pub mod chapters;
 pub use chapters::{Chapter, ChaptersFile};
 

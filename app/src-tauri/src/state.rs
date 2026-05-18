@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use water_core::{llm::LlmRouter, Db, Sidecar, SidecarSupervisor, SnapshotScheduler};
+use water_core::{
+    llm::LlmRouter, Db, SceneWriteLocks, Sidecar, SidecarSupervisor, SnapshotScheduler,
+};
 
 pub struct OpenProject {
     pub root: PathBuf,
@@ -25,6 +27,10 @@ pub struct OpenProject {
     /// Watches the sidecar's /health and emits status events. `None` whenever
     /// `sidecar` is `None`.
     pub supervisor: Option<SidecarSupervisor>,
+    /// Per-scene write locks shared by all command handlers that touch
+    /// `SceneStore::rename` or `SceneStore::write_body`. Prevents the
+    /// whole-file write race documented in KNOWN_FRAGILE #7.
+    pub scene_write_locks: SceneWriteLocks,
 }
 
 // `tokio::sync::Mutex` (not `RwLock`) because `Db: Send + !Sync`
