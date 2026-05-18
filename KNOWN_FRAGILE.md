@@ -253,4 +253,20 @@ points at this gap.
 
 ---
 
+## 11. Single-shot LLM paths bypass rate-limit + circuit-breaker
+
+**What it is.** `LlmRouter::generate_raw_with_default` and `generate_structured_with_default` (added in T26 for the M2 orchestrator) look up the primary provider via `Arc::clone` and call its trait method directly. They do NOT route through `ProviderState`'s rate-limiter (`bucket.try_take()`) or circuit-breaker (`breaker.allow()`), unlike `generate_bouquet` which does.
+
+**Where it lives.** `crates/water-core/src/llm/router.rs::generate_raw_with_default` and `generate_structured_with_default` (around lines 178-222).
+
+**Why it's fragile.** The orchestrator (`app/src-tauri/src/orchestrator_service.rs`) drives one LLM call per telemetry tick that passes the trigger gate. On a chatty trigger + a typing flurry, the primary provider gets called many times per minute with no rate limiting, and a flaky primary won't trip the breaker.
+
+**What success looks like.** Both single-shot paths route through the same `ProviderState`-based dispatch `generate_bouquet` uses. Likely fold them into one core method with two adapters (n=1 plain prose, n=3 structured), or wrap them in the rate-limit/breaker pipeline.
+
+**First-look mitigations.** If a user reports rate-limit errors from their cloud provider during heavy typing, suspect this. The M2 dispatch path is less protected than M1's `provider_test`. Manual workaround: configure a different primary provider.
+
+**Surfaced by the M2 milestone review (Task 30). Targeted for `m2.0.1` patch or M3 follow-up.**
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
