@@ -6,6 +6,28 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
 }));
 
+// Mock the ProseMirror editor with a plain textarea so we can drive
+// content changes with fireEvent.change. EditorCanvas tests own only
+// the autosave + rename wiring; the real editor is covered by
+// app/src/editor/Editor.test.tsx.
+vi.mock("../editor/Editor", () => ({
+  Editor: (props: {
+    value: string;
+    onChange: (md: string) => void;
+    placeholder?: string;
+  }) => {
+    return (
+      <textarea
+        data-testid="editor-body"
+        aria-label="Scene body"
+        placeholder={props.placeholder}
+        value={props.value}
+        onChange={(e) => props.onChange(e.currentTarget.value)}
+      />
+    );
+  },
+}));
+
 import { EditorCanvas } from "./EditorCanvas";
 
 describe("EditorCanvas", () => {
@@ -42,7 +64,7 @@ describe("EditorCanvas", () => {
 
     render(<EditorCanvas sceneId="01H8X4" onRenamed={() => {}} />);
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("scene_read", { id: "01H8X4" }));
-    const body = screen.getByPlaceholderText(/begin where/i);
+    const body = screen.getByTestId("editor-body");
     fireEvent.change(body, { target: { value: "Hello world" } });
     await act(async () => {
       vi.advanceTimersByTime(2100);
@@ -90,7 +112,7 @@ describe("EditorCanvas", () => {
 
     const { unmount } = render(<EditorCanvas sceneId="01H8X4" onRenamed={() => {}} />);
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("scene_read", { id: "01H8X4" }));
-    const body = screen.getByPlaceholderText(/begin where/i);
+    const body = screen.getByTestId("editor-body");
     fireEvent.change(body, { target: { value: "Mid-debounce text" } });
 
     // Unmount BEFORE the 2s debounce has fired.
