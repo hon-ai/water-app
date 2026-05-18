@@ -77,4 +77,32 @@ describe("EditorCanvas", () => {
     });
     expect(onRenamed).toHaveBeenCalled();
   });
+
+  it("flushes a pending body write to disk when the component unmounts mid-debounce", async () => {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "scene_read") return "";
+      if (cmd === "scene_list") return [{ id: "01H8X4", name: "Scene A", ordering: 0, word_count: 0 }];
+      if (cmd === "scene_write_body") {
+        return { id: "01H8X4", name: "Scene A", ordering: 0, word_count: 2 };
+      }
+      return null;
+    });
+
+    const { unmount } = render(<EditorCanvas sceneId="01H8X4" onRenamed={() => {}} />);
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("scene_read", { id: "01H8X4" }));
+    const body = screen.getByPlaceholderText(/begin where/i);
+    fireEvent.change(body, { target: { value: "Mid-debounce text" } });
+
+    // Unmount BEFORE the 2s debounce has fired.
+    unmount();
+
+    // Cleanup should have fired the write synchronously (fire-and-forget).
+    // It happens during unmount, so we don't need to advance timers.
+    await waitFor(() => {
+      const writeCalls = invokeMock.mock.calls.filter((c) => c[0] === "scene_write_body");
+      expect(writeCalls.length).toBeGreaterThanOrEqual(1);
+      const last = writeCalls[writeCalls.length - 1];
+      expect(last?.[1]).toMatchObject({ id: "01H8X4", body: "Mid-debounce text" });
+    });
+  });
 });

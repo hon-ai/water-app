@@ -14,6 +14,35 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const bodyDebounce = useRef<number | undefined>(undefined);
 
+  // Stable ref so the unmount-flush effect reads the latest editor state
+  // without re-running (and re-flushing) on every keystroke.
+  const editorStateRef = useRef<{
+    title: string;
+    titleAtLastSave: string;
+    body: string;
+    bodyDirty: boolean;
+  }>({ title, titleAtLastSave, body, bodyDirty });
+  useEffect(() => {
+    editorStateRef.current = { title, titleAtLastSave, body, bodyDirty };
+  });
+
+  // Flush pending body + title writes when the scene changes or the
+  // component unmounts. Fire-and-forget; we can't await in cleanup.
+  // Deps are [sceneId] so the cleanup only fires on scene-switch or
+  // true unmount, not on every keystroke.
+  useEffect(() => {
+    return () => {
+      const s = editorStateRef.current;
+      if (s.bodyDirty) {
+        ipc.sceneWriteBody(sceneId, s.body).catch(() => {});
+      }
+      const trimmed = s.title.trim();
+      if (trimmed.length > 0 && trimmed !== s.titleAtLastSave) {
+        ipc.sceneRename(sceneId, trimmed).catch(() => {});
+      }
+    };
+  }, [sceneId]);
+
   // Load title (via list lookup) and body on mount or scene switch.
   useEffect(() => {
     setBodyDirty(false);
