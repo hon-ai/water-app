@@ -164,4 +164,44 @@ final event.
 
 ---
 
+## 7. `SceneStore::rename` / `write_body` whole-file write race
+
+**What it is.** Both `SceneStore::rename` and `SceneStore::write_body` perform
+a read → mutate frontmatter / body → write the whole scene file under no
+per-file lock. If a user blurs the title input while the body autosave timer
+is mid-flush — both operations happening within the same ~50 ms window —
+whichever finishes second clobbers the other's frontmatter mutation, because
+each method reads, mutates a different field, and writes back the entire
+serialized `SceneFile`.
+
+**Where it lives.**
+
+- `crates/water-core/src/scene.rs` — `SceneStore::rename` (~line 167) and
+  `SceneStore::write_body` (the older method, same file).
+- M1.5 spec § 5 R4 explicitly accepts this as M1-acceptable.
+
+**Why it's fragile.** No per-scene mutex. The race window is small in
+practice (autosave debounce is 2 s; title blur is event-driven) but it
+exists. Last-writer-wins on the WHOLE file means the loser's mutation is
+silently dropped, not merged.
+
+**What success looks like.** The user's title edit and body edit both
+persist after a blur-then-keep-typing flow. Currently true unless both
+writes interleave their read/write windows.
+
+**First-look mitigations.**
+
+1. If a "scene title is wrong" or "body lost a sentence" bug surfaces, check
+   `manuscript/scenes/<ulid>.md` against `project.db`'s scene row directly.
+   Out-of-sync frontmatter is the smoking gun.
+2. M1.5's `EditorCanvas` mitigates the most common race window by flushing
+   the title rename on unmount and the body write on the same unmount (see
+   `app/src/chrome/EditorCanvas.tsx` cleanup functions). This narrows the
+   user-visible race surface but does not eliminate it.
+3. M2 plan: introduce a `SceneWriteLock` (per-scene `tokio::Mutex<()>`) that
+   `rename` and `write_body` both acquire before touching disk. Drop the
+   whole-file rewrite in favor of frontmatter-only rewrites where possible.
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
