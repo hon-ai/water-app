@@ -47,6 +47,8 @@ export const ipc = {
   sceneWriteBody: (id: string, body: string): Promise<SceneInfo> =>
     invoke("scene_write_body", { id, body }),
   sceneList: (): Promise<SceneInfo[]> => invoke("scene_list"),
+  sceneRename: (id: string, name: string): Promise<SceneInfo> =>
+    invoke("scene_rename", { id, name }),
 
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),
