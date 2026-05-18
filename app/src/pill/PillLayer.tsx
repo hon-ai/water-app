@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ipc } from "../ipc/commands";
 import { onWaterEvent } from "../ipc/events";
-import { Bouquet, type BouquetItem } from "./Bouquet";
+import type { BouquetItem } from "./Bouquet";
 import { HoverDim } from "./hover-dim";
 import { PillCapsule } from "./PillCapsule";
+import { RabbitHole, type RabbitHoleLevel } from "./RabbitHole";
 import type { Pill } from "./types";
 
 const MAX_ON_SCREEN = 2;
@@ -26,7 +27,18 @@ const MAX_ON_SCREEN = 2;
  *
  * Clicking a capsule invokes `ipc.pillExpand`; the orchestrator (M2 stub /
  * Phase F real wiring) responds with a `bouquet:ready` event, after which
- * the capsule is swapped for a `<Bouquet>` with 3 sub-capsules + controls.
+ * the capsule is swapped for a `<RabbitHole>` (rooted at depth 1).
+ *
+ * Clicking a sub-capsule inside the rabbit hole drills deeper: the chosen
+ * sub's id is recorded on its level, `ipc.pillExpand(sub_pill_id)` fires,
+ * and when the next `bouquet:ready` arrives we append a new level.
+ *
+ * The reducer for `bouquet:ready` distinguishes two cases:
+ *   1. `parent_pill_id` matches a known top-level pill -> level-0 expansion
+ *      (creates / resets a single-level rabbit hole for that pill).
+ *   2. Otherwise we look for a sub-pill in every open rabbit hole whose
+ *      `sub_pill_id === parent_pill_id`; the matching rabbit hole grows by
+ *      one level.
  *
  * The async-subscribe-with-`cancelled`-flag pattern (T4) keeps cleanup
  * correct even when the component unmounts before any `onWaterEvent`
@@ -35,8 +47,16 @@ const MAX_ON_SCREEN = 2;
 export function PillLayer() {
   const [pills, setPills] = useState<Pill[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [bouquets, setBouquets] = useState<Record<string, BouquetItem[]>>({});
+  // Per-top-level-pill rabbit-hole path. An entry with one level is the
+  // initial single-bouquet expansion (T21); deeper entries are drill-downs.
+  const [rabbitHoles, setRabbitHoles] = useState<
+    Record<string, RabbitHoleLevel[]>
+  >({});
   const layerRef = useRef<HTMLDivElement>(null);
+  // Mirror of `pills` for the `bouquet:ready` reducer to read without stale
+  // closures (the effect runs once, but pills mutate over the session).
+  const pillsRef = useRef<Pill[]>([]);
+  pillsRef.current = pills;
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +80,7 @@ export function PillLayer() {
 
       const u2 = await onWaterEvent("pill:dismissed", (e) => {
         setPills((prev) => prev.filter((x) => x.pill_id !== e.pill_id));
-        setBouquets((prev) => {
+        setRabbitHoles((prev) => {
           if (!(e.pill_id in prev)) return prev;
           const next = { ...prev };
           delete next[e.pill_id];
@@ -75,7 +95,7 @@ export function PillLayer() {
 
       const u3 = await onWaterEvent("pill:evicted", (e) => {
         setPills((prev) => prev.filter((x) => x.pill_id !== e.pill_id));
-        setBouquets((prev) => {
+        setRabbitHoles((prev) => {
           if (!(e.pill_id in prev)) return prev;
           const next = { ...prev };
           delete next[e.pill_id];
@@ -89,7 +109,60 @@ export function PillLayer() {
       unsubs.push(u3);
 
       const u4 = await onWaterEvent("bouquet:ready", (e) => {
-        setBouquets((prev) => ({ ...prev, [e.parent_pill_id]: e.items }));
+        setRabbitHoles((prev) => {
+          const topLevelMatch = pillsRef.current.find(
+            (p) => p.pill_id === e.parent_pill_id,
+          );
+          if (topLevelMatch) {
+            // Level-0 expansion. (Re)seed a single-level rabbit hole.
+            return {
+              ...prev,
+              [topLevelMatch.pill_id]: [
+                {
+                  parentId: topLevelMatch.pill_id,
+                  parentText: topLevelMatch.text,
+                  items: e.items,
+                  chosenSubId: null,
+                },
+              ],
+            };
+          }
+          // Deeper expansion. Find the rabbit hole + level holding the
+          // sub-pill whose id matches parent_pill_id.
+          for (const [rootId, path] of Object.entries(prev)) {
+            for (let i = 0; i < path.length; i++) {
+              const lvl = path[i];
+              if (!lvl) continue;
+              const matchingSub = lvl.items.find(
+                (it) => it.sub_pill_id === e.parent_pill_id,
+              );
+              if (matchingSub) {
+                // Trim anything below this level (re-drilling overwrites),
+                // mark the chosen sub on the current level, then append.
+                const trimmed = path.slice(0, i + 1).map((l, idx) =>
+                  idx === i
+                    ? { ...l, chosenSubId: matchingSub.sub_pill_id }
+                    : l,
+                );
+                return {
+                  ...prev,
+                  [rootId]: [
+                    ...trimmed,
+                    {
+                      parentId: matchingSub.sub_pill_id,
+                      parentText: matchingSub.text,
+                      items: e.items,
+                      chosenSubId: null,
+                    },
+                  ],
+                };
+              }
+            }
+          }
+          // No match - silently drop. (Could happen if the parent was
+          // dismissed before the orchestrator responded.)
+          return prev;
+        });
       });
       if (cancelled) {
         u4();
@@ -124,13 +197,27 @@ export function PillLayer() {
     }
   }
 
-  const closeBouquet = (parentId: string) => {
-    setBouquets((prev) => {
-      if (!(parentId in prev)) return prev;
+  const closeRabbitHole = (rootId: string) => {
+    setRabbitHoles((prev) => {
+      if (!(rootId in prev)) return prev;
       const next = { ...prev };
-      delete next[parentId];
+      delete next[rootId];
       return next;
     });
+  };
+
+  const onSubClick = (rootId: string, level: number, item: BouquetItem) => {
+    setRabbitHoles((prev) => {
+      const path = prev[rootId];
+      if (!path) return prev;
+      const target = path[level];
+      if (!target) return prev;
+      const nextPath = path.map((l, idx) =>
+        idx === level ? { ...l, chosenSubId: item.sub_pill_id } : l,
+      );
+      return { ...prev, [rootId]: nextPath };
+    });
+    void ipc.pillExpand(item.sub_pill_id);
   };
 
   return (
@@ -156,15 +243,15 @@ export function PillLayer() {
         }}
       >
         {pills.map((p) => {
-          const bouquetItems = bouquets[p.pill_id];
-          if (bouquetItems) {
+          const path = rabbitHoles[p.pill_id];
+          if (path && path.length > 0) {
             return (
               <div key={p.pill_id} style={{ pointerEvents: "auto" }}>
-                <Bouquet
-                  parentId={p.pill_id}
+                <RabbitHole
                   hueToken={p.hue_token}
-                  items={bouquetItems}
-                  onClose={() => closeBouquet(p.pill_id)}
+                  path={path}
+                  onSubClick={(level, item) => onSubClick(p.pill_id, level, item)}
+                  onClose={() => closeRabbitHole(p.pill_id)}
                 />
               </div>
             );
