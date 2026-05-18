@@ -22,6 +22,15 @@ async function maybeMountBakeoff(): Promise<boolean> {
     );
     return true;
   }
+  if (which === "lexical") {
+    const mod = await import("./editor-bakeoff-lexical/index");
+    createRoot(rootEl!).render(
+      <StrictMode>
+        <mod.default />
+      </StrictMode>,
+    );
+    return true;
+  }
   return false;
 }
 
