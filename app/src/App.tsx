@@ -1,60 +1,181 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ThemeProvider } from "./theme/ThemeProvider";
-import { useTheme } from "./theme/useTheme";
-import { SceneList } from "./pages/SceneList";
-import { Diagnostics } from "./pages/Diagnostics";
-import { ipc } from "./ipc/commands";
+import { IconRail, type NavTarget } from "./chrome/IconRail";
+import { ScenesPanel } from "./chrome/ScenesPanel";
+import { ProjectMenu } from "./chrome/ProjectMenu";
+import { EditorCanvas } from "./chrome/EditorCanvas";
+import { EmptyState } from "./chrome/EmptyState";
+import { CreateProjectSheet } from "./sheets/CreateProjectSheet";
+import { SettingsSheet } from "./sheets/SettingsSheet";
+import { ipc, type SceneInfo } from "./ipc/commands";
+import { dialog } from "./ipc/dialog";
 
-type Tab = "scenes" | "diagnostics";
-
-function ThemeToggle() {
-  const { theme, effective, setTheme } = useTheme();
-  return (
-    <span style={{ fontSize: "var(--water-fs-meta)", color: "var(--water-fg-faint)" }}>
-      {theme} ({effective}){" "}
-      <button onClick={() => setTheme("light")}>L</button>
-      <button onClick={() => setTheme("dark")}>D</button>
-      <button onClick={() => setTheme("auto")}>A</button>
-    </span>
-  );
-}
-
-function ProjectBar({ onOpened }: { onOpened: () => void }) {
-  const [name, setName] = useState("Test Project");
-  const [parent, setParent] = useState(".");
-  const [root, setRoot] = useState("");
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 16px",
-                  background: "var(--water-bg-canvas)" }}>
-      <input value={parent} onChange={(e) => setParent(e.target.value)} placeholder="parent dir" />
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="project name" />
-      <button onClick={async () => { await ipc.createProject(parent, name); onOpened(); }}>
-        create
-      </button>
-      <input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="project root to open" />
-      <button onClick={async () => { await ipc.openProject(root); onOpened(); }}>open</button>
-      <button onClick={async () => { await ipc.closeProject(); onOpened(); }}>close</button>
-    </div>
-  );
-}
+const COLLAPSED_KEY = "water:scenes-collapsed";
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("scenes");
-  const [reloadKey, setReloadKey] = useState(0);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [projectRoot, setProjectRoot] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>("");
+  const [activeNav, setActiveNav] = useState<NavTarget>("scenes");
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [scenesCollapsed, setScenesCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem(COLLAPSED_KEY) === "true";
+  });
+  const [scenesReloadKey, setScenesReloadKey] = useState(0);
+
+  // Poll project-open status; cheap, lets the shell react to externally-triggered
+  // open/close (the diagnostics_status command returns has_open_project + path).
+  const refreshStatus = useCallback(async () => {
+    try {
+      const s = await ipc.diagnosticsStatus();
+      setProjectOpen(s.has_open_project);
+      setProjectRoot(s.project_root);
+      if (!s.has_open_project) {
+        setActiveSceneId(null);
+      }
+    } catch {
+      /* swallow */
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshStatus();
+    const t = window.setInterval(() => refreshStatus(), 3000);
+    return () => window.clearInterval(t);
+  }, [refreshStatus]);
+
+  // Derive a friendly project name from the path (last segment minus .water suffix).
+  useEffect(() => {
+    if (!projectRoot) {
+      setProjectName("");
+      return;
+    }
+    const slash = projectRoot.lastIndexOf("\\") >= 0 ? "\\" : "/";
+    const last = projectRoot.split(slash).filter(Boolean).pop() ?? "";
+    setProjectName(last.replace(/\.water$/, ""));
+  }, [projectRoot]);
+
+  const toggleCollapsed = useCallback(() => {
+    setScenesCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(COLLAPSED_KEY, next ? "true" : "false");
+      return next;
+    });
+  }, []);
+
+  const handleCreated = useCallback(async () => {
+    await refreshStatus();
+    setScenesReloadKey((k) => k + 1);
+  }, [refreshStatus]);
+
+  const handleOpenExisting = useCallback(async () => {
+    const root = await dialog.pickFolder();
+    if (!root) return;
+    try {
+      await ipc.openProject(root);
+      await refreshStatus();
+      setScenesReloadKey((k) => k + 1);
+    } catch {
+      /* swallow */
+    }
+  }, [refreshStatus]);
+
+  const handleCloseProject = useCallback(async () => {
+    try {
+      await ipc.closeProject();
+      setActiveSceneId(null);
+      await refreshStatus();
+    } catch {
+      /* swallow */
+    }
+  }, [refreshStatus]);
+
+  const handleSceneCreated = useCallback((info: SceneInfo) => {
+    setActiveSceneId(info.id);
+  }, []);
+
+  const handleSceneRenamed = useCallback(() => {
+    setScenesReloadKey((k) => k + 1);
+  }, []);
 
   return (
     <ThemeProvider>
-      <header style={{ display: "flex", justifyContent: "space-between",
-                       alignItems: "center", padding: "8px 16px" }}>
-        <strong>Water</strong>
-        <nav style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setTab("scenes")}>scenes</button>
-          <button onClick={() => setTab("diagnostics")}>diagnostics</button>
-        </nav>
-        <ThemeToggle />
-      </header>
-      <ProjectBar onOpened={() => setReloadKey((k) => k + 1)} />
-      {tab === "scenes" ? <SceneList key={reloadKey} /> : <Diagnostics />}
+      <div
+        className="water-shell"
+        style={{
+          display: "flex",
+          height: "100vh",
+          width: "100vw",
+          background: "var(--water-bg-paper)",
+          color: "var(--water-fg-default)",
+          fontFamily: "var(--water-font-sans)",
+          overflow: "hidden",
+        }}
+      >
+        <IconRail
+          active={activeNav}
+          onSelect={setActiveNav}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        {!projectOpen ? (
+          <EmptyState
+            onCreate={() => setCreateOpen(true)}
+            onOpen={handleOpenExisting}
+          />
+        ) : (
+          <>
+            <div style={{ position: "relative", display: "flex" }}>
+              <ScenesPanel
+                key={scenesReloadKey}
+                projectName={projectName}
+                activeSceneId={activeSceneId}
+                onSelectScene={setActiveSceneId}
+                onCreateScene={handleSceneCreated}
+                onOpenProjectMenu={() => setProjectMenuOpen((v) => !v)}
+                collapsed={scenesCollapsed}
+                onToggleCollapsed={toggleCollapsed}
+              />
+              {!scenesCollapsed && (
+                <ProjectMenu
+                  open={projectMenuOpen}
+                  onClose={() => setProjectMenuOpen(false)}
+                  onSwitchProject={handleOpenExisting}
+                  onCloseProject={handleCloseProject}
+                />
+              )}
+            </div>
+            {activeSceneId ? (
+              <EditorCanvas
+                key={activeSceneId}
+                sceneId={activeSceneId}
+                onRenamed={handleSceneRenamed}
+              />
+            ) : (
+              <main
+                style={{
+                  flex: 1,
+                  background: "var(--water-bg-paper)",
+                  display: "grid",
+                  placeItems: "center",
+                  color: "var(--water-fg-muted)",
+                  fontFamily: "var(--water-font-sans)",
+                }}
+              >
+                Select a scene, or create a new one.
+              </main>
+            )}
+          </>
+        )}
+        <CreateProjectSheet
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={handleCreated}
+        />
+        <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      </div>
     </ThemeProvider>
   );
 }
