@@ -6,4 +6,5 @@ pub mod router;
 pub mod speaker;
 
 pub use registry::PersonaRegistry;
+pub use router::{route, CooldownState};
 pub use speaker::{PersonaSpeaker, Speaker, SpeakerKind};
