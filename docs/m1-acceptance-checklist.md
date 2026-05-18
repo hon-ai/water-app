@@ -1,4 +1,4 @@
-# M1 / M1.1 Acceptance Checklist (Internal)
+# M1 / M1.1 / M1.5 Acceptance Checklist (Internal)
 
 Run on a clean macOS or Windows machine with `uv` and `pnpm` installed.
 
@@ -8,56 +8,44 @@ Run on a clean macOS or Windows machine with `uv` and `pnpm` installed.
 - [ ] `pnpm --filter @water/app build` — succeeds.
 
 ## Test
-- [ ] `pnpm test:core` — all `water-core` tests pass (75+ at M1.1).
-- [ ] `pnpm test:app` — all renderer tests pass (7+ at M1.1).
+- [ ] `pnpm test:core` — all `water-core` tests pass (76+ at M1.5).
+- [ ] `pnpm test:app` — all renderer tests pass (~22+ at M1.5).
 - [ ] `cargo test -p water-core --test m1_exit_criteria` — 6 passed, 1 ignored.
 - [ ] `cargo test -p water-core --test m1_exit_criteria -- --ignored` — sidecar boot test passes (requires `uv` on PATH).
 
-## Run the app
-- [ ] `pnpm dev` launches the Tauri app and opens a window titled "Water".
-- [ ] The header shows `scenes`, `diagnostics`, theme toggle.
-- [ ] Light/dark/auto buttons change `data-theme` (verify via devtools).
+## Run the app — chrome inspection
+- [ ] `pnpm dev` launches the window. **No top header.** A 56 px icon rail sits on the left with five icons: app mark (Droplet), Scenes, Characters (stub), World (stub), Settings (gear).
+- [ ] On first launch (no project open), the canvas shows the EmptyState: a large Droplet, the word "Water" in serif, and two buttons — "Create new project" and "Open existing".
+- [ ] Clicking the gear opens the Settings sheet from the right. Appearance shows three theme buttons (Light / Dark / Auto) as a segmented control. Click each — the page colors flip. Providers section lists the five provider ids. Developer info section has a collapsible raw JSON dump.
+- [ ] Close the settings sheet by clicking the X, clicking outside the sheet, or pressing Escape.
 
-## Project lifecycle
-- [ ] Click `create` with parent `.` (or your Desktop path) and name `Acceptance Test`. A folder `Acceptance-Test.water/` is created containing:
-  - `water.toml` (open in any editor — human-readable).
-  - `project.db`
-  - `manuscript/scenes/` (empty)
-  - `manuscript/chapters.toml`
-  - `characters/`, `world/`, `snapshots/`, `.water/cache/`
-- [ ] Click `+ new scene`, type a few paragraphs into the editor. Wait 2 seconds. The "saved at …" indicator updates exactly ONCE per pause-in-typing.
-- [ ] Re-open the scene later by clicking elsewhere and back. The "saved at …" indicator does NOT update unless you actually edit the body (M1.1 A3 fix).
-- [ ] Open `manuscript/scenes/<ulid>.md` in any text editor — the body matches what you typed, with `^bk-XXXX` tokens at the end of each paragraph.
-- [ ] Click `close`. The scene list disappears.
-- [ ] Click `open` and paste the path to `Acceptance-Test.water/`. Scene list reappears with your scene; opening it shows the previously-typed text.
+## Project lifecycle — sheet flow
+- [ ] Click "Create new project" → a sheet slides in from the right. Enter a project name. Click "Browse…" → native OS folder picker opens. Choose your Desktop (or any folder). The parent directory field fills with the chosen path. Click "Create" → the sheet closes, the scenes panel appears on the left with the project name at the top.
+- [ ] (M1.5) Click "+ new scene" → a "Scene 1" row appears in the scenes list. Click it → the editor canvas centers, showing an empty Plex Serif title field above an empty Plex Sans body textarea, with no chrome.
+- [ ] Type a title (e.g. "Opening"). Click outside the title (or press Enter) → the scenes-panel row updates to "Opening" within ~1 s (M1.5 B0 scene_rename fix).
+- [ ] Type a few paragraphs into the body. Wait 2 s — the "saved · HH:MM" chip appears top-right of the canvas.
+- [ ] Click the scenes panel's chevron — the panel collapses to width 0 px. Click again — restores to 280 px (M1.5 B2 collapse + persistence).
+- [ ] Open `manuscript/scenes/<ulid>.md` in any external editor — the body matches what you typed; the YAML frontmatter has `name: "Opening"`.
 
-## Rebuild from truth
-- [ ] Close the app.
-- [ ] Delete `Acceptance-Test.water/project.db`.
-- [ ] Relaunch the app. Open the same project root. The scene list still shows your scenes.
-- [ ] (M1.1) Manually edit a scene `.md` file to set `pov_character_id: "01H8X4..."` (an ID matching a character `.toml` in `characters/`). Close, delete `project.db`, reopen. The scene appears AND the diagnostics page shows the character row count > 0 (M1.1 A2 fix — characters now load before scenes).
+## Project switching — dropdown menu
+- [ ] Click the project-name button at the top of the scenes panel → a dropdown menu shows "Switch project…", "Open folder…", and "Close project".
+- [ ] Click "Close project" → returns to the EmptyState.
+- [ ] Click "Open existing" → native folder picker. Pick your `.water` folder → scenes panel reappears with your previous scene.
+
+## Rebuild from truth (unchanged from M1.1)
+- [ ] Close the app. Delete `<project>.water/project.db`. Relaunch. Open the project. Scene list still shows your scenes.
 
 ## Provider round-trip
-- [ ] Go to `diagnostics`. Verify `project.open: yes` and `project.root: <path>` show in the project section.
-- [ ] Select `canned` from the provider dropdown. Click `test round-trip`. Three placeholder variants appear.
-- [ ] (M1.1) After the test succeeds, the `router` section shows `primary: canned` and the `provider_health` list contains `canned: ok` within 3 seconds (M1.1 A1 + B4 fixes).
-- [ ] Drop your own dev keys at `~/.water/dev-keys.toml`:
-  ```toml
-  anthropic = "sk-ant-..."
-  openai = "sk-..."
-  ```
-- [ ] Select `anthropic`. Click `test round-trip`. Three real variants appear. The `router` section updates to `primary: anthropic`.
+- [ ] In Settings → Providers, click "Test" on the canned row. Three placeholder variants appear (via the original `ipc.providerTest`; M1.1 A1 ensures the in-state router contains the actually-tested provider).
+- [ ] (Optional, with real keys at `~/.water/dev-keys.toml`) Click "Test" on the anthropic row. Three real variants come back.
 
-## Snapshot timeline (auto-fired)
-- [ ] (M1.1) After typing a scene, click `close`. Inspect `Acceptance-Test.water/snapshots/<scene_ulid>/` — exactly one `.zst` file should exist (the OnClose snapshot from M1.1 B1).
-- [ ] Re-open the project, edit the scene further, close again. The directory now contains TWO `.zst` files.
+## Snapshot timeline (auto-fired, unchanged from M1.1)
+- [ ] Type a scene, close the project, inspect `<project>.water/snapshots/<scene_ulid>/` — at least one `.zst`.
 
-## Sidecar (auto-spawned)
-- [ ] (M1.1) After clicking `open` (or `create`), the diagnostics page's `sidecar` section shows `status: ready` within 8 seconds. No need to launch uvicorn in a separate terminal (M1.1 B2 fix).
-- [ ] The Tauri dev console (Ctrl+Shift+I) shows `sidecar:status` events being emitted.
-- [ ] Click `close`. The OS-level sidecar process (visible via Task Manager or `Get-Process | ? Name -match python`) terminates within 1 second.
+## Sidecar (auto-spawned, unchanged from M1.1)
+- [ ] Settings → Developer info → raw JSON shows `sidecar.status: "ready"` within 8 s of opening a project.
 
-## Logs hygiene
-- [ ] (M1.1) Drop a malformed `~/.water/dev-keys.toml` (e.g., `anthropic = unquoted`). On the next `pnpm dev` launch, the terminal logs a `tracing::warn!` naming the file and the parse error (M1.1 A4 fix). The app does NOT crash; `provider_test` for a key not in the keychain or env-var fallback returns `Error::NotFound`.
+## Logs hygiene (unchanged from M1.1)
+- [ ] Malformed `~/.water/dev-keys.toml` triggers a `tracing::warn!` on next `pnpm dev` launch; app does NOT crash.
 
-When every box above is checked, M1.1 is **accepted** and ready for the `m1.1` tag.
+When every box above is checked, M1.5 is **accepted** and ready for the `m1.5` tag.
