@@ -191,11 +191,7 @@ impl LlmRouter {
     /// Returns `Error::Provider("no primary provider")` if the router was
     /// constructed with an empty chain, or whatever error the provider's
     /// `generate_raw` implementation returns.
-    pub async fn generate_raw_with_default(
-        &self,
-        system: String,
-        user: String,
-    ) -> Result<String> {
+    pub async fn generate_raw_with_default(&self, system: String, user: String) -> Result<String> {
         let primary = self
             .primary()
             .ok_or_else(|| Error::Provider("no primary provider".into()))?;
@@ -334,8 +330,7 @@ mod tests {
 
     #[tokio::test]
     async fn generate_raw_with_default_hits_primary() {
-        let canned = Arc::new(CannedProvider::with_response("hello there"))
-            as Arc<dyn LlmProvider>;
+        let canned = Arc::new(CannedProvider::with_response("hello there")) as Arc<dyn LlmProvider>;
         let router = LlmRouter::new(vec![canned]);
         let out = router
             .generate_raw_with_default("sys".into(), "user".into())
