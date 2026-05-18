@@ -16,4 +16,6 @@ patterns = [
   "(?i)\\bi think you\\b",
   "(?i)\\bas an AI\\b",
   "(?i)\\bmaybe you could\\b",
+  "(?i)\\bthis is good\\b",
+  "(?i)\\bthis is bad\\b",
 ]

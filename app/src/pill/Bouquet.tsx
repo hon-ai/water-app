@@ -24,12 +24,15 @@ interface Props {
    * synthesised shape until T26 plumbs sub-pill records.
    */
   pillForPinning?: Pill;
-  /** Scene the pill belongs to. Falls back to "" for M2. */
+  /** Scene the pill belongs to. Threaded down from <EditorCanvas>;
+   *  required for `ipc.pillPin` to satisfy the `pinned_pill.scene_id`
+   *  FK constraint. Falls back to "" only for standalone tests. */
   sceneId?: string;
-  /** Anchored block id. Falls back to "" for M2. */
+  /** Anchored block id (the manuscript block this pill reacted to).
+   *  Used both as the pin's `block_id` and as the DOM selector for
+   *  computing `snippet` at pin time. Falls back to "" when the pill is
+   *  unanchored (e.g. deeper sub-pills without an explicit block). */
   blockId?: string;
-  /** Snippet of the manuscript at pin time. Falls back to "" for M2. */
-  snippet?: string;
 }
 
 const ANGLE_HUE_SHIFT: Record<BouquetItem["angle"], string> = {
@@ -55,7 +58,6 @@ export function Bouquet({
   pillForPinning,
   sceneId = "",
   blockId = "",
-  snippet = "",
 }: Props) {
   const pinPayload: Pill =
     pillForPinning ?? {
@@ -144,6 +146,18 @@ export function Bouquet({
           type="button"
           aria-label="Pin pill"
           onClick={() => {
+            // Compute the snippet at click-time so it reflects the latest
+            // editor state, not the props at mount. Look up the anchored
+            // block element via the same [data-bid="..."] selector the
+            // hover-dim glow line uses. If the block isn't in the DOM
+            // (deeper sub-pills, or the block was deleted between emerge
+            // and pin), pass "" — `pinned_pill.snippet` is NOT NULL but
+            // accepts empty strings.
+            let snippet = "";
+            if (blockId.length > 0) {
+              const el = document.querySelector(`[data-bid="${blockId}"]`);
+              snippet = el?.textContent?.slice(0, 200) ?? "";
+            }
             void ipc.pillPin(pinPayload, sceneId, blockId, snippet);
           }}
           style={iconBtnStyle}

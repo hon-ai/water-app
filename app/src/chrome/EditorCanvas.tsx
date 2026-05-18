@@ -222,8 +222,8 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           placeholder="Begin where the universe begins."
         />
       </div>
-      <PillLayer mainWidth={mainWidth} />
-      <PinnedColumn mainWidth={mainWidth} />
+      <PillLayer mainWidth={mainWidth} sceneId={sceneId} />
+      <PinnedColumn mainWidth={mainWidth} sceneId={sceneId} />
     </main>
   );
 }

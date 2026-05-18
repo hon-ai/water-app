@@ -80,13 +80,58 @@ describe("Bouquet", () => {
     );
   });
 
-  it("clicking pin forwards the supplied pillForPinning + scene/block/snippet", () => {
+  it("clicking pin forwards the supplied pillForPinning + threads sceneId/blockId, computing snippet from the anchored block", () => {
     const fullPill = {
       pill_id: "p1",
       speaker_id: "muse",
       hue_token: "--water-hue-muse",
       text: "ripple",
       block_target_id: "b9",
+      trigger_id: "trg-1",
+    };
+
+    // Stand in for the manuscript block the pill reacted to. Bouquet
+    // computes the snippet by querySelector at pin-time so it reflects
+    // the latest editor state, not props captured at mount.
+    const fakeBlock = document.createElement("div");
+    fakeBlock.setAttribute("data-bid", "b9");
+    fakeBlock.textContent = "the bell rings somewhere unseen";
+    document.body.appendChild(fakeBlock);
+
+    try {
+      render(
+        <Bouquet
+          parentId="p1"
+          hueToken="--water-hue-muse"
+          items={sampleItems}
+          onClose={() => {}}
+          pillForPinning={fullPill}
+          sceneId="s1"
+          blockId="b9"
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Pin pill"));
+      expect(pillPinMock).toHaveBeenCalledWith(
+        fullPill,
+        "s1",
+        "b9",
+        "the bell rings somewhere unseen",
+      );
+    } finally {
+      document.body.removeChild(fakeBlock);
+    }
+  });
+
+  it("clicking pin with a blockId that's not in the DOM passes an empty snippet (still threads sceneId/blockId)", () => {
+    // Guards against the C1 regression: prior to threading, Bouquet
+    // hard-coded "" / "" / "" for sceneId/blockId/snippet and the orchestrator's
+    // INSERT into `pinned_pill` blew up on the scene_id NOT NULL FK.
+    const fullPill = {
+      pill_id: "p1",
+      speaker_id: "muse",
+      hue_token: "--water-hue-muse",
+      text: "ripple",
+      block_target_id: "b-missing",
       trigger_id: "trg-1",
     };
     render(
@@ -96,13 +141,12 @@ describe("Bouquet", () => {
         items={sampleItems}
         onClose={() => {}}
         pillForPinning={fullPill}
-        sceneId="s1"
-        blockId="b9"
-        snippet="the bell rings"
+        sceneId="s-real"
+        blockId="b-missing"
       />,
     );
     fireEvent.click(screen.getByLabelText("Pin pill"));
-    expect(pillPinMock).toHaveBeenCalledWith(fullPill, "s1", "b9", "the bell rings");
+    expect(pillPinMock).toHaveBeenCalledWith(fullPill, "s-real", "b-missing", "");
   });
 
   it("clicking X calls ipc.pillDismiss and onClose", () => {
