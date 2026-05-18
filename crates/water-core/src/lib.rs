@@ -73,6 +73,8 @@ pub use llm::{BouquetRequest, BouquetVariant, CannedProvider, LlmProvider, Provi
 
 pub mod orchestrator;
 
+pub mod voice;
+
 #[cfg(test)]
 mod tests {
     use super::*;
