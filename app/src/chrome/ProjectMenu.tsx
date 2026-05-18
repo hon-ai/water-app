@@ -76,17 +76,6 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
         style={item}
         onClick={() => {
           onClose();
-          onSwitchProject();
-        }}
-      >
-        Open folder…
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        style={item}
-        onClick={() => {
-          onClose();
           onCloseProject();
         }}
       >
