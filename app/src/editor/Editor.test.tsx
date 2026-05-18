@@ -54,4 +54,29 @@ describe("blockIdPlugin", () => {
     next.doc.forEach((n) => ids.push(n.attrs.blockId));
     expect(ids).toEqual(["^bk-0001"]);
   });
+
+  it("assigns block-ids to ordered list items", () => {
+    const state = EditorState.create({
+      doc: schema.node("doc", null, [
+        schema.node("ordered_list", null, [
+          schema.node("list_item", { blockId: "" }, [
+            schema.node("paragraph", { blockId: "" }, [schema.text("first")]),
+          ]),
+          schema.node("list_item", { blockId: "" }, [
+            schema.node("paragraph", { blockId: "" }, [schema.text("second")]),
+          ]),
+        ]),
+      ]),
+      schema,
+      plugins: [blockIdPlugin()],
+    });
+    const stateAfter = state.apply(state.tr);
+    const listItemIds: string[] = [];
+    stateAfter.doc.descendants((node) => {
+      if (node.type.name === "list_item") listItemIds.push(node.attrs.blockId);
+    });
+    expect(listItemIds.length).toBe(2);
+    for (const id of listItemIds) expect(id).toMatch(/^\^bk-[A-Za-z0-9]{4}$/);
+    expect(new Set(listItemIds).size).toBe(2);
+  });
 });

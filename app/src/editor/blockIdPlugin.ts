@@ -29,6 +29,22 @@ function newBlockId(): string {
   return s;
 }
 
+// Node types that carry a `blockId` attr. Top-level block kinds plus
+// `list_item` (M2 spec § 5.2: list items each carry their own block-id).
+const ID_BEARING_TYPES = new Set([
+  "paragraph",
+  "heading",
+  "scene_break",
+  "dialogue",
+  "list_item",
+]);
+
+// Container types whose children we should recurse into to find
+// `list_item` nodes that need ids. We don't recurse into general blocks
+// (like paragraphs); only list containers, which is the only nesting
+// kind that owns id-bearing children inside another block.
+const LIST_CONTAINER_TYPES = new Set(["ordered_list", "bullet_list"]);
+
 /** Transaction filter that assigns + de-duplicates block IDs. */
 export function blockIdPlugin(): Plugin {
   return new Plugin({
@@ -36,14 +52,30 @@ export function blockIdPlugin(): Plugin {
       const seen = new Set<string>();
       const fixes: Array<{ pos: number; node: PMNode }> = [];
 
-      newState.doc.forEach((node, offset) => {
-        const id = (node.attrs?.blockId ?? "") as string;
-        if (!id || seen.has(id)) {
-          fixes.push({ pos: offset, node });
-        } else {
-          seen.add(id);
+      // Recursive walker. `pos` is the position *before* `node` in the
+      // outer doc. To iterate `node`'s children, the inner position
+      // starts at `pos + 1` (skipping the opening token of `node`),
+      // and each child sits at `pos + 1 + childOffset`. For the
+      // top-level doc node we call `walk(doc, -1)` so that
+      // `doc.forEach`-equivalent offsets line up: `(-1) + 1 + offset = offset`.
+      function walk(node: PMNode, pos: number): void {
+        if (ID_BEARING_TYPES.has(node.type.name)) {
+          const id = (node.attrs?.blockId ?? "") as string;
+          if (!id || seen.has(id)) {
+            fixes.push({ pos, node });
+          } else {
+            seen.add(id);
+          }
         }
-      });
+        // Only recurse into list containers (or the doc itself). This
+        // keeps the walk cheap and avoids stepping into paragraphs.
+        if (node.type.name === "doc" || LIST_CONTAINER_TYPES.has(node.type.name)) {
+          node.forEach((child, childOffset) => {
+            walk(child, pos + 1 + childOffset);
+          });
+        }
+      }
+      walk(newState.doc, -1);
 
       if (fixes.length === 0) return null;
 

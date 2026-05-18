@@ -48,10 +48,13 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
   // the change handler so the parent doesn't see its own value bounced
   // back as a "user edit".
   const syncingRef = useRef(false);
-  // Telemetry state: rate-limit timestamps, word-count baseline, and the
-  // most-recent detected structural inflection (consumed + cleared on emit).
+  // Telemetry state: rate-limit timestamps, rolling 10s word-count history,
+  // and the most-recent detected structural inflection (consumed + cleared
+  // on emit). The history is an append-only ring of `{ts, totalWords}`
+  // snapshots, pruned to entries from the last 10s + at most one older
+  // entry (the baseline for delta-from-10s-ago lookup).
   const lastEmitAtRef = useRef<number>(0);
-  const wordCountAtLastEmitRef = useRef<number>(0);
+  const wordHistoryRef = useRef<Array<{ ts: number; totalWords: number }>>([]);
   const pendingInflectionRef = useRef<StructuralInflection>("none");
   // Captured handle to the idle detector's `onActivity` so the persistent
   // dispatchTransaction closure can reset the idle timer on every edit.
@@ -78,9 +81,37 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     const cursorClassification = classifyCursor(blockText, blockOffset);
     const blockIdRaw: unknown = blockNode.attrs["blockId"];
     const blockId = typeof blockIdRaw === "string" ? blockIdRaw : "";
+    // Spec § 5.3: `recent_word_delta` = words added in the last 10 s.
+    // Walk the history backwards to find the most recent snapshot that is
+    // >= 10 s old; that snapshot's totalWords is our baseline. If no such
+    // snapshot exists (history is empty or all entries are within the
+    // last 10 s window), the baseline is 0.
+    const now = Date.now();
     const totalWords = markdownFromDoc(state.doc).split(/\s+/).filter(Boolean).length;
-    const recentWordDelta = totalWords - wordCountAtLastEmitRef.current;
-    wordCountAtLastEmitRef.current = totalWords;
+    const history = wordHistoryRef.current;
+    const tenSecAgo = now - 10_000;
+    let baseline = 0;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const entry = history[i];
+      if (entry && entry.ts <= tenSecAgo) {
+        baseline = entry.totalWords;
+        break;
+      }
+    }
+    const recentWordDelta = totalWords - baseline;
+    // Append current snapshot, then prune. Keep all entries within the
+    // last 10 s window + at most one older entry (needed for baseline
+    // lookup once the next emit happens).
+    history.push({ ts: now, totalWords });
+    while (history.length > 1) {
+      const first = history[0];
+      const second = history[1];
+      if (first && second && first.ts < tenSecAgo && second.ts < tenSecAgo) {
+        history.shift();
+      } else {
+        break;
+      }
+    }
     const structuralInflection = pendingInflectionRef.current;
     pendingInflectionRef.current = "none";
     void emitTypingTelemetry({
@@ -165,10 +196,15 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
       },
     });
     viewRef.current = view;
-    // Seed the word-count baseline so the first emit's delta is correct.
-    wordCountAtLastEmitRef.current = markdownFromDoc(state.doc)
-      .split(/\s+/)
-      .filter(Boolean).length;
+    // Seed the rolling-history baseline so the first emit's delta is 0
+    // (no words added in the previous 10 s) instead of `totalWords`.
+    wordHistoryRef.current = [
+      {
+        ts: Date.now(),
+        totalWords: markdownFromDoc(state.doc).split(/\s+/).filter(Boolean)
+          .length,
+      },
+    ];
 
     return () => {
       view.destroy();
@@ -196,11 +232,17 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     } finally {
       syncingRef.current = false;
     }
-    // Re-baseline the word count after a scene-switch so the next live
-    // emit's `recent_word_delta` doesn't include the swap.
-    wordCountAtLastEmitRef.current = markdownFromDoc(view.state.doc)
-      .split(/\s+/)
-      .filter(Boolean).length;
+    // Re-baseline the rolling history after a scene-switch so the next
+    // live emit's `recent_word_delta` doesn't include the swap and we
+    // don't inherit word-count history from the previous scene.
+    wordHistoryRef.current = [
+      {
+        ts: Date.now(),
+        totalWords: markdownFromDoc(view.state.doc)
+          .split(/\s+/)
+          .filter(Boolean).length,
+      },
+    ];
     pendingInflectionRef.current = "none";
   }, [value]);
 
