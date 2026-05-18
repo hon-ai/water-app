@@ -28,6 +28,13 @@ vi.mock("../editor/Editor", () => ({
   },
 }));
 
+// The pill overlay subscribes to Tauri events on mount; this test file
+// does not mock `@tauri-apps/api/event`, so stub the layer out. Pill
+// behavior is covered by app/src/pill/PillLayer.test.tsx.
+vi.mock("../pill/PillLayer", () => ({
+  PillLayer: () => null,
+}));
+
 import { EditorCanvas } from "./EditorCanvas";
 
 describe("EditorCanvas", () => {
