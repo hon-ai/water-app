@@ -10,6 +10,11 @@ interface Props {
   onOpenProjectMenu: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /**
+   * Bumping this value triggers a scene-list reload without remounting the
+   * component, so internal state (e.g. scroll position) is preserved.
+   */
+  reloadToken?: number;
 }
 
 export function ScenesPanel({
@@ -20,6 +25,7 @@ export function ScenesPanel({
   onOpenProjectMenu,
   collapsed,
   onToggleCollapsed,
+  reloadToken = 0,
 }: Props) {
   const [scenes, setScenes] = useState<SceneInfo[]>([]);
 
@@ -34,7 +40,7 @@ export function ScenesPanel({
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, reloadToken]);
 
   const handleCreate = async () => {
     try {
