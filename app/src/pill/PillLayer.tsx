@@ -8,6 +8,10 @@ import { RabbitHole, type RabbitHoleLevel } from "./RabbitHole";
 import type { Pill } from "./types";
 
 const MAX_ON_SCREEN = 2;
+/** Below this `<main>` width the pill margin overlaps the prose; capsules
+ *  drop to 0.7 opacity so writing underneath stays readable. Matches the
+ *  PinnedColumn collapse breakpoint so both fallbacks engage in lockstep. */
+const NARROW_BREAKPOINT_PX = 1100;
 
 /**
  * Absolute-positioned overlay anchored to the top-right of the editor canvas.
@@ -44,7 +48,15 @@ const MAX_ON_SCREEN = 2;
  * correct even when the component unmounts before any `onWaterEvent`
  * promise resolves.
  */
-export function PillLayer() {
+interface PillLayerProps {
+  /** Current width of the editor's `<main>`. `0` = not yet measured
+   *  (treated the same as "wide enough"); below `NARROW_BREAKPOINT_PX`
+   *  triggers translucent capsules. Defaults to `0` so tests / standalone
+   *  renders skip the fallback. */
+  mainWidth?: number;
+}
+
+export function PillLayer({ mainWidth = 0 }: PillLayerProps = {}) {
   const [pills, setPills] = useState<Pill[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Per-top-level-pill rabbit-hole path. An entry with one level is the
@@ -231,6 +243,9 @@ export function PillLayer() {
       <div
         ref={layerRef}
         aria-label="pill margin"
+        data-narrow={
+          mainWidth > 0 && mainWidth < NARROW_BREAKPOINT_PX ? "true" : undefined
+        }
         style={{
           position: "absolute",
           top: 72,
@@ -240,6 +255,12 @@ export function PillLayer() {
           flexDirection: "column",
           gap: 12,
           pointerEvents: "none",
+          // Narrow-viewport fallback: capsules overlap the prose, so make
+          // them translucent. `mainWidth === 0` (unmeasured) keeps full
+          // opacity to avoid a flash on first paint.
+          opacity:
+            mainWidth > 0 && mainWidth < NARROW_BREAKPOINT_PX ? 0.7 : 1,
+          transition: "opacity 160ms ease",
         }}
       >
         {pills.map((p) => {

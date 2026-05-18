@@ -71,6 +71,26 @@ describe("PinnedColumn", () => {
     );
   });
 
+  it("collapses to a 24px tab when mainWidth < 1100", async () => {
+    pinnedListMock.mockResolvedValue([
+      {
+        pill_id: "p1",
+        speaker_id: "echo",
+        hue_token: "--water-hue-muse",
+        text: "x",
+        block_target_id: null,
+        trigger_id: "t",
+      },
+    ]);
+    render(<PinnedColumn mainWidth={900} />);
+    await waitFor(() => expect(pinnedListMock).toHaveBeenCalledTimes(1));
+    const col = screen.getByLabelText("pinned column");
+    expect(col.style.width).toBe("24px");
+    // Dots are hidden in collapsed tab mode; the tab itself is the
+    // affordance to expand.
+    expect(screen.queryAllByTestId("water-pinned-dot")).toHaveLength(0);
+  });
+
   it("reacts to pill:pinned event by prepending a new dot", async () => {
     pinnedListMock.mockResolvedValue([]);
     let pinnedHandler: ((p: unknown) => void) | null = null;
