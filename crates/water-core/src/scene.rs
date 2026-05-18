@@ -128,6 +128,12 @@ impl<'a> SceneStore<'a> {
         self.row(id)
     }
 
+    // FIXME(KNOWN_FRAGILE #7): `move_to` follows the same read-modify-write
+    // pattern as `rename` / `write_body` but is not currently gated by the
+    // per-scene write lock. M2 Task 2 deliberately scoped the lock to the two
+    // hot-path operations (autosave + title-blur). If a future bug shows a
+    // scene_move racing with body autosave, gate this method too — same
+    // pattern as the gated commands in app/src-tauri/src/commands/scene.rs.
     pub fn move_to(&self, id: &Id, new_chapter_id: Option<&Id>, new_ordering: i64) -> Result<()> {
         // Update DB
         let now = Utc::now().to_rfc3339();
@@ -372,6 +378,103 @@ mod tests {
         // Frontmatter side
         let file = store.read(&scene.id).unwrap();
         assert_eq!(file.frontmatter.name, "Renamed");
+    }
+
+    #[tokio::test]
+    async fn rename_and_write_body_are_serialized_per_scene() {
+        use crate::scene_locks::SceneWriteLocks;
+        use std::sync::Arc;
+
+        let (_dir, db, root, scene_id) = setup_async_project_with_one_scene().await;
+
+        let locks = SceneWriteLocks::new();
+        let mut handles = Vec::new();
+        for i in 0..50 {
+            let db_c = Arc::clone(&db);
+            let root_c = root.clone();
+            let id_c = scene_id.clone();
+            let locks_c = locks.clone();
+            let new_name = format!("Renamed {i}");
+            handles.push(tokio::spawn(async move {
+                let _g = locks_c.acquire(&id_c).await;
+                let g = db_c.lock().await;
+                let store = SceneStore::new(&g, root_c.clone());
+                store.rename(&id_c, &new_name).unwrap();
+            }));
+            let db_c2 = Arc::clone(&db);
+            let root_c2 = root.clone();
+            let id_c2 = scene_id.clone();
+            let locks_c2 = locks.clone();
+            let new_body = format!("Body iteration {i}\n");
+            handles.push(tokio::spawn(async move {
+                let _g = locks_c2.acquire(&id_c2).await;
+                let g = db_c2.lock().await;
+                let store = SceneStore::new(&g, root_c2.clone());
+                store.write_body(&id_c2, &new_body).unwrap();
+            }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Final state: DB row matches on-disk file, no torn write.
+        let g = db.lock().await;
+        let store = SceneStore::new(&g, root.clone());
+        // Pull the row by listing — `row` is private, but `list` exposes the data.
+        let rows = store
+            .list(
+                &g.conn()
+                    .query_row(
+                        "SELECT manuscript_id FROM scene WHERE id = ?1",
+                        [scene_id.as_str()],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .unwrap()
+                    .parse::<Id>()
+                    .unwrap(),
+            )
+            .unwrap();
+        let row = rows.iter().find(|r| r.id == scene_id).unwrap();
+        let file = store.read(&scene_id).unwrap();
+        assert!(row.name.starts_with("Renamed "));
+        assert!(file.body.contains("Body iteration "));
+        // File hash on disk matches the hash recorded in the DB row — proves the
+        // last writer's row reflects the actual on-disk file (no torn write).
+        let on_disk_hash = hash_file(
+            root.join("manuscript/scenes")
+                .join(format!("{}.md", scene_id.as_str())),
+        )
+        .unwrap();
+        assert_eq!(row.file_hash.as_deref(), Some(on_disk_hash.as_str()));
+    }
+
+    async fn setup_async_project_with_one_scene() -> (
+        tempfile::TempDir,
+        std::sync::Arc<tokio::sync::Mutex<Db>>,
+        std::path::PathBuf,
+        Id,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        std::fs::create_dir_all(root.join("manuscript").join("scenes")).unwrap();
+        let db_raw = Db::open(root.join("project.db")).unwrap();
+        let db = std::sync::Arc::new(tokio::sync::Mutex::new(db_raw));
+        let scene_id = {
+            let g = db.lock().await;
+            let p = ProjectStore::new(&g).insert("P").unwrap();
+            let m = ManuscriptStore::new(&g).insert(&p.id, "M", 0).unwrap();
+            let store = SceneStore::new(&g, root.clone());
+            store
+                .create(NewScene {
+                    manuscript_id: m.id,
+                    chapter_id: None,
+                    name: "Scene 1".into(),
+                    ordering: 0,
+                })
+                .unwrap()
+                .id
+        };
+        (dir, db, root, scene_id)
     }
 
     #[test]

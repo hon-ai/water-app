@@ -7,7 +7,8 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 use water_core::{
     chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, ActiveScene, Db,
-    ManuscriptStore, ProjectStore, Sidecar, SidecarSpec, SidecarSupervisor, SnapshotScheduler,
+    ManuscriptStore, ProjectStore, SceneWriteLocks, Sidecar, SidecarSpec, SidecarSupervisor,
+    SnapshotScheduler,
 };
 
 #[derive(Serialize)]
@@ -89,6 +90,7 @@ pub async fn create_project(
         scheduler,
         sidecar,
         supervisor,
+        scene_write_locks: SceneWriteLocks::new(),
     });
     Ok(info)
 }
@@ -175,6 +177,7 @@ pub async fn open_project(
         scheduler,
         sidecar,
         supervisor,
+        scene_write_locks: SceneWriteLocks::new(),
     });
     Ok(info)
 }

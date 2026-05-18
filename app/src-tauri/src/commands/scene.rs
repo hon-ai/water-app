@@ -84,14 +84,22 @@ pub async fn scene_write_body(
     id: String,
     body: String,
 ) -> Result<SceneInfo, String> {
-    let (db, root) = {
+    let (db, root, locks) = {
         let proj = state.project.lock().await;
         let project = proj.as_ref().ok_or("no project open")?;
-        (project.db.clone(), project.root.clone())
+        (
+            project.db.clone(),
+            project.root.clone(),
+            project.scene_write_locks.clone(),
+        )
     };
     let id: Id = id
         .parse()
         .map_err(|e: water_core::Error| e.to_string())?;
+    // Per-scene write lock: serializes `rename` + `write_body` so concurrent
+    // flushes don't tear the scene file (KNOWN_FRAGILE #7). Acquired BEFORE
+    // the DB lock so the lock ordering matches `scene_rename`.
+    let _write_guard = locks.acquire(&id).await;
     let db_guard = db.lock().await;
     let store = SceneStore::new(&db_guard, root);
     let row = store.write_body(&id, &body).map_err(|e| e.to_string())?;
@@ -134,14 +142,23 @@ pub async fn scene_rename(
     id: String,
     name: String,
 ) -> Result<SceneInfo, String> {
-    let (db, root) = {
+    let (db, root, locks) = {
         let proj = state.project.lock().await;
         let project = proj.as_ref().ok_or("no project open")?;
-        (project.db.clone(), project.root.clone())
+        (
+            project.db.clone(),
+            project.root.clone(),
+            project.scene_write_locks.clone(),
+        )
     };
     let id: Id = id
         .parse()
         .map_err(|e: water_core::Error| e.to_string())?;
+    // Per-scene write lock: serializes `rename` + `write_body` so concurrent
+    // flushes don't tear the scene file (KNOWN_FRAGILE #7).
+    // Acquired BEFORE the DB lock so the lock ordering matches `scene_write_body`.
+    // Both commands acquire project_lock -> (drop) -> scene_write_lock -> db_lock.
+    let _write_guard = locks.acquire(&id).await;
     let db_guard = db.lock().await;
     let store = SceneStore::new(&db_guard, root);
     let row = store.rename(&id, &name).map_err(|e| e.to_string())?;
