@@ -189,11 +189,7 @@ mod tests {
         // time) don't deadlock the loop.
         for _ in 0..8 {
             tokio::time::advance(Duration::from_secs(35)).await;
-            let changed = tokio::time::timeout(
-                Duration::from_millis(50),
-                rx.changed(),
-            )
-            .await;
+            let changed = tokio::time::timeout(Duration::from_millis(50), rx.changed()).await;
             if changed.is_ok() && matches!(rx.borrow().status, SidecarStatus::Error) {
                 errors_seen += 1;
             }
