@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sheet } from "./Sheet";
 import { ipc, type DiagnosticsStatus } from "../ipc/commands";
+import { onWaterEvent } from "../ipc/events";
 import { useTheme, type Theme } from "../theme/useTheme";
 
 interface Props {
@@ -29,11 +30,40 @@ export function SettingsSheet({ open, onClose }: Props) {
     }
   }, []);
 
+  // Initial snapshot fetch on open; then subscribe to sidecar:status events
+  // for incremental updates (no more 3-second polling).
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
     refresh();
-    const t = window.setInterval(() => refresh(), 3000);
-    return () => window.clearInterval(t);
+    (async () => {
+      const u = await onWaterEvent("sidecar:status", (p) => {
+        setStatus((prev) => {
+          if (prev === null) {
+            // Cold-start race: an event arrived before the initial snapshot.
+            // Re-fetch the snapshot so we don't drop the transition.
+            void refresh();
+            return prev;
+          }
+          return {
+            ...prev,
+            sidecar: prev.sidecar
+              ? { ...prev.sidecar, status: p.status, last_status_detail: p.detail }
+              : { base_url: "", status: p.status, last_status_detail: p.detail },
+          };
+        });
+      });
+      if (cancelled) {
+        u();
+        return;
+      }
+      unsub = u;
+    })();
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, [open, refresh]);
 
   const handleTest = async (providerId: string) => {
