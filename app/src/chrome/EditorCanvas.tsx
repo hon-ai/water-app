@@ -71,7 +71,11 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
 
   const handleTitleBlur = useCallback(async () => {
     const trimmed = title.trim();
-    if (trimmed.length === 0 || trimmed === titleAtLastSave) return;
+    if (trimmed.length === 0) {
+      setTitle(titleAtLastSave);
+      return;
+    }
+    if (trimmed === titleAtLastSave) return;
     try {
       const info = await ipc.sceneRename(sceneId, trimmed);
       setTitleAtLastSave(info.name);
