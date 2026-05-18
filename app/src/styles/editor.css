@@ -1,0 +1,143 @@
+/* =====================================================================
+   ProseMirror block editor styling for the Water `.water-editor` host.
+
+   This file provides:
+   1. The minimum ProseMirror CSS reset (cursor:text, white-space, etc.)
+      so the editor is visibly clickable and renders empty paragraphs
+      with real height.
+   2. Paragraph + heading + dialogue + scene_break + list typography
+      grounded in the design tokens.
+   3. An empty-state placeholder driven by the host's `data-placeholder`
+      attribute, shown only when the only content is an empty paragraph.
+   ===================================================================== */
+
+/* ---------- ProseMirror baseline ---------- */
+
+.water-editor {
+  position: relative;
+}
+
+.water-editor .ProseMirror {
+  position: relative;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  -webkit-font-variant-ligatures: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+  cursor: text;
+  outline: none;
+  min-height: 480px;
+}
+
+.water-editor .ProseMirror[contenteditable="false"] {
+  white-space: normal;
+}
+
+.water-editor .ProseMirror pre {
+  white-space: pre-wrap;
+}
+
+.water-editor .ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+
+.water-editor .ProseMirror-hideselection *::-moz-selection {
+  background: transparent;
+}
+
+.water-editor .ProseMirror-hideselection {
+  caret-color: transparent;
+}
+
+/* ---------- Block typography ---------- */
+
+.water-editor .ProseMirror p {
+  margin: 0 0 0.6em 0;
+  min-height: 1.5em;           /* empty paragraphs stay visible + clickable */
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-body);
+  line-height: var(--water-lh-body);
+}
+
+.water-editor .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+
+.water-editor .ProseMirror h2 {
+  margin: 1.2em 0 0.4em 0;
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-title);
+  line-height: var(--water-lh-title);
+  font-weight: 500;
+}
+
+.water-editor .ProseMirror h3 {
+  margin: 1em 0 0.3em 0;
+  font-family: var(--water-font-serif);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 500;
+  color: var(--water-fg-muted);
+}
+
+.water-editor .ProseMirror p.dialogue {
+  font-style: italic;
+  padding-left: 1em;
+  border-left: 2px solid color-mix(in srgb, var(--water-hue-coherence) 40%, transparent);
+}
+
+.water-editor .ProseMirror hr.scene-break {
+  border: none;
+  height: 1px;
+  background: color-mix(in srgb, var(--water-fg-faint) 30%, transparent);
+  margin: 2em 0;
+}
+
+.water-editor .ProseMirror ol,
+.water-editor .ProseMirror ul {
+  margin: 0.4em 0;
+  padding-left: 1.6em;
+}
+
+.water-editor .ProseMirror li {
+  position: relative;
+  margin: 0.2em 0;
+}
+
+.water-editor .ProseMirror li p {
+  margin: 0;
+}
+
+/* ---------- Selection ---------- */
+
+.water-editor .ProseMirror ::selection {
+  background: color-mix(in srgb, var(--water-hue-coherence) 35%, transparent);
+}
+
+/* ---------- Placeholder (only on a truly-empty doc) ---------- */
+
+/* The host `.water-editor` carries `data-placeholder="..."` from the
+   Editor component. We attach `::before` to the host itself (so we can
+   read its own attribute), position it where the cursor starts, and
+   reveal it only when the ProseMirror doc is one empty paragraph.
+   `:has()` is supported in WKWebView 17+ and WebView2; Tauri 2 ships
+   both. */
+.water-editor[data-placeholder]:not([data-placeholder=""])::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--water-fg-faint);
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-body);
+  line-height: var(--water-lh-body);
+  font-style: italic;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.water-editor:has(> .ProseMirror > p:only-child:empty)::before {
+  opacity: 1;
+}
