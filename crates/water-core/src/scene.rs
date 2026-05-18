@@ -158,6 +158,33 @@ impl<'a> SceneStore<'a> {
         Ok(())
     }
 
+    /// Update the scene's name on disk + in the DB. Like `write_body`, refreshes
+    /// `updated_at`, the file hash, and the matching DB row.
+    ///
+    /// # Errors
+    /// Returns an `Error::NotFound` if no scene with the given id exists; otherwise
+    /// propagates io / sqlite errors.
+    pub fn rename(&self, id: &Id, new_name: &str) -> Result<SceneRow> {
+        let path = self.path_for(id)?;
+        let mut file = SceneFile::read(&path)?;
+        new_name.clone_into(&mut file.frontmatter.name);
+        file.frontmatter.updated_at = Utc::now().to_rfc3339();
+        file.write(&path)?;
+        let file_hash = hash_file(&path)?;
+
+        self.db.conn().execute(
+            "UPDATE scene SET name = ?2, file_hash = ?3, updated_at = ?4 WHERE id = ?1",
+            (
+                id.as_str(),
+                new_name,
+                &file_hash,
+                &file.frontmatter.updated_at,
+            ),
+        )?;
+
+        self.row(id)
+    }
+
     pub fn list(&self, manuscript_id: &Id) -> Result<Vec<SceneRow>> {
         let mut stmt = self.db.conn().prepare(
             "SELECT id, manuscript_id, chapter_id, ordering, name, word_count, file_path, file_hash
@@ -314,6 +341,37 @@ mod tests {
         );
         let file = store.read(&scene.id).unwrap();
         assert_eq!(file.frontmatter.order, 99);
+    }
+
+    #[test]
+    fn rename_updates_both_db_and_frontmatter() {
+        let (dir, db, m_id) = setup();
+        let store = SceneStore::new(&db, dir.path().to_path_buf());
+        let scene = store
+            .create(NewScene {
+                manuscript_id: m_id.clone(),
+                chapter_id: None,
+                name: "Original".into(),
+                ordering: 0,
+            })
+            .unwrap();
+        let hash_before = scene.file_hash.clone();
+        let row = store.rename(&scene.id, "Renamed").unwrap();
+        // DB side
+        assert_eq!(row.name, "Renamed");
+        assert_ne!(
+            row.file_hash, hash_before,
+            "file_hash should refresh after rename"
+        );
+        // List should also reflect the new name
+        let list = store.list(&m_id).unwrap();
+        assert_eq!(
+            list.iter().find(|r| r.id == scene.id).unwrap().name,
+            "Renamed"
+        );
+        // Frontmatter side
+        let file = store.read(&scene.id).unwrap();
+        assert_eq!(file.frontmatter.name, "Renamed");
     }
 
     #[test]

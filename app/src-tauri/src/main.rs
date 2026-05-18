@@ -24,6 +24,7 @@ fn main() {
             commands::scene::scene_read,
             commands::scene::scene_write_body,
             commands::scene::scene_list,
+            commands::scene::scene_rename,
             commands::provider::provider_test,
             commands::provider::provider_set_key,
             commands::diagnostics::diagnostics_status,

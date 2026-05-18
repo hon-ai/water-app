@@ -127,3 +127,28 @@ pub async fn scene_list(state: State<'_, AppState>) -> Result<Vec<SceneInfo>, St
         })
         .collect())
 }
+
+#[tauri::command]
+pub async fn scene_rename(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<SceneInfo, String> {
+    let (db, root) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        (project.db.clone(), project.root.clone())
+    };
+    let id: Id = id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let db_guard = db.lock().await;
+    let store = SceneStore::new(&db_guard, root);
+    let row = store.rename(&id, &name).map_err(|e| e.to_string())?;
+    Ok(SceneInfo {
+        id: row.id.to_string(),
+        name: row.name,
+        ordering: row.ordering,
+        word_count: row.word_count,
+    })
+}
