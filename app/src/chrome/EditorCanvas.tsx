@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type SceneInfo } from "../ipc/commands";
 import { Editor } from "../editor/Editor";
 import { PillLayer } from "../pill/PillLayer";
+import { PinnedColumn } from "../pill/PinnedColumn";
 
 interface Props {
   sceneId: string;
@@ -181,6 +182,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
         />
       </div>
       <PillLayer />
+      <PinnedColumn />
     </main>
   );
 }

@@ -61,7 +61,7 @@ describe("Bouquet", () => {
     expect(pillRegenerateMock).toHaveBeenCalledWith("p1");
   });
 
-  it("clicking pin calls ipc.pillPin with the parent id", () => {
+  it("clicking pin calls ipc.pillPin with a synthesised Pill payload when pillForPinning is omitted", () => {
     render(
       <Bouquet
         parentId="p1"
@@ -72,7 +72,37 @@ describe("Bouquet", () => {
     );
     fireEvent.click(screen.getByLabelText("Pin pill"));
     expect(pillPinMock).toHaveBeenCalledTimes(1);
-    expect(pillPinMock).toHaveBeenCalledWith("p1");
+    expect(pillPinMock).toHaveBeenCalledWith(
+      expect.objectContaining({ pill_id: "p1", hue_token: "--water-hue-muse" }),
+      "",
+      "",
+      "",
+    );
+  });
+
+  it("clicking pin forwards the supplied pillForPinning + scene/block/snippet", () => {
+    const fullPill = {
+      pill_id: "p1",
+      speaker_id: "muse",
+      hue_token: "--water-hue-muse",
+      text: "ripple",
+      block_target_id: "b9",
+      trigger_id: "trg-1",
+    };
+    render(
+      <Bouquet
+        parentId="p1"
+        hueToken="--water-hue-muse"
+        items={sampleItems}
+        onClose={() => {}}
+        pillForPinning={fullPill}
+        sceneId="s1"
+        blockId="b9"
+        snippet="the bell rings"
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Pin pill"));
+    expect(pillPinMock).toHaveBeenCalledWith(fullPill, "s1", "b9", "the bell rings");
   });
 
   it("clicking X calls ipc.pillDismiss and onClose", () => {

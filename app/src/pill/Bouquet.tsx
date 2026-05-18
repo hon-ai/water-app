@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { RefreshCw, Pin, X } from "lucide-react";
 import { ipc } from "../ipc/commands";
+import type { Pill } from "./types";
 
 export interface BouquetItem {
   sub_pill_id: string;
@@ -14,6 +15,21 @@ interface Props {
   items: BouquetItem[];
   onClose: () => void;
   onSubClick?: (item: BouquetItem) => void;
+  /**
+   * Full Pill record for the parent, used when the user clicks "pin".
+   * Optional for M2: if absent we synthesise a minimal record from
+   * `parentId`/`hueToken`. PillLayer passes the real Pill (it has the
+   * top-level pill object), so top-level pins capture the correct text +
+   * speaker. Sub-pill pins from RabbitHole currently fall back to the
+   * synthesised shape until T26 plumbs sub-pill records.
+   */
+  pillForPinning?: Pill;
+  /** Scene the pill belongs to. Falls back to "" for M2. */
+  sceneId?: string;
+  /** Anchored block id. Falls back to "" for M2. */
+  blockId?: string;
+  /** Snippet of the manuscript at pin time. Falls back to "" for M2. */
+  snippet?: string;
 }
 
 const ANGLE_HUE_SHIFT: Record<BouquetItem["angle"], string> = {
@@ -30,7 +46,26 @@ const ANGLE_HUE_SHIFT: Record<BouquetItem["angle"], string> = {
  * Because the surrounding `PillLayer` is `pointer-events: none`, this
  * component's outer wrapper re-enables pointer events.
  */
-export function Bouquet({ parentId, hueToken, items, onClose, onSubClick }: Props) {
+export function Bouquet({
+  parentId,
+  hueToken,
+  items,
+  onClose,
+  onSubClick,
+  pillForPinning,
+  sceneId = "",
+  blockId = "",
+  snippet = "",
+}: Props) {
+  const pinPayload: Pill =
+    pillForPinning ?? {
+      pill_id: parentId,
+      speaker_id: "",
+      hue_token: hueToken,
+      text: "",
+      block_target_id: null,
+      trigger_id: "",
+    };
   const wrapStyle: CSSProperties = {
     pointerEvents: "auto",
     display: "flex",
@@ -109,7 +144,7 @@ export function Bouquet({ parentId, hueToken, items, onClose, onSubClick }: Prop
           type="button"
           aria-label="Pin pill"
           onClick={() => {
-            void ipc.pillPin(parentId);
+            void ipc.pillPin(pinPayload, sceneId, blockId, snippet);
           }}
           style={iconBtnStyle}
         >

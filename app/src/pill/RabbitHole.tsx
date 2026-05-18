@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { Bouquet, type BouquetItem } from "./Bouquet";
+import type { Pill } from "./types";
 
 export interface RabbitHoleLevel {
   parentId: string;
@@ -13,6 +14,13 @@ interface Props {
   path: RabbitHoleLevel[];
   onSubClick: (level: number, item: BouquetItem) => void;
   onClose: () => void;
+  /**
+   * Full root Pill record for use when the user pins from the deepest
+   * bouquet. Only meaningful at depth 1 (where the bouquet's parent is the
+   * top-level pill); deeper bouquets fall back to Bouquet's synthesised
+   * payload until T26 plumbs sub-pill records.
+   */
+  rootPill?: Pill;
 }
 
 /**
@@ -30,7 +38,7 @@ interface Props {
  * words) with " > ". The X (in the inner `<Bouquet>`) closes the whole
  * thread via `onClose`.
  */
-export function RabbitHole({ hueToken, path, onSubClick, onClose }: Props) {
+export function RabbitHole({ hueToken, path, onSubClick, onClose, rootPill }: Props) {
   // Siblings to collapse to glow lines: for each level except the last (the
   // currently-open one), every item whose sub_pill_id !== chosenSubId.
   const collapsedSiblings: Array<{ levelIdx: number; item: BouquetItem }> = [];
@@ -110,6 +118,9 @@ export function RabbitHole({ hueToken, path, onSubClick, onClose }: Props) {
           items={currentLevel.items}
           onClose={onClose}
           onSubClick={(item) => onSubClick(path.length - 1, item)}
+          // Only pass the full Pill at depth 1 (current = root). At deeper
+          // levels the "parent" is a sub-pill we don't have a full record for.
+          pillForPinning={path.length === 1 ? rootPill : undefined}
         />
       </div>
     </div>

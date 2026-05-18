@@ -35,6 +35,12 @@ vi.mock("../pill/PillLayer", () => ({
   PillLayer: () => null,
 }));
 
+// PinnedColumn also fetches state + subscribes on mount; stub it out for
+// the same reason. Coverage lives in app/src/pill/PinnedColumn.test.tsx.
+vi.mock("../pill/PinnedColumn", () => ({
+  PinnedColumn: () => null,
+}));
+
 import { EditorCanvas } from "./EditorCanvas";
 
 describe("EditorCanvas", () => {

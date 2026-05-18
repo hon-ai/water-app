@@ -4669,6 +4669,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",

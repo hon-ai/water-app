@@ -28,6 +28,8 @@ export interface WaterEventPayloads {
   };
   "pill:dismissed": { pill_id: string };
   "pill:evicted": { pill_id: string };
+  "pill:pinned": import("../pill/types").Pill;
+  "pill:unpinned": { pill_id: string };
   "bouquet:ready": {
     parent_pill_id: string;
     items: Array<{

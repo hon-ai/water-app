@@ -62,8 +62,14 @@ export const ipc = {
     invoke("pill_expand", { parentPillId: parent_pill_id }),
   pillRegenerate: (parent_pill_id: string): Promise<void> =>
     invoke("pill_regenerate", { parentPillId: parent_pill_id }),
-  pillPin: (pill_id: string): Promise<void> =>
-    invoke("pill_pin", { pillId: pill_id }),
+  pillPin: (
+    pill: import("../pill/types").Pill,
+    sceneId: string,
+    blockId: string,
+    snippet: string,
+  ): Promise<void> => invoke("pill_pin", { pill, sceneId, blockId, snippet }),
   pillDismiss: (pill_id: string): Promise<void> =>
     invoke("pill_dismiss", { pillId: pill_id }),
+  pinnedList: (): Promise<import("../pill/types").Pill[]> =>
+    invoke("pinned_list"),
 };
