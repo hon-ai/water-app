@@ -199,3 +199,135 @@ async fn exit_sidecar_boots_under_8s() {
     );
     sc.shutdown().await.unwrap();
 }
+
+#[test]
+fn exit_rebuild_with_character_reference_round_trips() {
+    use water_core::scene_md::SceneFrontmatter;
+    let dir = tempfile::tempdir().unwrap();
+    let project_id = Id::new();
+    let manuscript_id = Id::new();
+    let character_id = Id::new();
+    let scene_id = Id::new();
+
+    WaterToml {
+        schema_version: 1,
+        project_id: project_id.clone(),
+        name: "RefProj".into(),
+        default_manuscript_id: Some(manuscript_id.clone()),
+        created_at: "2026-05-17T09:00:00+00:00".into(),
+        updated_at: "2026-05-17T09:00:00+00:00".into(),
+    }
+    .write(dir.path())
+    .unwrap();
+
+    std::fs::create_dir_all(dir.path().join("characters")).unwrap();
+    let char_toml =
+        format!("id = \"{character_id}\"\nname = \"Maren\"\nschema_version = \"lsm-v2.1\"\n");
+    std::fs::write(
+        dir.path()
+            .join("characters")
+            .join(format!("{character_id}.toml")),
+        char_toml,
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(dir.path().join("manuscript").join("scenes")).unwrap();
+    let scene_path = dir
+        .path()
+        .join("manuscript")
+        .join("scenes")
+        .join(format!("{scene_id}.md"));
+    water_core::scene_md::SceneFile {
+        frontmatter: SceneFrontmatter {
+            id: scene_id.clone(),
+            name: "Opening".into(),
+            chapter_id: None,
+            order: 0,
+            pov_character_id: Some(character_id.clone()),
+            characters_present: vec![character_id.clone()],
+            location_id: None,
+            scene_goal: None,
+            status: "draft".into(),
+            created_at: "2026-05-17T09:00:00+00:00".into(),
+            updated_at: "2026-05-17T09:00:00+00:00".into(),
+            word_count: 1,
+        },
+        body: "Hello.\n".into(),
+    }
+    .write(&scene_path)
+    .unwrap();
+
+    let (db, stats) = rebuild_from_truth(dir.path()).unwrap();
+    assert_eq!(stats.characters, 1);
+    assert_eq!(stats.scenes, 1);
+
+    let pov: Option<String> = db
+        .conn()
+        .query_row(
+            "SELECT pov_character_id FROM scene WHERE id = ?1",
+            [scene_id.as_str()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(pov.as_deref(), Some(character_id.as_str()));
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn exit_snapshot_scheduler_on_close_fires_for_registered_scenes() {
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::Mutex;
+    use water_core::{
+        ActiveScene, ManuscriptStore, NewScene, ProjectStore, SceneStore, SnapshotScheduler,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open_in_memory().unwrap();
+    let p = ProjectStore::new(&db).insert("P").unwrap();
+    let m = ManuscriptStore::new(&db).insert(&p.id, "M", 0).unwrap();
+    let ss = SceneStore::new(&db, dir.path().to_path_buf());
+    let scene = ss
+        .create(NewScene {
+            manuscript_id: m.id.clone(),
+            chapter_id: None,
+            name: "S".into(),
+            ordering: 0,
+        })
+        .unwrap();
+    ss.write_body(&scene.id, "hello world").unwrap();
+    let scene_path = dir
+        .path()
+        .join("manuscript")
+        .join("scenes")
+        .join(format!("{}.md", scene.id));
+
+    let db_arc = Arc::new(Mutex::new(db));
+    let scheduler = SnapshotScheduler::spawn(db_arc.clone(), dir.path().to_path_buf());
+    scheduler
+        .register(ActiveScene {
+            scene_id: scene.id.clone(),
+            file_path: scene_path,
+        })
+        .await;
+
+    // Fire the OnClose snapshot path; give the spawned task a virtual moment.
+    scheduler.on_close().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let count: i64 = {
+        let db_guard = db_arc.lock().await;
+        db_guard
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM snapshot WHERE scene_id = ?1 AND trigger = 'on-close'",
+                [scene.id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    assert!(
+        count >= 1,
+        "expected at least one OnClose snapshot row, got {count}"
+    );
+    scheduler.stop().await.unwrap();
+}
