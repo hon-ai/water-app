@@ -80,7 +80,7 @@ pub async fn create_project(
 
     let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
-    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db).await;
+    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db, root.clone()).await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -174,7 +174,7 @@ pub async fn open_project(
     }
 
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
-    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db).await;
+    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db, root.clone()).await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -234,6 +234,7 @@ async fn spawn_orchestrator_for_project(
     app: &AppHandle,
     state: &State<'_, AppState>,
     db: &Arc<Mutex<water_core::Db>>,
+    project_root: PathBuf,
 ) -> Option<crate::orchestrator_service::OrchestratorHandle> {
     let personas = {
         let g = db.lock().await;
@@ -250,8 +251,12 @@ async fn spawn_orchestrator_for_project(
     // on the orchestrator's next LLM dispatch without restarting the
     // project.
     let shared: crate::orchestrator_service::SharedRouter = state.router.clone();
-    let handle =
-        crate::orchestrator_service::OrchestratorService::start(app.clone(), shared, personas);
+    let handle = crate::orchestrator_service::OrchestratorService::start(
+        app.clone(),
+        shared,
+        personas,
+        project_root,
+    );
     Some(handle)
 }
 

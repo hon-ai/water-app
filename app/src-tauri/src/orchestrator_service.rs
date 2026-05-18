@@ -27,6 +27,7 @@
 
 use crate::events::emit;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -44,6 +45,7 @@ use water_core::post_filter::{builtin_post_filters, FilterDecision, PostFilter};
 use water_core::prompts::{
     assemble_level_0, assemble_pill_expand, assemble_pill_regenerate, PromptLibrary,
 };
+use water_core::replay_log::{ReplayEntry, ReplayLog};
 use water_core::voice::registry::PersonaRegistry;
 use water_core::voice::router::{route, CooldownState};
 use water_core::voice::speaker::SpeakerArc;
@@ -109,6 +111,11 @@ pub struct OrchestratorService {
     /// renderer sends `SceneState`. Used to compute prompt excerpts on
     /// each telemetry tick without round-tripping to `SceneStore`.
     scene_text: String,
+    /// Optional opt-in replay log. `Some` when `WATER_REPLAY_LOG=1` was
+    /// set at service start; cloned into spawned LLM tasks so they can
+    /// append request/response pairs without re-acquiring the service
+    /// mutex. `None` is the production default (no IO overhead).
+    replay_log: Option<Arc<ReplayLog>>,
 }
 
 impl OrchestratorService {
@@ -157,10 +164,15 @@ impl OrchestratorService {
     /// Spawn the service loop and return a handle. The loop terminates when
     /// either `OrchestratorRequest::Shutdown` is received or every handle
     /// clone is dropped.
+    ///
+    /// `project_root` is the open `.water` directory. It is only used to
+    /// place the replay log when `WATER_REPLAY_LOG=1` is set in the
+    /// environment; the rest of the service does not consult it.
     pub fn start(
         app: AppHandle,
         router: SharedRouter,
         personas: PersonaRegistry,
+        project_root: PathBuf,
     ) -> OrchestratorHandle {
         // Channel depth 64 was picked to comfortably absorb a burst of
         // typing-telemetry ticks (renderer fires ~one per keystroke). If
@@ -171,6 +183,29 @@ impl OrchestratorService {
         let prompts = Arc::new(
             PromptLibrary::load_builtin().expect("built-in prompts must load at startup"),
         );
+
+        // Replay log: opt-in via env var. Settings-DB opt-in is a no-op
+        // stub here — wired when Settings UI lands in M7. We open the
+        // file once per service spawn; each open_project mints a fresh
+        // session ULID so successive sessions don't collide.
+        let replay_log = if std::env::var("WATER_REPLAY_LOG").as_deref() == Ok("1") {
+            let session_id = Id::new().as_str().to_string();
+            match ReplayLog::open(&project_root, &session_id) {
+                Ok(log) => {
+                    tracing::info!(
+                        session = %session_id,
+                        "replay log enabled (.water/log/llm/{session_id}.jsonl)"
+                    );
+                    Some(Arc::new(log))
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to open replay log; continuing without it");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let svc = Arc::new(Mutex::new(OrchestratorService {
             app,
@@ -184,6 +219,7 @@ impl OrchestratorService {
             project: ProjectSnapshot::default(),
             analysis: AnalysisSnapshot::default(),
             scene_text: String::new(),
+            replay_log,
         }));
 
         tokio::spawn({
@@ -328,9 +364,33 @@ impl OrchestratorService {
         }
 
         let app = self.app.clone();
+        let replay_log = self.replay_log.clone();
+        // Clone the prompt strings up front so we can both (a) hand the
+        // owned strings to `generate_raw_with_default` and (b) keep
+        // copies to log alongside the response below. The `LlmProvider`
+        // trait takes `String` by value, so we'd lose the originals
+        // otherwise.
+        let prompt_system = prompt.system.clone();
+        let prompt_user = prompt.user.clone();
+        let log_trigger_id = trigger_id.clone();
         tokio::spawn(async move {
+            // Request row (kind = trigger id, e.g. "missing_sensory"). We
+            // log unconditionally before the LLM call so a panic or
+            // hang inside the provider still leaves a request breadcrumb.
+            if let Some(log) = replay_log.as_ref() {
+                let _ = log.append(&ReplayEntry {
+                    ts: chrono::Utc::now().to_rfc3339(),
+                    kind: &log_trigger_id,
+                    request_system: &prompt_system,
+                    request_user: &prompt_user,
+                    response_raw: None,
+                    post_filter_decision: None,
+                    anti_loop_overlap: None,
+                });
+            }
+
             let raw = match router_arc
-                .generate_raw_with_default(prompt.system, prompt.user)
+                .generate_raw_with_default(prompt_system.clone(), prompt_user.clone())
                 .await
             {
                 Ok(s) => s,
@@ -344,9 +404,39 @@ impl OrchestratorService {
                     return;
                 }
             };
+
+            // Decide final post-filter outcome, then both emit and log.
+            // We compute the decision string ("pass", "drop:pass-sentinel",
+            // "drop:<filter-id>:<reason>") before any early-return so the
+            // log entry is always written when a raw response landed.
+            let decision: String = if raw.trim() == "PASS" {
+                "drop:pass-sentinel".to_string()
+            } else {
+                let mut d = "pass".to_string();
+                for f in &filters {
+                    if let FilterDecision::Drop { reason } = f.evaluate(&raw) {
+                        d = format!("drop:{}:{}", f.id(), reason);
+                        break;
+                    }
+                }
+                d
+            };
+
+            if let Some(log) = replay_log.as_ref() {
+                let _ = log.append(&ReplayEntry {
+                    ts: chrono::Utc::now().to_rfc3339(),
+                    kind: "response",
+                    request_system: &prompt_system,
+                    request_user: &prompt_user,
+                    response_raw: Some(&raw),
+                    post_filter_decision: Some(&decision),
+                    anti_loop_overlap: None,
+                });
+            }
+
             // The "PASS" sentinel (spec § 8.1) lets the model decline to
             // speak. Treat trimmed PASS as an explicit dismissal.
-            if raw.trim() == "PASS" {
+            if decision == "drop:pass-sentinel" {
                 let _ = emit(
                     &app,
                     "pill:dismissed",
@@ -354,17 +444,14 @@ impl OrchestratorService {
                 );
                 return;
             }
-            // PostFilter chain. First Drop wins (spec § 7.2).
-            for f in &filters {
-                if let FilterDecision::Drop { reason } = f.evaluate(&raw) {
-                    tracing::info!(filter = f.id(), reason = %reason, "post-filter dropped pill");
-                    let _ = emit(
-                        &app,
-                        "pill:dismissed",
-                        serde_json::json!({ "pill_id": pill_id_str }),
-                    );
-                    return;
-                }
+            if decision != "pass" {
+                tracing::info!(decision = %decision, "post-filter dropped pill");
+                let _ = emit(
+                    &app,
+                    "pill:dismissed",
+                    serde_json::json!({ "pill_id": pill_id_str }),
+                );
+                return;
             }
             let payload = serde_json::json!({
                 "pill_id": pill_id_str,
@@ -452,6 +539,15 @@ impl OrchestratorService {
         let app = self.app.clone();
         let threshold = speaker.anti_loop_threshold();
         let history_arc = self.bouquet_history.clone();
+        let replay_log = self.replay_log.clone();
+        let prompt_system = prompt.system.clone();
+        let prompt_user = prompt.user.clone();
+        // Distinct kinds so the audit can tell expand vs regenerate apart.
+        let log_kind: &'static str = if regenerate {
+            "pill_regenerate"
+        } else {
+            "pill_expand"
+        };
 
         tokio::spawn(async move {
             #[derive(serde::Deserialize, Clone)]
@@ -459,13 +555,38 @@ impl OrchestratorService {
                 angle: String,
                 text: String,
             }
+
+            if let Some(log) = replay_log.as_ref() {
+                let _ = log.append(&ReplayEntry {
+                    ts: chrono::Utc::now().to_rfc3339(),
+                    kind: log_kind,
+                    request_system: &prompt_system,
+                    request_user: &prompt_user,
+                    response_raw: None,
+                    post_filter_decision: None,
+                    anti_loop_overlap: None,
+                });
+            }
+
             let items: Vec<Item> = match router_arc
-                .generate_structured_with_default(prompt.system, prompt.user)
+                .generate_structured_with_default(prompt_system.clone(), prompt_user.clone())
                 .await
             {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!(error = %e, "expand LLM call failed");
+                    if let Some(log) = replay_log.as_ref() {
+                        let err_str = e.to_string();
+                        let _ = log.append(&ReplayEntry {
+                            ts: chrono::Utc::now().to_rfc3339(),
+                            kind: "response",
+                            request_system: &prompt_system,
+                            request_user: &prompt_user,
+                            response_raw: None,
+                            post_filter_decision: Some(&format!("drop:error:{err_str}")),
+                            anti_loop_overlap: None,
+                        });
+                    }
                     let _ = emit(
                         &app,
                         "pill:dismissed",
@@ -483,14 +604,49 @@ impl OrchestratorService {
                 let h = history_arc.lock().await;
                 h.get(&history_key).cloned().unwrap_or_default()
             };
+            // Track the max overlap across all candidate variants so the
+            // replay log captures how close-to-loop this round trip was.
+            let mut max_seen_overlap: f32 = 0.0;
             let mut accepted: Vec<Item> = Vec::with_capacity(3);
-            for it in items {
-                if max_overlap(&it.text, &priors) < threshold {
-                    accepted.push(it);
+            for it in items.iter() {
+                let ov = max_overlap(&it.text, &priors);
+                if ov > max_seen_overlap {
+                    max_seen_overlap = ov;
+                }
+                if ov < threshold {
+                    accepted.push(it.clone());
                 }
                 if accepted.len() >= 3 {
                     break;
                 }
+            }
+
+            // Response row. We serialize the original `items` (before
+            // anti-loop filtering) so the audit can see what the model
+            // produced, and stash the post-filter decision as
+            // `pass`/`drop:anti_loop:all` to mirror level-0 semantics.
+            if let Some(log) = replay_log.as_ref() {
+                let raw_items_json = serde_json::to_string(
+                    &items
+                        .iter()
+                        .map(|i| serde_json::json!({ "angle": i.angle, "text": i.text }))
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap_or_else(|_| "[]".to_string());
+                let decision = if accepted.is_empty() && !items.is_empty() {
+                    "drop:anti_loop:all".to_string()
+                } else {
+                    "pass".to_string()
+                };
+                let _ = log.append(&ReplayEntry {
+                    ts: chrono::Utc::now().to_rfc3339(),
+                    kind: "response",
+                    request_system: &prompt_system,
+                    request_user: &prompt_user,
+                    response_raw: Some(&raw_items_json),
+                    post_filter_decision: Some(&decision),
+                    anti_loop_overlap: Some(max_seen_overlap),
+                });
             }
 
             // Record accepted texts into history so future regenerates can
