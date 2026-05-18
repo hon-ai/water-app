@@ -217,4 +217,40 @@ points at this gap.
 
 ---
 
+## 8. Anti-loop Jaccard suffix-stripper is English-only
+
+**What it is.** Anti-loop overlap normalizes tokens via a fixed `-s/-es/-ed/-ing/-ly` suffix-stripper. Non-English words don't share these suffixes; their stems collapse incorrectly (e.g., German `geben` and `gibt` won't collide). Spec § 17.
+
+**Where it lives.** `crates/water-core/src/orchestrator/anti_loop.rs::strip_suffix`.
+
+**Why it's fragile.** v1 ships English-only manuscripts. Non-English is M7+.
+
+**First-look mitigations.** Inspect replay logs (`WATER_REPLAY_LOG=1`) for the affected scene; check anti-loop overlap distribution per speaker.
+
+---
+
+## 9. Pill block-anchor stability under decoration churn
+
+**What it is.** When `pill:emerged` fires while the user is mid-edit at the anchored block, the editor's transaction filter may re-apply decoration after a partial write. Snippet-as-canonical (master spec § 3.3) is the fallback.
+
+**Where it lives.** `app/src/pill/PillLayer.tsx` (anchor rect computation); `app/src/editor/blockIdPlugin.ts` (block-id stability).
+
+**Why it's fragile.** Selection + decoration coexistence is hard. Race window is small but visible during rapid typing.
+
+**First-look mitigations.** Check `bouquet.block_target_id` against the live scene's current block IDs; if mismatched, the snippet still resolves via text-content scan.
+
+---
+
+## 10. Structural-inflection detection is shallow
+
+**What it is.** The editor emits `new_scene` / `new_chapter` on block insert (cheap and accurate, user-initiated). `pov_change` / `location_change` are stubbed in M2 — sidecar heuristics are M3+. The current `descendants` scan in `Editor.tsx` is O(N blocks) per transaction.
+
+**Where it lives.** `app/src/editor/Editor.tsx` (inflection detection); `crates/water-core/src/orchestrator/triggers/structural_inflection.rs` (priority scaling).
+
+**Why it's fragile.** Heuristic; nightly tone-audit scorecard will track leak rate once M3 wires real pov/location detection.
+
+**First-look mitigations.** Inspect the renderer's last `typing:telemetry` event for the affected scene; lower the priority multiplier in `structural_inflection.rs` if false-positive rate is too high.
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
