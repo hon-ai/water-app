@@ -524,10 +524,10 @@ Seven internal milestones plus a parallel evaluation harness. Each milestone get
                    │            │           │
         ┌──────────┘            │           └────────────┐
         ▼                       ▼                        ▼
- ┌──────────────┐    ┌────────────────────┐    ┌────────────────┐
- │ M2 — Editor  │    │ M1.5 — Eval Harness│    │ M3 — Character │
- │ & Pill Engine│    │ (parallel, ongoing)│    │ Sheets (LSM)   │
- └──────────────┘    └────────────────────┘    └────────────────┘
+  ┌──────────────┐    ┌─────────────────────┐    ┌────────────────┐
+  │ M2 — Editor  │    │ MEval — Eval Harness│    │ M3 — Character │
+  │ & Pill Engine│    │ (parallel, ongoing) │    │ Sheets (LSM)   │
+  └──────────────┘    └─────────────────────┘    └────────────────┘
         │                                              │
         │              ┌───────────────────────────────┘
         ▼              ▼
@@ -570,7 +570,9 @@ Seven internal milestones plus a parallel evaluation harness. Each milestone get
 - Snapshot timeline shows hourly entries; restoring works and creates a pre-restore snapshot.
 - Sidecar boots in < 8 s on a typical laptop and responds to `/health`.
 
-### 4.3 M1.5 — Model Evaluation Harness (parallel, ongoing)
+### 4.3 MEval — Model Evaluation Harness (parallel, ongoing)
+
+> **Naming note (2026-05-17).** This milestone was originally called "M1.5" in earlier drafts of this spec. The label was reused for an unrelated UI chrome redesign that shipped on 2026-05-17 (`m1.5` git tag). The eval-harness milestone is renamed here to `MEval` to resolve the collision; everything else about it (scope, exit criteria, parallel-ongoing cadence) is unchanged.
 
 **Goal.** A small offline harness that benchmarks candidate LLMs against Water's specific tasks so we choose defaults based on evidence, not vibes.
 
@@ -991,7 +993,7 @@ On click of a level-0 pill:
 
 ### 6.5 Scene summary subsystem
 
-- **Model tier**: smallest viable model from M1.5 eval; defaults to local; cloud allowed via settings toggle; auto-fallback to cloud if local takes > 8 s wall-clock for 3 consecutive scenes (one-time soft notice on first auto-fallback).
+- **Model tier**: smallest viable model from MEval; defaults to local; cloud allowed via settings toggle; auto-fallback to cloud if local takes > 8 s wall-clock for 3 consecutive scenes (one-time soft notice on first auto-fallback).
 - **When to regenerate**: scene `file_hash` changed AND scene has ≥ 100 words AND debounced ≥ 30 s since last edit AND last summary > 2 min old.
 - **Storage**: `scene_metrics.summary`, `.summary_for_hash`, `.summary_model_id`.
 - **Prompt** (`tasks/scene_summary.toml`): "Summarize what happens in this scene in 1–2 sentences, present tense, no character interpretation, no judgment. Output prose only."
@@ -1028,7 +1030,7 @@ On click of a level-0 pill:
 
 ### 6.9 Determinism for tests
 
-A test harness drives the orchestrator with synthetic typing + analysis events and a fake LLM provider, asserting exact pill timing, voice routing, and prompt assembly. The eval harness (M1.5) reuses the fake-provider infrastructure for scoring real models.
+A test harness drives the orchestrator with synthetic typing + analysis events and a fake LLM provider, asserting exact pill timing, voice routing, and prompt assembly. The eval harness (MEval) reuses the fake-provider infrastructure for scoring real models.
 
 ---
 
@@ -1038,7 +1040,7 @@ A test harness drives the orchestrator with synthetic typing + analysis events a
 
 | # | Risk | Likelihood | Severity | Mitigation |
 |---|---|---|---|---|
-| R1 | Pill quality varies wildly across models; defaults chosen too early go stale | High | High | M1.5 runs continuously; defaults re-selected each milestone; scorecards versioned in repo |
+| R1 | Pill quality varies wildly across models; defaults chosen too early go stale | High | High | MEval runs continuously; defaults re-selected each milestone; scorecards versioned in repo |
 | R2 | Tone enforcement leaks despite prompt clauses | Medium | High | `PASS` + retry; instructive-phrase blacklist used as both prompt clause AND post-hoc filter; nightly tone-audit job |
 | R3 | `character_dissonance` lemma-overlap heuristic misfires | Medium | Medium | Flagged in `KNOWN_FRAGILE.md`; per-character `dissonance_sensitivity` slider; eval task family exercises this trigger |
 | R4 | Snippet anchor drifts during pill TTL → pill silently dismissed | Medium | Low | Accepted; mitigation is diagnostics log of dismissal cause so we can audit frequency |
@@ -1066,7 +1068,7 @@ A test harness drives the orchestrator with synthetic typing + analysis events a
 | P3 | "No generation in the page" perceived as "AI doesn't help me when stuck" | Eliciting mode (Chorus) is explicitly for this; pinning a Chorus pill creates a world_entry stub in one click |
 | P4 | Continuous zoom is too cinematic and slows experienced writers | Zoom rail hideable; `⌘ 1…5` direct jumps; menu nav always available |
 | P5 | Heatmap becomes a vanity metric writers stare at instead of writing | Default opens to the editor (zoom 4); macro view is visited, not lived in |
-| P6 | Character voice quality is the moat and hardest to nail | M1.5 prioritizes character-voice tasks; M3 ships sheets but M2 ships persona pills first so we iterate while we wait |
+| P6 | Character voice quality is the moat and hardest to nail | MEval prioritizes character-voice tasks; M3 ships sheets but M2 ships persona pills first so we iterate while we wait |
 
 ### 7.3 Open-question resolutions (recorded for posterity)
 
@@ -1088,13 +1090,13 @@ A test harness drives the orchestrator with synthetic typing + analysis events a
 
 | Wk | Primary | Parallel | Key deliverable | Exit gate |
 |---|---|---|---|---|
-| 1 | M1 Foundation | M1.5 setup | Tauri shell boots; project folder open/save round-trip | Type-and-persist works |
-| 2 | M1 Foundation | M1.5 gold tasks v1 | Sidecar, provider router, snapshot system | Rebuild-from-truth works |
-| 3 | M2 Editor (bake-off) | M1.5 first scorecards | ProseMirror vs Lexical decision; block editor scaffold | Editor pick committed |
-| 4 | M2 Pill engine | M1.5 model sweep | Orchestrator state machine, voice router, persona prompts | Persona pill end-to-end |
-| 5 | M2 Bouquets | M1.5 character-voice tasks | Expansion + regenerate + pin + dismiss; unlimited-depth UX | Rabbit hole works |
+| 1 | M1 Foundation | MEval setup | Tauri shell boots; project folder open/save round-trip | Type-and-persist works |
+| 2 | M1 Foundation | MEval gold tasks v1 | Sidecar, provider router, snapshot system | Rebuild-from-truth works |
+| 3 | M2 Editor (bake-off) | MEval first scorecards | ProseMirror vs Lexical decision; block editor scaffold | Editor pick committed |
+| 4 | M2 Pill engine | MEval model sweep | Orchestrator state machine, voice router, persona prompts | Persona pill end-to-end |
+| 5 | M2 Bouquets | MEval character-voice tasks | Expansion + regenerate + pin + dismiss; unlimited-depth UX | Rabbit hole works |
 | 6 | M3 Sheets | M2 polish | Conversational Intake; LSM v2.1 schemas; character index | Full LSM intake in ≤ 3 min |
-| 7 | M3 + char voice | M1.5 char-voice scorecard | Character speaker track wired; voice routing live | First character pill |
+| 7 | M3 + char voice | MEval char-voice scorecard | Character speaker track wired; voice routing live | First character pill |
 | 8 | M4 World Bible | — | Segmented world + Cartographer trigger + world_drift check | World entries influence pills |
 | 9 | M5 Heatmap A | M5 scene summaries | Per-scene metric rollups; basic intensity curve | Curve updates within 5 s |
 | 10 | M5 Heatmap B | M5 beat labels | Tiered zoom levels 0–1; beat-label markers | Cross-zoom continuous |

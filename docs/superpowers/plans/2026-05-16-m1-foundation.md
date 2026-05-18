@@ -5266,7 +5266,7 @@ git commit -m "feat(core): SidecarSupervisor with status watch channel"
 
 ## Phase H — LLM Provider Router
 
-For M1 the trait surface is intentionally minimal: `health()` and `generate_bouquet()`. M2 will extend the trait when it wires the pill orchestrator. Every adapter ships in M1 so the eval harness (M1.5) and M2 have a stable foundation.
+For M1 the trait surface is intentionally minimal: `health()` and `generate_bouquet()`. M2 will extend the trait when it wires the pill orchestrator. Every adapter ships in M1 so the eval harness (MEval; called "M1.5" in earlier drafts before the M1.5 UI redesign claimed that label) and M2 have a stable foundation.
 
 ### Task 27: `LlmProvider` trait + bouquet types
 
