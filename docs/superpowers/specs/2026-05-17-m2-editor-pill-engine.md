@@ -911,3 +911,19 @@ Expected response: one line of prose like `Something held at the threshold — n
 ---
 
 *Spec ends. Implementation plan to follow.*
+
+
+---
+
+## Amendment 1 — Bake-off decision (Task 7)
+
+**Date:** 2026-05-18
+**Winner:** ProseMirror
+**Margin:** sum-of-scores 27 vs 20 (PM vs Lexical) — 7-point margin
+**Loser branch:** `bakeoff/loser-lexical` (local; no remote configured)
+
+**Rationale.** ProseMirror's block-id maintenance idiom is the most natural fit for M2's spec (one `appendTransaction` plugin handles split/merge/delete uniformly; the seam between PM's "node attrs survive transactions" model and our `^bk-XXXX` requirement is ~30 lines). The decoration API decouples decorations from the doc tree, so pill anchors keyed by block-id never need position-mapping bookkeeping — eliminating an entire class of bugs the pill engine would otherwise inherit.
+
+Lexical's strongest argument was bundle size (slightly smaller, ~55-60 KB gzip vs PM's ~60-68 KB gzip), but in a Tauri desktop app shipped offline this is not a top-priority constraint. Lexical's weakest point was selection stability under autosave write-backs (scored 2/5): the canonical `setEditorState` path wipes selection, and preserving it would require us to build a block-id ↔ node-key reconciliation index on top of Lexical — meaningful engineering work and a class of bugs we don't want during M2-M5.
+
+Subsequent M2 tasks (B3 onward, starting with Task 8) target ProseMirror. The `bakeoff/loser-lexical` branch preserves the harness for posterity; revisit if ProseMirror reveals fatal limitations during integration.
