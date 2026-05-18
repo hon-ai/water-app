@@ -28,6 +28,14 @@ export interface WaterEventPayloads {
   };
   "pill:dismissed": { pill_id: string };
   "pill:evicted": { pill_id: string };
+  "bouquet:ready": {
+    parent_pill_id: string;
+    items: Array<{
+      sub_pill_id: string;
+      angle: "feel" | "notice" | "wonder";
+      text: string;
+    }>;
+  };
 }
 
 export type WaterEventName = keyof WaterEventPayloads;
