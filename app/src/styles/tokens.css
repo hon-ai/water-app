@@ -50,6 +50,20 @@
   --water-dur-small:  240ms;
   --water-dur-medium: 380ms;
   --water-dur-long:   720ms;
+
+  /* Chrome layout */
+  --water-rail-w: 56px;
+  --water-scenes-w: 280px;
+  --water-canvas-max: 720px;
+
+  /* Z-stack */
+  --water-z-sheet: 50;
+  --water-z-tooltip: 60;
+
+  /* Typography stack */
+  --water-font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --water-font-serif: "IBM Plex Serif", "Iowan Old Style", Georgia, serif;
+  --water-font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -108,7 +122,7 @@
 body {
   background: var(--water-bg-paper);
   color: var(--water-fg-default);
-  font-family: Inter, system-ui, sans-serif;
+  font-family: var(--water-font-sans);
   font-size: var(--water-fs-body);
   line-height: var(--water-lh-body);
   margin: 0;
