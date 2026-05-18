@@ -42,7 +42,11 @@ pub async fn create_project(
     std::fs::create_dir_all(root.join(".water").join("cache")).map_err(|e| e.to_string())?;
 
     let db_path = root.join("project.db");
-    let db_raw = Db::open(&db_path).map_err(|e| e.to_string())?;
+    let mut db_raw = Db::open(&db_path).map_err(|e| e.to_string())?;
+    // `Db::open` already migrates to latest; this is a defensive idempotent
+    // call so behavior is unchanged if `Db::open` is ever refactored to not
+    // auto-migrate.
+    water_core::migrations::run_pending(&mut db_raw)?;
     let db = Arc::new(Mutex::new(db_raw));
 
     let (project_id, project_name, manuscript_id) = {
@@ -106,7 +110,7 @@ pub async fn open_project(
     let water = WaterToml::read(&root).map_err(|e| e.to_string())?;
     let db_path = root.join("project.db");
 
-    let (db_raw, default_manuscript_id) = if db_path.exists() {
+    let (mut db_raw, default_manuscript_id) = if db_path.exists() {
         let db_raw = Db::open(&db_path).map_err(|e| e.to_string())?;
         let manuscript_id = water
             .default_manuscript_id
@@ -123,6 +127,11 @@ pub async fn open_project(
             .unwrap_or_default();
         (db_raw, manuscript_id)
     };
+
+    // `Db::open` (and `rebuild_from_truth` which goes through it) already
+    // migrates to latest; this defensive idempotent call ensures schema is
+    // current even if those paths are refactored to skip auto-migration.
+    water_core::migrations::run_pending(&mut db_raw)?;
 
     let db = Arc::new(Mutex::new(db_raw));
     {
