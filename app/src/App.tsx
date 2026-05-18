@@ -129,7 +129,7 @@ export default function App() {
           <>
             <div style={{ position: "relative", display: "flex" }}>
               <ScenesPanel
-                key={scenesReloadKey}
+                reloadToken={scenesReloadKey}
                 projectName={projectName}
                 activeSceneId={activeSceneId}
                 onSelectScene={setActiveSceneId}

@@ -82,4 +82,59 @@ describe("ScenesPanel", () => {
     const aside = screen.getByRole("complementary");
     expect(aside).toHaveAttribute("data-collapsed", "true");
   });
+
+  it("reloads scene list when reloadToken changes without remounting", async () => {
+    invokeMock.mockImplementationOnce(async (cmd: string) => {
+      if (cmd === "scene_list") {
+        return [{ id: "01", name: "First", ordering: 0, word_count: 1 }];
+      }
+      return null;
+    });
+    const { rerender } = render(
+      <ScenesPanel
+        projectName="P"
+        activeSceneId={null}
+        onSelectScene={() => {}}
+        onCreateScene={() => {}}
+        onOpenProjectMenu={() => {}}
+        collapsed={false}
+        onToggleCollapsed={() => {}}
+        reloadToken={1}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("First")).toBeInTheDocument());
+    // Capture the <aside> node to assert it is the same instance after rerender
+    // (a key-based remount would replace this node).
+    const asideBefore = screen.getByRole("complementary");
+    const scene_list_calls_before = invokeMock.mock.calls.filter((c) => c[0] === "scene_list").length;
+    expect(scene_list_calls_before).toBe(1);
+
+    invokeMock.mockImplementationOnce(async (cmd: string) => {
+      if (cmd === "scene_list") {
+        return [
+          { id: "01", name: "First", ordering: 0, word_count: 1 },
+          { id: "02", name: "Second", ordering: 1, word_count: 2 },
+        ];
+      }
+      return null;
+    });
+    rerender(
+      <ScenesPanel
+        projectName="P"
+        activeSceneId={null}
+        onSelectScene={() => {}}
+        onCreateScene={() => {}}
+        onOpenProjectMenu={() => {}}
+        collapsed={false}
+        onToggleCollapsed={() => {}}
+        reloadToken={2}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("Second")).toBeInTheDocument());
+    const asideAfter = screen.getByRole("complementary");
+    // Same DOM node instance — proves no remount happened.
+    expect(asideAfter).toBe(asideBefore);
+    const scene_list_calls_after = invokeMock.mock.calls.filter((c) => c[0] === "scene_list").length;
+    expect(scene_list_calls_after).toBe(2);
+  });
 });
