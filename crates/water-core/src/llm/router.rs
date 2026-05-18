@@ -204,7 +204,7 @@ mod tests {
 
     #[tokio::test]
     async fn router_uses_first_provider_when_healthy() {
-        let p1 = Arc::new(CannedProvider) as Arc<dyn LlmProvider>;
+        let p1 = Arc::new(CannedProvider::default()) as Arc<dyn LlmProvider>;
         let router = LlmRouter::new(vec![p1]);
         let (id, _) = router.generate_bouquet(&req()).await.unwrap();
         assert_eq!(id.as_str(), "canned");
@@ -227,7 +227,7 @@ mod tests {
     #[tokio::test]
     async fn router_falls_back_to_secondary_on_primary_error() {
         let primary = Arc::new(AlwaysFails) as Arc<dyn LlmProvider>;
-        let secondary = Arc::new(CannedProvider) as Arc<dyn LlmProvider>;
+        let secondary = Arc::new(CannedProvider::default()) as Arc<dyn LlmProvider>;
         let router = LlmRouter::new(vec![primary, secondary]);
         let (id, _) = router.generate_bouquet(&req()).await.unwrap();
         assert_eq!(id.as_str(), "canned");

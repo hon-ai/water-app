@@ -77,6 +77,8 @@ pub mod voice;
 
 pub mod prompts;
 
+pub mod post_filter;
+
 #[cfg(test)]
 mod tests {
     use super::*;
