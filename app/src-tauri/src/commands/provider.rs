@@ -1,6 +1,7 @@
+use crate::events::{emit, ProviderStatusPayload};
 use crate::state::AppState;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
 use water_core::llm::{
     AnthropicProvider, BouquetRequest, CannedProvider, LlamaCppProvider, LlmProvider, LlmRouter,
     OllamaProvider, OpenAiProvider, Secrets,
@@ -8,6 +9,7 @@ use water_core::llm::{
 
 #[tauri::command]
 pub async fn provider_test(
+    app: AppHandle,
     state: State<'_, AppState>,
     provider_id: String,
 ) -> Result<Vec<String>, String> {
@@ -15,6 +17,32 @@ pub async fn provider_test(
     // Clone the Arc so we can both run the test and persist a router that
     // uses the SAME provider instance.
     let router = Arc::new(LlmRouter::new(vec![provider.clone()]));
+
+    // Subscribe to router status BEFORE the generate call so we don't miss
+    // the transition. The forwarder task self-terminates when the channel
+    // closes (router dropped) or on `Lagged`/`Closed` recv errors.
+    let mut rx = router.subscribe_status();
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(change) => {
+                    let _ = emit(
+                        &app_clone,
+                        "provider:status",
+                        ProviderStatusPayload {
+                            provider_id: change.provider_id,
+                            ok: change.ok,
+                            error: change.error,
+                        },
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
     let req = BouquetRequest {
         system: "You are testing the provider. Be reactive and concise.".into(),
         user: "Return three angles on the act of looking out of a window.".into(),

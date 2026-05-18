@@ -99,9 +99,9 @@ describe("SettingsSheet event subscription", () => {
   });
 
   it("updates sidecar status when an event fires", async () => {
-    let handler: ((p: { status: string; detail: string | null }) => void) | null = null;
-    onWaterEventMock.mockImplementation(async (_name: string, cb: unknown) => {
-      handler = cb as (p: { status: string; detail: string | null }) => void;
+    const handlers: Record<string, (p: unknown) => void> = {};
+    onWaterEventMock.mockImplementation(async (name: string, cb: unknown) => {
+      handlers[name] = cb as (p: unknown) => void;
       return vi.fn();
     });
     ipcMock.diagnosticsStatus.mockResolvedValue({
@@ -112,11 +112,34 @@ describe("SettingsSheet event subscription", () => {
       provider_health: [],
     });
     render(wrap(<SettingsSheet open={true} onClose={() => {}} />));
-    await waitFor(() => expect(handler).not.toBeNull());
+    await waitFor(() => expect(handlers["sidecar:status"]).toBeDefined());
     await act(async () => {
-      handler!({ status: "ready", detail: null });
+      handlers["sidecar:status"]!({ status: "ready", detail: null });
     });
     await waitFor(() => expect(screen.getByText(/"status": "ready"/)).toBeInTheDocument());
+  });
+
+  it("updates provider health when provider:status event fires", async () => {
+    const handlers: Record<string, (p: unknown) => void> = {};
+    onWaterEventMock.mockImplementation(async (name: string, cb: unknown) => {
+      handlers[name] = cb as (p: unknown) => void;
+      return vi.fn();
+    });
+    ipcMock.diagnosticsStatus.mockResolvedValue({
+      has_open_project: true,
+      project_root: "/p",
+      router_primary_id: null,
+      sidecar: null,
+      provider_health: [{ id: "openai", ok: false, error: null }],
+    });
+    render(wrap(<SettingsSheet open={true} onClose={() => {}} />));
+    await waitFor(() => expect(handlers["provider:status"]).toBeDefined());
+    // Initial render: openai is not ok, so "ok" text is absent.
+    expect(screen.queryByText("ok")).not.toBeInTheDocument();
+    await act(async () => {
+      handlers["provider:status"]!({ provider_id: "openai", ok: true, error: null });
+    });
+    await waitFor(() => expect(screen.getByText("ok")).toBeInTheDocument());
   });
 
   it("invokes unsub even when the sheet closes before onWaterEvent resolves", async () => {
