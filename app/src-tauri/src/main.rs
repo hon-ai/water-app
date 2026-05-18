@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod events;
 mod state;
 
 use state::AppState;
@@ -28,6 +29,7 @@ fn main() {
             commands::provider::provider_test,
             commands::provider::provider_set_key,
             commands::diagnostics::diagnostics_status,
+            commands::events::bus_ping,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
