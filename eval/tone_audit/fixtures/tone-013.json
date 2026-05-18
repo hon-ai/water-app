@@ -1,0 +1,7 @@
+{
+    "id":  "tone-013",
+    "trigger":  "block_anchored_drift",
+    "speaker":  "cartographer",
+    "scene_excerpt":  "She walked across the square. The doors were open but no one went in. A bell rang somewhere she couldn\u0027t see.",
+    "expected_pass":  true
+}

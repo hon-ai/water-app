@@ -1,0 +1,7 @@
+{
+    "id":  "tone-151",
+    "trigger":  "no_universe_yet",
+    "speaker":  "editor",
+    "scene_excerpt":  "The river bent twice before reaching the bridge, and at each bend it had left a stone that did not belong.",
+    "expected_pass":  true
+}

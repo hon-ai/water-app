@@ -1,0 +1,7 @@
+{
+    "id":  "tone-197",
+    "trigger":  "idle_pause_with_present_character",
+    "speaker":  "chorus",
+    "scene_excerpt":  "She walked across the square. The doors were open but no one went in. A bell rang somewhere she couldn\u0027t see.",
+    "expected_pass":  true
+}
