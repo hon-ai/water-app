@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type SceneInfo } from "../ipc/commands";
 import { Editor } from "../editor/Editor";
+import { PillLayer } from "../pill/PillLayer";
 
 interface Props {
   sceneId: string;
@@ -179,6 +180,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           placeholder="Begin where the universe begins."
         />
       </div>
+      <PillLayer />
     </main>
   );
 }

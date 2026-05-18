@@ -18,7 +18,16 @@ export interface WaterEventPayloads {
     recent_word_delta: number;
     structural_inflection: "new_scene" | "new_chapter" | "pov_change" | "location_change" | "none";
   };
-  // pill:emerged, etc. added in later tasks
+  "pill:emerged": {
+    pill_id: string;
+    speaker_id: string;
+    hue_token: string;
+    text: string;
+    block_target_id: string | null;
+    trigger_id: string;
+  };
+  "pill:dismissed": { pill_id: string };
+  "pill:evicted": { pill_id: string };
 }
 
 export type WaterEventName = keyof WaterEventPayloads;
