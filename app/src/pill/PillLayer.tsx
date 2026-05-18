@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { onWaterEvent } from "../ipc/events";
+import { HoverDim } from "./hover-dim";
 import { PillCapsule } from "./PillCapsule";
 import type { Pill } from "./types";
 
@@ -11,7 +12,15 @@ const MAX_ON_SCREEN = 2;
  * Subscribes to `pill:emerged` / `pill:dismissed` / `pill:evicted` and renders
  * up to `MAX_ON_SCREEN` (2) capsules. When a third pill emerges, FIFO
  * eviction drops the oldest. The layer itself is `pointer-events: none`;
- * the capsules re-enable pointer events so clicks land on them.
+ * each capsule's wrapper re-enables pointer events so hover + clicks land.
+ *
+ * On hover, tracks `hoveredId` and computes:
+ * - `sourceRect`: the bounding box of the hovered `[data-pill-id]` capsule.
+ * - `anchorRect`: the bounding box of the corresponding `[data-bid]` block
+ *   in the editor (or `null` if the pill is unanchored).
+ *
+ * These rects are passed to `<HoverDim>`, which fades a global backdrop and
+ * draws an SVG glow line connecting capsule -> anchored block.
  *
  * The async-subscribe-with-`cancelled`-flag pattern (T4) keeps cleanup
  * correct even when the component unmounts before any `onWaterEvent`
@@ -19,6 +28,8 @@ const MAX_ON_SCREEN = 2;
  */
 export function PillLayer() {
   const [pills, setPills] = useState<Pill[]>([]);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,23 +76,61 @@ export function PillLayer() {
     };
   }, []);
 
+  const hoveredPill = pills.find((p) => p.pill_id === hoveredId) ?? null;
+  let anchorRect: DOMRect | null = null;
+  let sourceRect: DOMRect | null = null;
+  if (hoveredPill) {
+    const sourceEl = layerRef.current?.querySelector(
+      `[data-pill-id="${hoveredPill.pill_id}"]`,
+    );
+    sourceRect = sourceEl
+      ? (sourceEl as HTMLElement).getBoundingClientRect()
+      : null;
+    if (hoveredPill.block_target_id) {
+      const blockEl = document.querySelector(
+        `[data-bid="${hoveredPill.block_target_id}"]`,
+      );
+      anchorRect = blockEl
+        ? (blockEl as HTMLElement).getBoundingClientRect()
+        : null;
+    }
+  }
+
   return (
-    <div
-      aria-label="pill margin"
-      style={{
-        position: "absolute",
-        top: 72,
-        right: 16,
-        width: 240,
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        pointerEvents: "none",
-      }}
-    >
-      {pills.map((p) => (
-        <PillCapsule key={p.pill_id} pill={p} />
-      ))}
-    </div>
+    <>
+      <HoverDim
+        active={hoveredPill !== null}
+        anchorRect={anchorRect}
+        sourceRect={sourceRect}
+        hueToken={hoveredPill?.hue_token ?? "--water-hue-muse"}
+      />
+      <div
+        ref={layerRef}
+        aria-label="pill margin"
+        style={{
+          position: "absolute",
+          top: 72,
+          right: 16,
+          width: 240,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          pointerEvents: "none",
+        }}
+      >
+        {pills.map((p) => (
+          <div
+            key={p.pill_id}
+            onMouseEnter={() => setHoveredId(p.pill_id)}
+            onMouseLeave={() =>
+              setHoveredId((prev) => (prev === p.pill_id ? null : prev))
+            }
+            style={{ pointerEvents: "auto" }}
+          >
+            <PillCapsule pill={p} />
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
