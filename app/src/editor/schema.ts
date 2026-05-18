@@ -8,7 +8,12 @@
 // Block kinds supported: paragraph, heading (h2/h3), scene_break, dialogue,
 // ordered_list, bullet_list (via prosemirror-schema-list).
 
-import { Schema, type DOMOutputSpec, type NodeSpec } from "prosemirror-model";
+import {
+  Schema,
+  type DOMOutputSpec,
+  type Mark,
+  type NodeSpec,
+} from "prosemirror-model";
 import { schema as basicSchema } from "prosemirror-schema-basic";
 import { addListNodes } from "prosemirror-schema-list";
 
@@ -127,7 +132,32 @@ const listItemSpec: NodeSpec = {
 
 const withLists = withListsBase.update("list_item", listItemSpec);
 
+// Override the link mark's toDOM so rendered `<a>` elements expose a
+// `title` hint telling the writer how to open the link (M2.5 T7).
+// Mod-click is wired up in Editor.tsx's `handleClickOn` and dispatches
+// the URL to the Tauri shell plugin. The serializer + parser only care
+// about `href`, so adding `title` here is invisible to T1 mark tests.
+const baseMarks = basicSchema.spec.marks;
+const linkSpec = baseMarks.get("link");
+const marksWithLinkTitle = linkSpec
+  ? baseMarks.update("link", {
+      ...linkSpec,
+      toDOM: (mark: Mark): DOMOutputSpec => [
+        "a",
+        {
+          href: mark.attrs["href"],
+          title:
+            typeof navigator !== "undefined" &&
+            /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+              ? "Cmd-click to open"
+              : "Ctrl-click to open",
+        },
+        0,
+      ],
+    })
+  : baseMarks;
+
 export const schema = new Schema({
   nodes: withLists,
-  marks: basicSchema.spec.marks,
+  marks: marksWithLinkTitle,
 });

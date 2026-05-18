@@ -87,6 +87,12 @@ export function SelectionToolbar({ editorView, onLinkClick }: Props) {
       },
     });
     return () => {
+      // T6 review: defense-in-depth against React 18 deleted-tree cleanup
+      // order; Editor's microtask-deferred view.destroy() is the primary
+      // fix, this guard catches future refactors that might forget the
+      // defer (or any third-party HoC that wraps Editor and inverts the
+      // unmount order).
+      if (editorView.isDestroyed) return;
       editorView.setProps({ dispatchTransaction: originalDispatch });
     };
   }, [editorView]);
@@ -109,6 +115,27 @@ export function SelectionToolbar({ editorView, onLinkClick }: Props) {
         capture: true,
       } as EventListenerOptions);
   }, []);
+
+  // Spec § 8.1 (4): auto-hide on editor blur. We listen to `focusout` on
+  // the editor's host so we catch clicks/taps outside the editor host
+  // (the title input, scenes panel, a sheet, etc.). We intentionally do
+  // NOT hide when focus is moving to the toolbar's own buttons or to a
+  // LinkPopup, both of which are rendered in portals outside the editor
+  // host and need the toolbar to stay visible while interacting.
+  useEffect(() => {
+    const handleFocusOut = (e: FocusEvent) => {
+      const next = e.relatedTarget as Element | null;
+      if (next && next instanceof Element) {
+        if (next.closest('[role="toolbar"]')) return;
+        if (next.closest('[role="dialog"]')) return;
+      }
+      setForceHidden(true);
+    };
+    editorView.dom.addEventListener("focusout", handleFocusOut);
+    return () => {
+      editorView.dom.removeEventListener("focusout", handleFocusOut);
+    };
+  }, [editorView]);
 
   // Read version so the component re-renders on dispatch.
   void version;
