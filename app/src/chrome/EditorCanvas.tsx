@@ -3,6 +3,7 @@ import { ipc, type SceneInfo } from "../ipc/commands";
 import { Editor } from "../editor/Editor";
 import { PillLayer } from "../pill/PillLayer";
 import { PinnedColumn } from "../pill/PinnedColumn";
+import { useElementWidth } from "../pill/useElementWidth";
 
 interface Props {
   sceneId: string;
@@ -16,6 +17,10 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
   const [bodyDirty, setBodyDirty] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const bodyDebounce = useRef<number | undefined>(undefined);
+  // Live width of the editor pane; drives the narrow-viewport fallback for
+  // both <PillLayer> (translucent capsules) and <PinnedColumn> (24 px tab).
+  const mainRef = useRef<HTMLElement>(null);
+  const mainWidth = useElementWidth(mainRef);
 
   // Stable ref so the unmount-flush effect reads the latest editor state
   // without re-running (and re-flushing) on every keystroke.
@@ -120,6 +125,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
 
   return (
     <main
+      ref={mainRef}
       style={{
         flex: 1,
         position: "relative",
@@ -181,8 +187,8 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           placeholder="Begin where the universe begins."
         />
       </div>
-      <PillLayer />
-      <PinnedColumn />
+      <PillLayer mainWidth={mainWidth} />
+      <PinnedColumn mainWidth={mainWidth} />
     </main>
   );
 }
