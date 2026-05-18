@@ -24,6 +24,7 @@ import { useIdleDetector } from "./useIdleDetector";
 import { emitTypingTelemetry } from "./typingTelemetry";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { LinkPopup } from "./LinkPopup";
+import { ipc } from "../ipc/commands";
 
 type StructuralInflection =
   | "new_scene"
@@ -292,6 +293,28 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
 
     const view = new EditorView(host, {
       state,
+      // Mod-click on a link mark opens it in the OS default browser via
+      // tauri-plugin-shell (capability-scoped to http/https/mailto). PM
+      // calls this BEFORE its own selection behavior; returning true
+      // suppresses the cursor-placement fall-through. Plain (un-modified)
+      // clicks fall through to normal selection.
+      handleClickOn(view, _pos, _node, _nodePos, event) {
+        const isModClick = event.metaKey || event.ctrlKey;
+        if (!isModClick) return false;
+        // posAtCoords returns null when the click is outside the editor's
+        // doc area (e.g. on the gutter); safe to skip in that case.
+        const coords = view.posAtCoords({
+          left: event.clientX,
+          top: event.clientY,
+        });
+        if (!coords) return false;
+        const $pos = view.state.doc.resolve(coords.pos);
+        const link = $pos.marks().find((m) => m.type.name === "link");
+        const href = link?.attrs["href"];
+        if (typeof href !== "string" || href.length === 0) return false;
+        void ipc.openExternalLink(href);
+        return true;
+      },
       dispatchTransaction(tr) {
         const next = view.state.apply(tr);
         view.updateState(next);

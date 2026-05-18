@@ -106,4 +106,12 @@ export const ipc = {
     invoke("pill_dismiss", { pillId: pill_id }),
   pinnedList: (): Promise<import("../pill/types").Pill[]> =>
     invoke("pinned_list"),
+
+  // Open an external URL via the OS default handler. Backed by the Tauri
+  // `shell` plugin, whose capability scope (see
+  // app/src-tauri/capabilities/default.json) restricts URLs to
+  // https://*, http://*, and mailto:* schemes. Anything outside that
+  // scope rejects with a "scope denied" error from the plugin.
+  openExternalLink: (url: string): Promise<void> =>
+    import("@tauri-apps/plugin-shell").then(({ open }) => open(url)),
 };
