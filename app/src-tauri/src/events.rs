@@ -18,3 +18,13 @@ pub fn emit<T: Serialize + Clone>(
 pub struct BusPing {
     pub tick: u64,
 }
+
+/// Payload for the `sidecar:status` event. Mirrors
+/// `WaterEventPayloads["sidecar:status"]` in `app/src/ipc/events.ts`.
+/// `status` is one of `"loading" | "ready" | "error"` — the renderer is
+/// allowed to assume the closed set.
+#[derive(Serialize, Clone)]
+pub struct SidecarStatusPayload {
+    pub status: String,
+    pub detail: Option<String>,
+}
