@@ -79,6 +79,8 @@ pub mod prompts;
 
 pub mod post_filter;
 
+pub mod tone_audit;
+
 pub mod replay_log;
 
 #[cfg(test)]

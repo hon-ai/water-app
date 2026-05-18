@@ -1,0 +1,7 @@
+{
+    "id":  "tone-022",
+    "trigger":  "scene_flow_dip",
+    "speaker":  "echo",
+    "scene_excerpt":  "Rain on the slate roof. The lamp in the kitchen had been lit since before he came home. He hadn\u0027t asked her about the letter.",
+    "expected_pass":  true
+}

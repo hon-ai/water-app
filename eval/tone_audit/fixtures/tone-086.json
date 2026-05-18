@@ -1,0 +1,7 @@
+{
+    "id":  "tone-086",
+    "trigger":  "structural_inflection",
+    "speaker":  "architect",
+    "scene_excerpt":  "Rain on the slate roof. The lamp in the kitchen had been lit since before he came home. He hadn\u0027t asked her about the letter.",
+    "expected_pass":  true
+}

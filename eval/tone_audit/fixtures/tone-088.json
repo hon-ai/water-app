@@ -1,0 +1,7 @@
+{
+    "id":  "tone-088",
+    "trigger":  "structural_inflection",
+    "speaker":  "architect",
+    "scene_excerpt":  "Maps had been drawn for this country before there was a name for it, and the names came after, slowly.",
+    "expected_pass":  true
+}

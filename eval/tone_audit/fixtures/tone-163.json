@@ -1,0 +1,7 @@
+{
+    "id":  "tone-163",
+    "trigger":  "character_dissonance",
+    "speaker":  "echo",
+    "scene_excerpt":  "The river bent twice before reaching the bridge, and at each bend it had left a stone that did not belong.",
+    "expected_pass":  true
+}
