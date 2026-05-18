@@ -158,7 +158,7 @@ export function docFromMarkdown(schema: Schema, md: string): PMNode {
         schema.node(
           "heading",
           { level: 2, blockId: h2[1] ?? "" },
-          text ? [schema.text(text)] : [],
+          markdownToInlineNodes(schema, text),
         ),
       );
       continue;
@@ -172,7 +172,7 @@ export function docFromMarkdown(schema: Schema, md: string): PMNode {
         schema.node(
           "heading",
           { level: 3, blockId: h3[1] ?? "" },
-          text ? [schema.text(text)] : [],
+          markdownToInlineNodes(schema, text),
         ),
       );
       continue;
@@ -186,7 +186,7 @@ export function docFromMarkdown(schema: Schema, md: string): PMNode {
         schema.node(
           "dialogue",
           { blockId: dlg[1] ?? "" },
-          text ? [schema.text(text)] : [],
+          markdownToInlineNodes(schema, text),
         ),
       );
       continue;
@@ -204,7 +204,7 @@ export function docFromMarkdown(schema: Schema, md: string): PMNode {
       schema.node(
         "paragraph",
         { blockId: m?.[1] ?? "" },
-        text ? [schema.text(text)] : [],
+        markdownToInlineNodes(schema, text),
       ),
     );
   }
@@ -214,4 +214,167 @@ export function docFromMarkdown(schema: Schema, md: string): PMNode {
     null,
     nodes.length === 0 ? [schema.node("paragraph", { blockId: "" })] : nodes,
   );
+}
+
+type InlineMark = { name: "strong" | "em" | "link"; href?: string };
+
+type InlineRun = { text: string; marks: InlineMark[] };
+
+function isFlankCharOutside(c: string | undefined): boolean {
+  // Outside = before an opener or after a closer. Per CommonMark, this is
+  // whitespace OR ASCII/Unicode punctuation. We include the emphasis
+  // delimiters (`*`, `_`) and backslash so adjacent runs like `***text***`
+  // (em opener immediately following strong opener) and `[**x**](u)` (em
+  // opener immediately after a `[`) are recognized correctly.
+  if (c === undefined) return true; // BOL/EOL
+  return /[\s.,;:!?'"()\[\]{}*_~`\\—–-]/.test(c);
+}
+
+function isFlankCharInside(c: string | undefined): boolean {
+  // Inside = just after an opener or just before a closer. Must NOT be whitespace.
+  if (c === undefined) return false;
+  return /\S/.test(c);
+}
+
+function tokenizeInline(line: string, seedMarks: InlineMark[]): InlineRun[] {
+  // Walk left-to-right tracking active marks.
+  // Recognized syntax (pragmatic CommonMark subset):
+  //   **...**       open/close strong
+  //   *...*         open/close em (with left/right-flanking rule)
+  //   [text](url)   link span (text is recursively tokenized so marks
+  //                 nested inside a link round-trip cleanly)
+  //   \X            literal X for X ∈ { *, _, [, ], (, ), \ }
+  // Anything else is literal text.
+  if (line.length === 0) return [];
+
+  const runs: InlineRun[] = [];
+  const active: InlineMark[] = [...seedMarks];
+  let buf = "";
+
+  function flush() {
+    if (buf.length === 0) return;
+    runs.push({ text: buf, marks: [...active] });
+    buf = "";
+  }
+
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i]!;
+    const next = line[i + 1];
+    const prev = i === 0 ? undefined : line[i - 1];
+
+    // Escape sequence \X → literal X
+    if (ch === "\\" && next !== undefined && /[\\*_[\]()]/.test(next)) {
+      buf += next;
+      i += 2;
+      continue;
+    }
+
+    // Bold: **
+    if (ch === "*" && next === "*") {
+      const strongOpen = active.some((m) => m.name === "strong");
+      const peekInside2 = line[i + 2];
+      // Try to open strong
+      if (!strongOpen && isFlankCharOutside(prev) && isFlankCharInside(peekInside2)) {
+        flush();
+        active.push({ name: "strong" });
+        i += 2;
+        continue;
+      }
+      // Try to close strong: prefer closing innermost mark.
+      // If the innermost mark is em, prefer closing em with single * first
+      // (handles **bold *italic*** where `***` = em-close + strong-close).
+      if (strongOpen) {
+        const innermost = active[active.length - 1];
+        if (innermost && innermost.name === "em") {
+          // Close em with single `*`. peek inside for that single-* close
+          // is `next` (which is `*`, non-whitespace, so it qualifies).
+          if (isFlankCharInside(prev) && isFlankCharInside(next)) {
+            flush();
+            active.pop();
+            i += 1;
+            continue;
+          }
+        }
+        if (isFlankCharInside(prev) && isFlankCharOutside(peekInside2)) {
+          flush();
+          const idx = active.findIndex((m) => m.name === "strong");
+          if (idx >= 0) active.splice(idx, 1);
+          i += 2;
+          continue;
+        }
+      }
+      // Fall through to literal
+    }
+
+    // Italic: *
+    if (ch === "*" && next !== "*") {
+      const emOpen = active.some((m) => m.name === "em");
+      const peekInside = next;
+      if (!emOpen && isFlankCharOutside(prev) && isFlankCharInside(peekInside)) {
+        flush();
+        active.push({ name: "em" });
+        i += 1;
+        continue;
+      }
+      if (emOpen && isFlankCharInside(prev) && isFlankCharOutside(peekInside)) {
+        flush();
+        const idx = active.findIndex((m) => m.name === "em");
+        if (idx >= 0) active.splice(idx, 1);
+        i += 1;
+        continue;
+      }
+      // Fall through to literal
+    }
+
+    // Link: [text](url) — text is recursively tokenized so inline marks
+    // inside a link survive round-trip. Links themselves do not nest.
+    if (ch === "[" && !active.some((m) => m.name === "link")) {
+      const closeBracket = line.indexOf("]", i + 1);
+      const openParen = closeBracket >= 0 ? line[closeBracket + 1] : undefined;
+      if (closeBracket > i + 1 && openParen === "(") {
+        const closeParen = line.indexOf(")", closeBracket + 2);
+        if (closeParen > closeBracket + 1) {
+          const linkText = line.slice(i + 1, closeBracket);
+          const href = line.slice(closeBracket + 2, closeParen);
+          if (linkText.length > 0 && href.length > 0) {
+            flush();
+            const inner = tokenizeInline(linkText, [
+              ...active,
+              { name: "link", href },
+            ]);
+            for (const r of inner) runs.push(r);
+            i = closeParen + 1;
+            continue;
+          }
+        }
+      }
+      // Fall through to literal
+    }
+
+    buf += ch;
+    i += 1;
+  }
+  flush();
+
+  return runs;
+}
+
+export function markdownToInlineNodes(
+  schema: import("prosemirror-model").Schema,
+  line: string,
+): import("prosemirror-model").Node[] {
+  if (line.length === 0) return [];
+  const runs = tokenizeInline(line, []);
+
+  return runs
+    .filter((r) => r.text.length > 0)
+    .map((r) => {
+      const marks = r.marks.map((m) => {
+        if (m.name === "link") return schema.marks.link!.create({ href: m.href ?? "" });
+        if (m.name === "strong") return schema.marks.strong!.create();
+        return schema.marks.em!.create();
+      });
+      return schema.text(r.text, marks);
+    });
 }
