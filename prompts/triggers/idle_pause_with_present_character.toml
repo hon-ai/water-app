@@ -1,0 +1,6 @@
+version = "1"
+id = "idle_pause_with_present_character"
+framing = """
+The writer has paused. A character is present in this scene. Speak briefly
+as that character would notice the present moment.
+"""

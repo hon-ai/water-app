@@ -1,0 +1,7 @@
+version = "1"
+id = "block_anchored_drift"
+framing = """
+The writer has just finished a paragraph whose coherence has dipped or
+whose divergence from the surrounding scene has risen.
+React to what is almost-but-not-quite present in this paragraph.
+"""

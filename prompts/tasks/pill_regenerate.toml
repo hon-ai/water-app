@@ -1,0 +1,10 @@
+version = "1"
+id = "pill_regenerate"
+instruction = """
+Produce three NEW variants — exactly three — that approach the parent
+observation from angles materially different from the previous attempts.
+The following opening words have already been used; choose new openings:
+{prior_first_words}.
+Output strict JSON with the same schema as pill_expand.
+"""
+output_format = "json"

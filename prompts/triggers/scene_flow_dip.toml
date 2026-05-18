@@ -1,0 +1,6 @@
+version = "1"
+id = "scene_flow_dip"
+framing = """
+The scene's flow has been low for at least thirty seconds. Speak softly to
+what the scene is doing, not what it could do.
+"""

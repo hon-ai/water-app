@@ -1,0 +1,6 @@
+version = "1"
+id = "character_dissonance"
+framing = """
+A character may be acting contrary to a stated value or fear of theirs.
+React to the friction; do not declare it.
+"""

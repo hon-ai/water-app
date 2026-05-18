@@ -1,0 +1,6 @@
+version = "1"
+id = "structural_inflection"
+framing = """
+A structural turn has happened: a new scene, a new chapter, a possible POV
+shift, or a possible location change. React to what the turn has opened.
+"""

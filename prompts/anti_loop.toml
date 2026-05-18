@@ -1,0 +1,8 @@
+version = "1"
+
+[diverge_clause]
+text = """
+The following opening words have already been used in this bouquet:
+{prior_first_words}.
+Produce ideas that begin and develop materially differently from these.
+"""
