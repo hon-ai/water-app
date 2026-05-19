@@ -25,11 +25,22 @@ import type { CharacterIndexEntry } from "../ipc/commands";
 type SortKey = "name" | "completion" | "created";
 
 interface Props {
-  onOpenCharacter: (id: string) => void;
+  onOpenCharacter: (id: string, hueToken: string) => void;
   onOpenIntake: (id: string) => void;
+  /**
+   * Bumped by the parent (`CharactersSurface`) after a sibling view (e.g.
+   * the intake sheet) mutates character data so the still-mounted index
+   * refetches. Kept optional so component-level tests don't need to wire
+   * it. See T20.
+   */
+  reloadKey?: number;
 }
 
-export function CharacterIndex({ onOpenCharacter, onOpenIntake }: Props) {
+export function CharacterIndex({
+  onOpenCharacter,
+  onOpenIntake,
+  reloadKey,
+}: Props) {
   const [chars, setChars] = useState<CharacterIndexEntry[]>([]);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -43,7 +54,7 @@ export function CharacterIndex({ onOpenCharacter, onOpenIntake }: Props) {
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+  }, [reload, reloadKey]);
 
   const handleNew = useCallback(async () => {
     const created = await ipc.characterCreate();
@@ -120,7 +131,7 @@ export function CharacterIndex({ onOpenCharacter, onOpenIntake }: Props) {
           <li key={c.id}>
             <CharacterCard
               character={c}
-              onClick={() => onOpenCharacter(c.id)}
+              onClick={() => onOpenCharacter(c.id, c.hue_token)}
             />
           </li>
         ))}

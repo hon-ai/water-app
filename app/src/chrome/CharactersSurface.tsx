@@ -1,78 +1,95 @@
-import { useCallback, useEffect, useState } from "react";
-import { ipc, type CharacterIndexEntry } from "../ipc/commands";
+import { useCallback, useState } from "react";
+import { CharacterIndex } from "../characters/CharacterIndex";
+import { CharacterSheet } from "../characters/CharacterSheet";
 import { CharacterIntakeSheet } from "../intake/CharacterIntakeSheet";
 
 /**
- * Temporary scaffold for the Characters surface (M3 T17).
+ * Characters surface router (M3 T20, spec § 9).
  *
- * Provides the minimum entry points needed to exercise Conversational
- * Intake end-to-end before the polished CharacterIndex lands in Phase F2:
- *  1. Lists characters via `ipc.characterList`.
- *  2. "+ New character" → `ipc.characterCreate` → opens
- *     `CharacterIntakeSheet` for the new id.
- *  3. Per-row "Continue intake" CTA when `completion < 100`.
+ * Replaces the T17 scaffold with a three-view router:
+ *  - `index`  — the grid of CharacterCards (CharacterIndex, T19).
+ *  - `sheet`  — inline-editable LSM v2.1 sheet (CharacterSheet, T18).
+ *  - `intake` — overlaid Conversational Intake (CharacterIntakeSheet, T13);
+ *               can open on top of either underlying view.
  *
- * Styling is intentionally bare; T20 (Phase G) replaces this with the
- * styled CharacterIndex. The `data-hue-token` attribute is plumbed
- * through now so downstream styling work has a stable hook.
+ * **Scroll preservation:** the index stays mounted (under `display: none`)
+ * while the sheet is shown so scroll position and search/sort state
+ * survive a round-trip to the sheet and back. This is the analog of M2
+ * T24's `reloadToken`-keyed canvas — cheap, no router dep.
+ *
+ * **Reload after intake:** `reloadKey` bumps when the intake sheet
+ * reports `onCompleted`. CharacterIndex re-effects on the key change
+ * and refetches `characterList`, so freshly-completed characters'
+ * completion percent updates without remounting (scroll preserved).
+ * CharacterSheet has its own load effect keyed on `characterId`; we
+ * don't need to nudge it here.
+ *
+ * **hueToken plumbing:** `CharacterFile` (the raw TOML) does NOT carry
+ * hue info — that lives on the `character` SQLite row and only surfaces
+ * via `CharacterIndexEntry`. So the router captures `hue_token` when
+ * the user clicks a card and threads it into the sheet view rather than
+ * forcing CharacterSheet to do an extra `characterList` lookup.
  */
-export function CharactersSurface() {
-  const [chars, setChars] = useState<CharacterIndexEntry[]>([]);
-  const [intakeCharId, setIntakeCharId] = useState<string | null>(null);
+type View =
+  | { kind: "index" }
+  | { kind: "sheet"; characterId: string; hueToken: string };
 
-  const reload = useCallback(async () => {
-    try {
-      const list = await ipc.characterList();
-      setChars(list);
-    } catch {
-      /* swallow — the scaffold has no error UI; F2 will surface this */
-    }
+export function CharactersSurface() {
+  const [view, setView] = useState<View>({ kind: "index" });
+  const [intakeCharId, setIntakeCharId] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const openCharacter = useCallback((id: string, hueToken: string) => {
+    setView({ kind: "sheet", characterId: id, hueToken });
   }, []);
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const openIntake = useCallback((id: string) => {
+    setIntakeCharId(id);
+  }, []);
 
-  const handleNew = useCallback(async () => {
-    const created = await ipc.characterCreate();
-    await reload();
-    setIntakeCharId(created.id);
-  }, [reload]);
+  const backToIndex = useCallback(() => {
+    setView({ kind: "index" });
+  }, []);
+
+  const closeIntake = useCallback(() => {
+    setIntakeCharId(null);
+  }, []);
+
+  const onIntakeCompleted = useCallback(() => {
+    // Nudge the still-mounted index to refetch. Sheet view (if active)
+    // self-reloads on its own field-save path; intake exit doesn't need
+    // to push to it.
+    setReloadKey((k) => k + 1);
+  }, []);
 
   return (
-    <div>
-      <header>
-        <h2>Characters</h2>
-        <button type="button" onClick={() => void handleNew()}>
-          + New character
-        </button>
-      </header>
-      <ul>
-        {chars.length === 0 && <li role="status">No characters yet.</li>}
-        {chars.map((c) => (
-          <li key={c.id}>
-            <span data-hue-token={c.hue_token}>
-              {c.full_name || "(unnamed)"}
-            </span>
-            <span>{c.completion}% complete</span>
-            {c.completion < 100 && (
-              <button type="button" onClick={() => setIntakeCharId(c.id)}>
-                Continue intake
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      {intakeCharId && (
+    <>
+      <div
+        style={{ display: view.kind === "index" ? "block" : "none" }}
+      >
+        <CharacterIndex
+          onOpenCharacter={openCharacter}
+          onOpenIntake={openIntake}
+          reloadKey={reloadKey}
+        />
+      </div>
+      {view.kind === "sheet" && (
+        <CharacterSheet
+          key={view.characterId}
+          characterId={view.characterId}
+          hueToken={view.hueToken}
+          onBackToIndex={backToIndex}
+          onContinueIntake={() => openIntake(view.characterId)}
+        />
+      )}
+      {intakeCharId !== null && (
         <CharacterIntakeSheet
           characterId={intakeCharId}
           open={true}
-          onClose={() => setIntakeCharId(null)}
-          onCompleted={() => {
-            void reload();
-          }}
+          onClose={closeIntake}
+          onCompleted={onIntakeCompleted}
         />
       )}
-    </div>
+    </>
   );
 }
