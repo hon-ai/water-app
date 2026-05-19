@@ -5722,6 +5722,47 @@ Other fmt diffs visible in `app/src-tauri/src/commands/*.rs` and lines 39/70/181
 
 **No blockers surfaced.** All Phase B commits are spec-compliant and gate-clean. Deferred Important findings (T2 round-robin coverage, T2 footgun, T7 double-lookup, T7 tokenize hot-path) collected for Phase G's audit pass.
 
+### Amendment 10 — 2026-05-18 — Task 9 minor findings
+
+T9 reshape **Approved** by quality reviewer. 3 Minor nits to address opportunistically:
+1. Paragraph wrapped in literal `"..."` in inline user prompt — paragraphs with embedded `"` cause unbalanced quotes. Fixed naturally in T10 when prompt moves to TOML (delimiters can be improved there).
+2. `Default for TriggerCandidate::trigger_id = String::new()` is invalid at runtime — only used for `..Default::default()` shorthand in tests. Worth a `// not for runtime use` doc comment on the impl.
+3. `trigger_candidate_default_has_no_confirmation` test only asserts the new field. Adding `assert_eq!(c.priority, 0.0)` etc would lock all defaults.
+
+### Amendment 11 — 2026-05-18 — Task 10 minor findings
+
+T10 **Approved with minor changes**. 4 Minor nits:
+1. Confirmation prompt filed under `prompts/tasks/` (not `prompts/confirmations/`). Const named `TASK_PILL_DISSONANCE_CHECK` for symmetry. Consider rename or filepath move when a second confirmation lands.
+2. `#[allow(clippy::single_element_loop)]` for future-proofing — could just be a 2-liner `let p = ...; map.insert(...)`. Re-evaluate when a second confirmation lands.
+3. **Fail-loud contract documented but untested.** Add 5-line test asserting `render_confirmation_request` with partial vars leaves unmatched `{{var}}` literal.
+4. TOML triple-quoted strings preserve trailing newlines. Almost certainly benign for LLM consumption; flag only if a project-level prompt-shaping convention emerges.
+
+### Amendment 12 — 2026-05-18 — Task 11 Approved (Phase C complete)
+
+T11 reviewed **Approved** (no "with minor changes" caveat). Phase C end-to-end wired.
+
+**Notable adaptation (legitimate):** STOP-criterion test refactor. `app/src-tauri/src/` had ZERO pre-existing tests. Building Tauri-mock harness for the 3 prescribed e2e tests would've been ~200 LOC. Implementer extracted `run_stage2_confirmation` as a pure free fn and tested with 6 unit tests covering all observable behavior. The e2e gap is documented in a module doc-comment for Phase D to address when Tauri test scaffolding becomes available.
+
+**Phase C closeout test counts:** 177 lib + 6 m1_exit + 1 orchestrator + 1 tone_audit + 6 water-app (new) + 2 provider (new) + 105 TS = **298 total** (up from 276 at end of Phase B; up from 249 at `m2.5`).
+
+5 Minor nits (style/comment) deferred:
+1. `std::sync::Mutex` inside async — acceptable for test fixture, brief comment would help.
+2. `.expect()` on poisoned mutex — fine for test code.
+3. `to_ascii_lowercase()` allocates per call — dwarfed by LLM call.
+4. `anti_loop_overlap: None` on Stage-2 entries — correct semantically; flag if ReplayEntry grows a stage field.
+5. Duplicate `use ConfirmationRequest;` in test module — redundant but harmless.
+
+### Phase C closeout
+
+**Per-task reviews:**
+- T9: Approved (3 Minor nits → Amendment 10)
+- T10: Approved with minor changes (4 Minor nits → Amendment 11)
+- T11: Approved (5 Minor nits → Amendment 12)
+
+**No blockers; no Important findings.** Phase C is the cleanest phase so far — likely because it's wiring + types rather than algorithmic content.
+
+**Phase D begins next:** Tauri commands + autosuggest (T12 character CRUD; T13 scene linkage; T14 intake_schema + autosuggest core).
+
 ---
 
 ## Plan summary
