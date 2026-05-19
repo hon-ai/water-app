@@ -191,6 +191,24 @@ mod tests {
     }
 
     #[test]
+    fn speaker_prompt_fragment_includes_voice() {
+        let (_tmp, db) = fresh_db();
+        let data_json = serde_json::json!({
+            "main": { "full_name": "Marcus", "role_in_story": "protagonist", "want": "w", "need": "n", "lie_they_believe": "l" },
+            "bonus_traits": { "voice": "spare, weather-worn", "fears": ["x"], "values": ["y"] }
+        }).to_string();
+        db.conn().execute(
+            "INSERT INTO character (id, project_id, name, schema_version, data_json, hue_token, file_path, created_at, updated_at)
+             VALUES ('01HE000000000000000000000A', 'p1', 'Marcus', 'lsm-v2.1', ?1, '--water-hue-character-1', 'characters/x.toml', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            rusqlite::params![data_json],
+        ).unwrap();
+        let reg = CharacterRegistry::from_db(&db).unwrap();
+        let speaker = reg.by_id("01HE000000000000000000000A").unwrap();
+        assert!(speaker.prompt_fragment().contains("spare, weather-worn"));
+        assert!(speaker.prompt_fragment().contains("Marcus"));
+    }
+
+    #[test]
     fn pick_lru_present_returns_least_recently_used() {
         let (_tmp, db) = fresh_db();
         insert_character(

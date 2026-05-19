@@ -1,6 +1,7 @@
 //! Voice subsystem: Speaker trait + persona/character registries +
 //! deterministic voice router (Task 16).
 
+pub mod character_template;
 pub mod registry;
 pub mod router;
 pub mod speaker;
