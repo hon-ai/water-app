@@ -578,12 +578,73 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "depends on T13 (character_link_to_scene + character_set_pov commands)"]
     async fn delete_cascades_to_scene_presence_and_pov() {
-        // T13 will land character_link_to_scene + character_set_pov; this
-        // placeholder asserts the cascade contract end-to-end through the
-        // command surface. The same cascade is already covered at the
-        // water-core unit-test level in `delete_and_cascade_clears_scene_pov_and_presence`.
+        // End-to-end cascade through the command surface: T13 commands
+        // (link + set_pov) followed by the T12 delete cascade. The same
+        // contract is also covered at the water-core unit-test level in
+        // `delete_and_cascade_clears_scene_pov_and_presence`; this version
+        // proves the Tauri command shims compose correctly.
+        let (_dir, db, root, pid, char_locks, scene, scene_locks) =
+            test_project_with_scene().await;
+        let c = character_create_core(db.clone(), root.clone(), pid.clone())
+            .await
+            .unwrap();
+        character_link_to_scene_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            c.id.clone(),
+        )
+        .await
+        .unwrap();
+        character_set_pov_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            Some(c.id.clone()),
+        )
+        .await
+        .unwrap();
+
+        // Sanity: POV is set, presence row exists.
+        assert_eq!(
+            read_pov(&db, scene.id.as_str()).await.as_deref(),
+            Some(c.id.as_str()),
+            "fixture precondition: POV should be set before delete",
+        );
+        let presence_before: i64 = db
+            .lock()
+            .await
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM scene_character_presence WHERE scene_id = ?1 AND character_id = ?2",
+                rusqlite::params![scene.id.as_str(), c.id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(presence_before, 1, "fixture precondition: presence row should exist before delete");
+
+        // Cascade through the T12 command.
+        character_delete_core(db.clone(), root.clone(), char_locks.clone(), c.id.clone())
+            .await
+            .unwrap();
+
+        // Both invariants hold post-delete.
+        assert!(
+            read_pov(&db, scene.id.as_str()).await.is_none(),
+            "delete cascade should NULL the scene POV",
+        );
+        let presence_after: i64 = db
+            .lock()
+            .await
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM scene_character_presence WHERE scene_id = ?1 AND character_id = ?2",
+                rusqlite::params![scene.id.as_str(), c.id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(presence_after, 0, "delete cascade should remove presence rows");
     }
 
     // ------------------------------------------------------------------
