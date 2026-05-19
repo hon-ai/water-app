@@ -114,19 +114,42 @@ pub trait LlmProvider: Send + Sync {
 ///
 /// By default, `generate_bouquet` returns synthetic variants and
 /// `generate_raw` returns an empty string. Use [`CannedProvider::with_response`]
-/// to pre-load a fixed raw response (drives the M2 structured-JSON tests).
+/// to pre-load a fixed raw response (drives the M2 structured-JSON tests),
+/// or [`CannedProvider::with_responses`] to pre-load a queue of responses
+/// served in order (drives the M3 T11 Stage-2 confirmation tests, where
+/// the same provider answers the confirmation prompt and then the level-0
+/// prompt).
 #[derive(Default)]
 pub struct CannedProvider {
-    raw_response: Option<String>,
+    /// Sequenced responses; popped from the front (oldest first) on each
+    /// `generate_raw` call. When empty, falls back to an empty string for
+    /// backwards-compat with the default-constructor behavior.
+    raw_responses: std::sync::Mutex<std::collections::VecDeque<String>>,
 }
 
 impl CannedProvider {
-    /// Pre-load a fixed raw response that `generate_raw` (and therefore
-    /// `generate_structured`) will return. Used by tests.
+    /// Pre-load a single fixed raw response. Kept for ergonomics; equivalent
+    /// to `with_responses(vec![raw])`.
     #[must_use]
     pub fn with_response(raw: impl Into<String>) -> Self {
+        Self::with_responses(vec![raw.into()])
+    }
+
+    /// Pre-load a queue of raw responses served in order. Each
+    /// `generate_raw` call consumes the next response; once exhausted,
+    /// further calls return an empty string. Used by the M3 T11 Stage-2
+    /// confirmation tests where the orchestrator issues two LLM calls in
+    /// quick succession (confirmation, then level-0).
+    #[must_use]
+    pub fn with_responses<S, I>(raws: I) -> Self
+    where
+        S: Into<String>,
+        I: IntoIterator<Item = S>,
+    {
         Self {
-            raw_response: Some(raw.into()),
+            raw_responses: std::sync::Mutex::new(
+                raws.into_iter().map(Into::into).collect(),
+            ),
         }
     }
 }
@@ -148,7 +171,46 @@ impl LlmProvider for CannedProvider {
             .collect())
     }
     async fn generate_raw(&self, _req: GenerateRequest) -> Result<String> {
-        Ok(self.raw_response.clone().unwrap_or_default())
+        let mut q = self
+            .raw_responses
+            .lock()
+            .expect("CannedProvider mutex poisoned");
+        Ok(q.pop_front().unwrap_or_default())
+    }
+}
+
+/// Test-only provider that fails every `generate_raw` call with a stable
+/// `Error::Provider("test error")`. Used by the M3 T11 Stage-2 confirmation
+/// tests to verify that a failed confirmation LLM call drops the candidate
+/// (same observable as a "no" answer).
+pub struct ErrorProvider;
+
+impl ErrorProvider {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for ErrorProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl LlmProvider for ErrorProvider {
+    fn id(&self) -> ProviderId {
+        ProviderId::new("error")
+    }
+    async fn health(&self) -> Result<()> {
+        Err(Error::Provider("test error".into()))
+    }
+    async fn generate_bouquet(&self, _req: &BouquetRequest) -> Result<Vec<BouquetVariant>> {
+        Err(Error::Provider("test error".into()))
+    }
+    async fn generate_raw(&self, _req: GenerateRequest) -> Result<String> {
+        Err(Error::Provider("test error".into()))
     }
 }
 
@@ -176,6 +238,34 @@ mod tests {
     #[tokio::test]
     async fn canned_provider_health_ok() {
         assert!(CannedProvider::default().health().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn canned_provider_with_responses_serves_in_order() {
+        // M3 T11: the Stage-2 confirmation flow issues two LLM calls
+        // (confirmation then level-0) against the same router. Verify
+        // the queue-of-responses constructor serves them in order and
+        // falls back to "" once drained.
+        let p = CannedProvider::with_responses(vec!["yes", "Why does he feel proud?"]);
+        let first = p.generate_raw(GenerateRequest::default()).await.unwrap();
+        assert_eq!(first, "yes");
+        let second = p.generate_raw(GenerateRequest::default()).await.unwrap();
+        assert_eq!(second, "Why does he feel proud?");
+        let third = p.generate_raw(GenerateRequest::default()).await.unwrap();
+        assert_eq!(third, "", "drained queue falls back to empty string");
+    }
+
+    #[tokio::test]
+    async fn error_provider_fails_every_call() {
+        // M3 T11: ErrorProvider models a provider whose confirmation call
+        // fails, which must drop the candidate (same observable as "no").
+        let p = ErrorProvider::new();
+        let err = p
+            .generate_raw(GenerateRequest::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Provider(msg) if msg == "test error"));
+        assert!(p.health().await.is_err());
     }
 }
 

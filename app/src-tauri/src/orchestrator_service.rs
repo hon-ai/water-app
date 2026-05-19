@@ -39,8 +39,8 @@ use water_core::orchestrator::{
     eviction::pick_evictee,
     state::{Pill, PillEvent},
     triggers::builtin_triggers,
-    AnalysisSnapshot, CursorClassification, ProjectSnapshot, SceneSnapshot, TriggerContext,
-    TriggerCandidate, TypingTelemetry,
+    AnalysisSnapshot, ConfirmationRequest, CursorClassification, ProjectSnapshot, SceneSnapshot,
+    TriggerCandidate, TriggerContext, TypingTelemetry,
 };
 use water_core::post_filter::{builtin_post_filters, FilterDecision, PostFilter};
 use water_core::prompts::{
@@ -324,6 +324,42 @@ impl OrchestratorService {
         ) else {
             return;
         };
+
+        // Stage 2 (M3 T11): if the candidate carries a
+        // `requires_confirmation` request, run a small yes/no LLM call
+        // before dispatching the level-0 pill. ~150 tokens in, 1 token
+        // out. Non-"yes" responses (and provider errors) drop the
+        // candidate silently. All three branches (yes / no / error)
+        // append to the replay log when configured so the eval harness
+        // can audit Stage-2 decisions independently of Stage-1 lemma
+        // gating.
+        if let Some(req) = cand.requires_confirmation.as_ref() {
+            // Brief lock: clone the optional router Arc and drop the
+            // guard before the LLM await. Mirrors the level-0/expand
+            // pattern below so we never hold `self.router` across an
+            // await.
+            let router_arc = {
+                let g = self.router.lock().await;
+                g.clone()
+            };
+            let Some(router_arc) = router_arc else {
+                tracing::debug!(
+                    trigger = %cand.trigger_id,
+                    "no LlmRouter configured; skipping confirmation candidate"
+                );
+                return;
+            };
+            if !run_stage2_confirmation(
+                &router_arc,
+                req,
+                &cand.trigger_id,
+                self.replay_log.as_deref(),
+            )
+            .await
+            {
+                return;
+            }
+        }
 
         // Voice-route the candidate (cooldown-respecting, POV-prefer for
         // character-track triggers). `None` means every relevant speaker
@@ -749,10 +785,275 @@ fn pick_best_trigger(
         })
 }
 
+/// Run the Stage-2 confirmation LLM call for a candidate's
+/// `ConfirmationRequest`. Returns `true` when the model answered "yes"
+/// (case-insensitive, after trim), `false` for any other outcome
+/// (non-"yes" string, provider error). Independent of `AppHandle` /
+/// `OrchestratorService` so it can be unit-tested with a `CannedProvider`
+/// / `ErrorProvider`.
+///
+/// Replay-log entries:
+/// - `confirmation_yes` — model confirmed; pill dispatch proceeds.
+/// - `confirmation_no`  — model declined; candidate dropped.
+/// - `confirmation_error` — provider failed; candidate dropped.
+///
+/// `kind` for all rows is taken from `req.kind` (e.g.
+/// `"pill_dissonance_check"`) so the audit can filter by confirmation
+/// flavor.
+async fn run_stage2_confirmation(
+    router: &Arc<LlmRouter>,
+    req: &ConfirmationRequest,
+    trigger_id: &str,
+    replay_log: Option<&ReplayLog>,
+) -> bool {
+    let confirmation_system = req.system.clone();
+    let confirmation_user = req.user.clone();
+    let confirmation_kind = req.kind.clone();
+    let raw = match router
+        .generate_raw_with_default(confirmation_system.clone(), confirmation_user.clone())
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                trigger = %trigger_id,
+                "confirmation LLM call failed; dropping candidate"
+            );
+            if let Some(log) = replay_log {
+                let _ = log.append(&ReplayEntry {
+                    ts: chrono::Utc::now().to_rfc3339(),
+                    kind: &confirmation_kind,
+                    request_system: &confirmation_system,
+                    request_user: &confirmation_user,
+                    response_raw: None,
+                    post_filter_decision: Some("confirmation_error"),
+                    anti_loop_overlap: None,
+                });
+            }
+            return false;
+        }
+    };
+    let confirmed = raw.trim().to_ascii_lowercase().starts_with("yes");
+    if let Some(log) = replay_log {
+        let _ = log.append(&ReplayEntry {
+            ts: chrono::Utc::now().to_rfc3339(),
+            kind: &confirmation_kind,
+            request_system: &confirmation_system,
+            request_user: &confirmation_user,
+            response_raw: Some(&raw),
+            post_filter_decision: Some(if confirmed {
+                "confirmation_yes"
+            } else {
+                "confirmation_no"
+            }),
+            anti_loop_overlap: None,
+        });
+    }
+    if !confirmed {
+        tracing::debug!(
+            trigger = %trigger_id,
+            response = %raw.trim(),
+            "confirmation said no; dropping candidate"
+        );
+    }
+    confirmed
+}
+
 /// Parse a string into an `Id` for cross-process boundaries. Wraps
 /// `Id::from_str` with a `String` error so Tauri command shims can
 /// `?`-propagate.
 pub fn parse_id(s: &str) -> Result<Id, String> {
     Id::from_str(s).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod stage2_confirmation_tests {
+    //! Unit tests for `run_stage2_confirmation`, the M3 T11 Stage-2
+    //! dispatch helper. The full end-to-end flow inside
+    //! `OrchestratorService::on_telemetry` depends on a Tauri `AppHandle`
+    //! for event emission; testing that surface requires a `tauri::test`
+    //! harness that does not yet exist in this crate (zero existing tests
+    //! in `app/src-tauri/src/`). The plan's T11 STOP criterion ("Setting
+    //! up a confirmation-firing fixture requires >50 lines of helper code")
+    //! applies, so we test the dispatch-decision helper directly. The
+    //! helper carries all three branches (yes / no / error) plus the
+    //! replay-log writes — i.e., everything observable from outside the
+    //! `tokio::spawn` that follows level-0 dispatch.
+    //!
+    //! Phase D's Tauri-command tests will exercise the on_telemetry
+    //! surface end-to-end against a mock AppHandle once that scaffolding
+    //! lands.
+    use super::*;
+    use water_core::llm::{CannedProvider, ErrorProvider, LlmProvider, LlmRouter};
+    use water_core::replay_log::ReplayLog;
+    use water_core::orchestrator::ConfirmationRequest;
+
+    fn make_req() -> ConfirmationRequest {
+        ConfirmationRequest {
+            system: "sys".to_string(),
+            user: "usr".to_string(),
+            kind: "pill_dissonance_check".to_string(),
+        }
+    }
+
+    fn router_with(provider: Arc<dyn LlmProvider>) -> Arc<LlmRouter> {
+        Arc::new(LlmRouter::new(vec![provider]))
+    }
+
+    #[tokio::test]
+    async fn yes_response_returns_true_and_logs_confirmation_yes() {
+        // "yes" (any case, after trim) is the only response that allows
+        // dispatch to proceed.
+        let provider =
+            Arc::new(CannedProvider::with_response("yes\n")) as Arc<dyn LlmProvider>;
+        let router = router_with(provider);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = Arc::new(ReplayLog::open(tmp.path(), "t11-yes").unwrap());
+
+        let proceed = run_stage2_confirmation(
+            &router,
+            &make_req(),
+            "character_dissonance",
+            Some(log.as_ref()),
+        )
+        .await;
+
+        assert!(proceed, "Stage-2 yes must allow dispatch");
+        let body = std::fs::read_to_string(
+            tmp.path()
+                .join(".water")
+                .join("log")
+                .join("llm")
+                .join("t11-yes.jsonl"),
+        )
+        .unwrap();
+        assert!(
+            body.contains("\"post_filter_decision\":\"confirmation_yes\""),
+            "replay log should record confirmation_yes; got: {body}"
+        );
+        assert!(
+            body.contains("\"kind\":\"pill_dissonance_check\""),
+            "replay log kind should be the confirmation kind"
+        );
+    }
+
+    #[tokio::test]
+    async fn yes_uppercase_is_still_accepted() {
+        // Case-insensitive, leading whitespace tolerated.
+        let provider =
+            Arc::new(CannedProvider::with_response("  YES, definitely.")) as Arc<dyn LlmProvider>;
+        let router = router_with(provider);
+        let proceed =
+            run_stage2_confirmation(&router, &make_req(), "character_dissonance", None).await;
+        assert!(proceed);
+    }
+
+    #[tokio::test]
+    async fn no_response_returns_false_and_logs_confirmation_no() {
+        let provider =
+            Arc::new(CannedProvider::with_response("no")) as Arc<dyn LlmProvider>;
+        let router = router_with(provider);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = Arc::new(ReplayLog::open(tmp.path(), "t11-no").unwrap());
+
+        let proceed = run_stage2_confirmation(
+            &router,
+            &make_req(),
+            "character_dissonance",
+            Some(log.as_ref()),
+        )
+        .await;
+
+        assert!(!proceed, "Stage-2 no must drop the candidate");
+        let body = std::fs::read_to_string(
+            tmp.path()
+                .join(".water")
+                .join("log")
+                .join("llm")
+                .join("t11-no.jsonl"),
+        )
+        .unwrap();
+        assert!(
+            body.contains("\"post_filter_decision\":\"confirmation_no\""),
+            "replay log should record confirmation_no; got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn arbitrary_non_yes_response_drops_candidate() {
+        // Anything that doesn't start with "yes" after trim+lowercase
+        // is treated as no. A model that hedges or refuses ("Hmm, maybe
+        // not.") must drop.
+        let provider = Arc::new(CannedProvider::with_response("Hmm, maybe not."))
+            as Arc<dyn LlmProvider>;
+        let router = router_with(provider);
+        let proceed =
+            run_stage2_confirmation(&router, &make_req(), "character_dissonance", None).await;
+        assert!(!proceed);
+    }
+
+    #[tokio::test]
+    async fn provider_error_returns_false_and_logs_confirmation_error() {
+        let provider = Arc::new(ErrorProvider::new()) as Arc<dyn LlmProvider>;
+        let router = router_with(provider);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log = Arc::new(ReplayLog::open(tmp.path(), "t11-err").unwrap());
+
+        let proceed = run_stage2_confirmation(
+            &router,
+            &make_req(),
+            "character_dissonance",
+            Some(log.as_ref()),
+        )
+        .await;
+
+        assert!(
+            !proceed,
+            "provider error during confirmation must drop the candidate"
+        );
+        let body = std::fs::read_to_string(
+            tmp.path()
+                .join(".water")
+                .join("log")
+                .join("llm")
+                .join("t11-err.jsonl"),
+        )
+        .unwrap();
+        assert!(
+            body.contains("\"post_filter_decision\":\"confirmation_error\""),
+            "replay log should record confirmation_error; got: {body}"
+        );
+        assert!(
+            body.contains("\"response_raw\":null"),
+            "error path should have null response_raw"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_replay_log_does_not_panic() {
+        // Production default: WATER_REPLAY_LOG unset, replay_log = None.
+        // Helper must still return the correct dispatch decision.
+        let yes_provider =
+            Arc::new(CannedProvider::with_response("yes")) as Arc<dyn LlmProvider>;
+        let proceed = run_stage2_confirmation(
+            &router_with(yes_provider),
+            &make_req(),
+            "character_dissonance",
+            None,
+        )
+        .await;
+        assert!(proceed);
+
+        let err_provider = Arc::new(ErrorProvider::new()) as Arc<dyn LlmProvider>;
+        let drop = run_stage2_confirmation(
+            &router_with(err_provider),
+            &make_req(),
+            "character_dissonance",
+            None,
+        )
+        .await;
+        assert!(!drop);
+    }
 }
 
