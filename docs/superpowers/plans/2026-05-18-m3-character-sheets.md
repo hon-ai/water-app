@@ -5930,6 +5930,31 @@ T16 **Approved with minor changes** by combined reviewer (0 Critical, 1 Importan
 
 **Phase E progress:** 2/3 done. T17 (entry points: "+ New character" + "Continue intake") remains.
 
+### Amendment 18 — 2026-05-18 — Task 17 closeout (Phase E complete)
+
+T17 **Approved** via focused spot-check (4 tests passing, build clean, App.tsx integration minimal+surgical, no Critical/Important findings). Cadence note: small scaffold-grade task with established patterns, so used focused inline spot-check rather than dispatching a full review subagent.
+
+**Disclosed adaptations (all sanctioned in prompt):**
+- IPC via `ipc.characterCreate()` / `ipc.characterList()` from `../ipc/commands` (not plan's stale `../ipc/character`).
+- Mock factory uses singleton `ipc{}` object; mock state reset via `beforeEach(() => { listMock.mockReset(); createMock.mockReset(); })` rather than the brittle `mockResolvedValueOnce` chain in the plan.
+- Hue tokens use full `--water-hue-character-N` format throughout.
+- App.tsx integration: 2-line surgical addition. Conditional ternary `!projectOpen ? EmptyState : activeNav === "characters" ? CharactersSurface : <existing scenes JSX>`. EditorCanvas does NOT mount when activeNav is `"characters"` (preserves M2 T24 `reloadToken` pattern correctly).
+- 4 tests instead of plan's 2: empty state, create+open, "Continue intake" visible+clickable for <100%, no CTA for 100%.
+
+**Minor findings deferred (none blocking):**
+- World nav target dead-ends on scenes view (fall-through). Acceptable for M3; world phase will resolve.
+- Double-click on "+ New character" creates two characters. Plan accepts; T19 will add disabled-state.
+- `handleNew` doesn't try/catch — if `characterCreate` rejects, error surfaces as unhandled promise rejection. `reload` already swallows; symmetry would be cleaner. Scaffold-grade tolerable.
+- `role="status"` on `<li>` for the empty state — accessibility hint; T20 may want `<p role="status">` once styled.
+- Module-mocked `ipc` is the singleton; if a future 5th test forgets to reset queues, prior `mockResolvedValueOnce` leaks. Worth a brief comment when T20+ touches this file.
+
+**Test count delta:**
+- `CharactersSurface.test.tsx`: **0 → 4 tests**.
+- Full app TS suite: **120 → 124 tests** (across 28 files), all passing.
+- Build clean (~418 kB main bundle).
+
+**Phase E progress:** ✅ **3/3 complete.** Conversational Intake reachable end-to-end. Phase F (T18-T21: polished Sheet view, Index, scene metadata + autosuggest chips) begins next.
+
 ---
 
 ## Plan summary
