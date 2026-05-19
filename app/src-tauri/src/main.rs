@@ -28,6 +28,7 @@ fn main() {
             commands::scene::scene_write_body,
             commands::scene::scene_list,
             commands::scene::scene_rename,
+            commands::scene::scene_read_metadata,
             commands::character::character_create,
             commands::character::character_read,
             commands::character::character_list,

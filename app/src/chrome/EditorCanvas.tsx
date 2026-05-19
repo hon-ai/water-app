@@ -4,6 +4,7 @@ import { Editor } from "../editor/Editor";
 import { PillLayer } from "../pill/PillLayer";
 import { PinnedColumn } from "../pill/PinnedColumn";
 import { useElementWidth } from "../pill/useElementWidth";
+import { publishAutosuggest } from "../scenes/sceneMetadataChannel";
 
 interface Props {
   sceneId: string;
@@ -108,15 +109,26 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
   // save we push the latest scene snapshot into the orchestrator so the
   // prompt-excerpt cache stays current. Fire-and-forget on both the save
   // and the snapshot push — UI doesn't surface either failure.
+  //
+  // M3 T21: also kick the character autosuggest scan and broadcast the
+  // result via `publishAutosuggest`. The SceneMetadataSheet, if open
+  // for this scene, picks it up and rerenders its "Suggested present"
+  // chips. The autosuggest call is wrapped in try/catch — its failure
+  // (or absence on older backends) MUST NOT affect the save flow, which
+  // is the writer's source of truth. `cancelled` guards against a scene
+  // switch landing between the save and the autosuggest call, which
+  // would otherwise publish results for the wrong sceneId.
   useEffect(() => {
     if (!bodyDirty) return;
     if (bodyDebounce.current !== undefined) {
       window.clearTimeout(bodyDebounce.current);
     }
+    let cancelled = false;
     bodyDebounce.current = window.setTimeout(() => {
       ipc
         .sceneWriteBody(sceneId, body)
-        .then((info) => {
+        .then(async (info) => {
+          if (cancelled) return;
           setSavedAt(Date.now());
           setBodyDirty(false);
           ipc
@@ -131,10 +143,23 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
               worldEntryCount: 0,
             })
             .catch(() => {});
+          // Autosuggest fan-out. Awaited so we can guard `publishAutosuggest`
+          // behind `cancelled`, but the await is inside its own try/catch
+          // to keep failure from poisoning the save flow above.
+          try {
+            const suggestions = await ipc.characterAutosuggestForScene(
+              sceneId,
+              body,
+            );
+            if (!cancelled) publishAutosuggest(sceneId, suggestions);
+          } catch {
+            /* swallow — autosuggest is best-effort */
+          }
         })
         .catch(() => {});
     }, 2000);
     return () => {
+      cancelled = true;
       if (bodyDebounce.current !== undefined) {
         window.clearTimeout(bodyDebounce.current);
       }

@@ -8,6 +8,7 @@ import { EmptyState } from "./chrome/EmptyState";
 import { CharactersSurface } from "./chrome/CharactersSurface";
 import { CreateProjectSheet } from "./sheets/CreateProjectSheet";
 import { SettingsSheet } from "./sheets/SettingsSheet";
+import { SceneMetadataSheet } from "./scenes/SceneMetadataSheet";
 import { ipc, type SceneInfo } from "./ipc/commands";
 import { dialog } from "./ipc/dialog";
 
@@ -26,6 +27,8 @@ export default function App() {
     return localStorage.getItem(COLLAPSED_KEY) === "true";
   });
   const [scenesReloadKey, setScenesReloadKey] = useState(0);
+  // Scene id whose metadata sheet is open (M3 T21). `null` = closed.
+  const [detailsSceneId, setDetailsSceneId] = useState<string | null>(null);
 
   // Poll project-open status; cheap, lets the shell react to externally-triggered
   // open/close (the diagnostics_status command returns has_open_project + path).
@@ -140,6 +143,7 @@ export default function App() {
                 onOpenProjectMenu={() => setProjectMenuOpen((v) => !v)}
                 collapsed={scenesCollapsed}
                 onToggleCollapsed={toggleCollapsed}
+                onOpenDetails={(id) => setDetailsSceneId(id)}
               />
               {!scenesCollapsed && (
                 <ProjectMenu
@@ -169,6 +173,14 @@ export default function App() {
               >
                 Select a scene, or create a new one.
               </main>
+            )}
+            {detailsSceneId !== null && (
+              <SceneMetadataSheet
+                key={detailsSceneId}
+                sceneId={detailsSceneId}
+                open={true}
+                onClose={() => setDetailsSceneId(null)}
+              />
             )}
           </>
         )}
