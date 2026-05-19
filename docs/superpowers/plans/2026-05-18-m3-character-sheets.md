@@ -5699,6 +5699,29 @@ T7's initial commit `79e3865` had a stale import-order in `app/src-tauri/src/orc
 
 Other fmt diffs visible in `app/src-tauri/src/commands/*.rs` and lines 39/70/181/265/310/502/721 of `orchestrator_service.rs` are pre-existing on the branch (not introduced by T7). Phase G should run a workspace-wide `cargo fmt` cleanup as part of the audit.
 
+### Amendment 9 — 2026-05-18 — Task 8 Approved (Phase B complete); 3 Minor follow-ups
+
+**Change:** T8 reviewed **Approved** (no "with minor changes"). Phase B (T4–T8) all reviewed clean. 3 minor follow-ups noted for Phase G or M3 hardening pass:
+
+1. **`last_block_text` not cleared on `SceneState` transition.** `orchestrator_service.rs::on_telemetry` only overwrites with `Some(...)`. A scene change leaves the prior scene's text until next idle pulse. Filtered downstream by POV/present-character gates so functionally harmless, but cleaner to add `self.analysis.last_block_text = None;` in the `SceneState` arm of `handle`.
+
+2. **No end-to-end T8 wiring test.** Coverage relies on T7 unit tests + router unit tests + Phase G manual smoke. A `#[tokio::test]` in `orchestrator_service.rs` driving `handle(OrchestratorRequest::Telemetry { ..., last_block_text: Some("...") })` and asserting the emit lands at the AppHandle event sink would cost ~40 LOC and pin the contract. Recommend for an M3 hardening pass.
+
+3. **`route_with_chars` 6-arg callsite** is readable but invites a `RouteContext` struct wrapper if a 7th param ever lands. Revisit only if signature grows.
+
+### Phase B closeout
+
+**Tests at end of T8:** 163 (water-core lib) + 105 (water-app TS) + 6 (m1 exit) + 1 (orchestrator) + 1 (tone_audit_200) = **276** (up from 249 at `m2.5`).
+
+**Phase B per-task review summary:**
+- T4: Approved with minor changes (4 Minor → Amendment 3)
+- T5: Approved with minor changes (1 Important: Amendment 4 topic_drift → fixed in T6; 5 Minor → Amendment 5)
+- T6: Approved (clean)
+- T7: Approved with minor changes (2 Important + 3 Minor → Amendment 7; 1 fmt-amend → Amendment 8)
+- T8: Approved (3 Minor → this amendment)
+
+**No blockers surfaced.** All Phase B commits are spec-compliant and gate-clean. Deferred Important findings (T2 round-robin coverage, T2 footgun, T7 double-lookup, T7 tokenize hot-path) collected for Phase G's audit pass.
+
 ---
 
 ## Plan summary
