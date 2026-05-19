@@ -331,4 +331,67 @@ Edge cases like `a*b*c` (intra-word emphasis without surrounding whitespace) sti
 
 ---
 
+## 15. Scene-character autosuggest is name-string-matching, not co-reference resolution
+
+**What it is.** M3 T14 added `crates/water-core/src/character/autosuggest.rs::suggest_for_scene_body`. It scans a scene body using case-sensitive word-boundary regex (`\b<name>\b`) over `full_name` + each `alias`. Pronouns ("he", "her", "they"), possessives, and descriptions ("the archivist") don't match. Characters referenced only by pronoun in a scene won't be suggested.
+
+**Where it lives.** `crates/water-core/src/character/autosuggest.rs` (the scanner) + `app/src/scenes/SceneAutosuggestChips.tsx` (the renderer).
+
+**Why it's fragile.** Writers naturally use pronouns after the first mention. A scene where Marcus is named once at the top and then referred to as "he" for the next 600 words will only register `mention_count = 1` for Marcus. If the suggestion threshold ever changes from "any mention > 0" to "≥ K mentions" (currently it surfaces everyone with at least one match, top 5), pronoun-heavy scenes will hide their actual cast.
+
+`\b` is Unicode-aware in Rust's `regex` crate, so a CJK name embedded inside a longer run of word characters (`李` inside `李明`) won't match either. Same family of limitation.
+
+**What success looks like.** The chip surface for `SceneMetadataSheet` is an *assist*, not an *authority* — the writer always retains the multi-select checkbox row underneath. Manual multi-select bridges the gap until M5+'s sidecar co-reference resolution lands.
+
+**First-look mitigations.**
+
+1. If a writer reports "Marcus isn't being suggested for scenes he's clearly in," check whether the scene mentions Marcus by name (case-sensitive, word-bounded) at least once. If not, the chip absence is expected.
+2. Until co-ref lands, document the chip strip as "characters detected by name in the current draft" rather than "characters present."
+3. Don't introduce a `min_mention_count > 0` threshold without re-evaluating against pronoun-heavy real-world scenes.
+4. Upgrade path: M5+ sidecar co-reference model annotates spans → `suggest_for_scene_body` consumes them alongside the regex pass.
+
+---
+
+## 16. Character-voice prompt template injects up to 11 LSM fields per pill
+
+**What it is.** `prompts/speakers/character/template.toml` (M3 T4) substitutes `full_name`, `role_in_story`, `want`, `need`, `lie_they_believe`, `truth`, `fatal_flaw`, `voice`, `speech_patterns`, `fears`, `values` into the prompt fragment per character pill. Empty fields are omitted line-by-line (`render_with_omission`), so the cost varies with how much of the sheet a writer has filled out.
+
+**Where it lives.** `prompts/speakers/character/template.toml` + `crates/water-core/src/voice/character_template.rs`.
+
+**Why it's fragile.** Token cost grows with character complexity. A fully-filled Marcus Vale fixture (see `eval/m3_acceptance/marcus_vale.toml`) produces a sizable system prompt — perfectly tolerable for the current single-character flow, but it scales linearly per pill, and the eval harness has not yet established a token-budget assertion.
+
+If a future writer authors a 200-trait OC and then drops them into every scene, the per-pill cost compounds; the orchestrator currently has no per-pill budget cap.
+
+**What success looks like.** Eval harness (`eval/`) should track per-character pill token usage. If it crosses a threshold (~600 tokens system per pill), M7 settings would add a "concise mode" that omits the `bonus_traits` aux fields and keeps only main + arc + perspectives.
+
+**First-look mitigations.**
+
+1. Pin the token cost via `eval/` snapshots once the harness is wired up (target: M5 evaluation pass).
+2. If pill cost surprises a writer, the writer can leave optional LSM fields empty — the template's line-by-line omission already cuts dead lines.
+3. Concise-mode flag in M7 settings is the documented escape hatch.
+
+---
+
+## 17. `character_dissonance` Stage 1 uses Jaccard lemma overlap (English-only)
+
+**What it is.** `crates/water-core/src/orchestrator/lemma_overlap.rs` re-exports M2's `anti_loop::{tokenize, jaccard}`. Both are English-only: whitespace-split + ASCII lowercase + a small English stopword set. There is no stemming, no language-aware tokenization, no morphological awareness.
+
+**Where it lives.** `crates/water-core/src/orchestrator/lemma_overlap.rs` (the wrapper) + `crates/water-core/src/orchestrator/anti_loop.rs` (the actual tokenizer).
+
+**Why it's fragile.** Inherits the full caveat of KNOWN_FRAGILE #8 (anti-loop is English-only). Specifically for `character_dissonance` Stage 1, the cheap gate that decides whether to spend an LLM call on a Stage-2 confirmation:
+
+- **German/Dutch/Slavic etc.** — agglutinative compounds (`Eichendorffstraße`) tokenize as one word; the gate misses overlapping concepts that an English equivalent would catch. The gate will under-fire.
+- **CJK** — no whitespace tokens at all. Every paragraph hashes to a single one-token "word"; the gate is meaningless. Will dramatically over-fire OR under-fire depending on punctuation.
+- **Romance languages** — works passably (whitespace-separated) but loses inflectional matches ("escribiría" vs. "escribir" both contribute different tokens).
+
+**What success looks like.** For English manuscripts, the gate's behavior is well-defined and tested (see `lemma_overlap::overlap` and `character_dissonance::evaluate` tests).
+
+**First-look mitigations.**
+
+1. If a writer reports `character_dissonance` firing implausibly (way too often or never), check the manuscript language. If non-English: confirmed limitation, document as a known gap in the writer's setup notes.
+2. Don't lower the gate threshold globally to compensate — it would over-fire on English manuscripts.
+3. Upgrade path: M5+'s semantic-embedding gate (planned; superscedes both #8 and #17).
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
