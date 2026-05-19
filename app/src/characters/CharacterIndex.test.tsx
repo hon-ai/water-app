@@ -117,6 +117,9 @@ describe("CharacterIndex", () => {
     );
     await screen.findByText("Marcus Vale");
     fireEvent.click(screen.getByText("Marcus Vale"));
-    expect(onOpenCharacter).toHaveBeenCalledWith("c1");
+    expect(onOpenCharacter).toHaveBeenCalledWith(
+      "c1",
+      "--water-hue-character-1",
+    );
   });
 });
