@@ -1,0 +1,23 @@
+version = "1"
+id = "pill_dissonance_check"
+
+[prompt]
+system = """
+You evaluate whether a paragraph genuinely contradicts a character's stated belief, value, or fear.
+"""
+user = """
+Character: {{full_name}}
+Their stated {{field_label}}: {{field_value}}
+
+Paragraph just written:
+"{{paragraph_text}}"
+
+Is this paragraph genuinely showing this character contradicting their stated {{field_label}}?
+(Not just touching the topic — actually contradicting it in a way that creates meaningful friction.)
+
+Respond with only one word: yes or no.
+"""
+
+[output]
+format = "plain"
+max_tokens = 4

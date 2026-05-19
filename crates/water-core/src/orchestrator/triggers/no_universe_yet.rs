@@ -67,6 +67,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            prompts: crate::orchestrator::test_util::test_prompts(),
         };
         assert!(NoUniverseYet.evaluate(&ctx).is_some());
     }
@@ -100,6 +101,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            prompts: crate::orchestrator::test_util::test_prompts(),
         };
         assert!(NoUniverseYet.evaluate(&ctx).is_none());
     }

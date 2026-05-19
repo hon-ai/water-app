@@ -314,9 +314,14 @@ impl OrchestratorService {
         };
 
         // Highest-priority candidate among the 10 built-in triggers.
-        let Some(cand) =
-            pick_best_trigger(&t, &self.analysis, &scene, &self.project, &self.characters)
-        else {
+        let Some(cand) = pick_best_trigger(
+            &t,
+            &self.analysis,
+            &scene,
+            &self.project,
+            &self.characters,
+            &self.prompts,
+        ) else {
             return;
         };
 
@@ -723,6 +728,7 @@ fn pick_best_trigger(
     scene: &SceneSnapshot,
     project: &ProjectSnapshot,
     characters: &CharacterRegistry,
+    prompts: &PromptLibrary,
 ) -> Option<TriggerCandidate> {
     let ctx = TriggerContext {
         telemetry: t,
@@ -730,6 +736,7 @@ fn pick_best_trigger(
         scene,
         project,
         characters,
+        prompts,
     };
     let triggers = builtin_triggers();
     triggers

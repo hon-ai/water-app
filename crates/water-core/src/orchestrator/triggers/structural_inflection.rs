@@ -109,6 +109,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            prompts: crate::orchestrator::test_util::test_prompts(),
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
         assert!(cand.priority > 7.0, "got priority {}", cand.priority);
@@ -125,6 +126,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            prompts: crate::orchestrator::test_util::test_prompts(),
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
         assert!(cand.priority < 4.0, "got priority {}", cand.priority);
@@ -140,6 +142,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            prompts: crate::orchestrator::test_util::test_prompts(),
         };
         assert!(StructuralInflectionTrigger.evaluate(&ctx).is_none());
     }
