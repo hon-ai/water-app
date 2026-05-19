@@ -5673,6 +5673,32 @@ Use this section to record deviations from the plan as they happen. Each amendme
 4. **`pick_lru_present`'s `&HashMap<String, Instant>` param leaks `CooldownState` internals.** Acceptable today; revisit if `CooldownState` shape changes.
 5. **`CharacterTemplate::load_builtin()` runs per `CharacterSpeaker::from_row`** — loads + parses TOML per row. Cache via `OnceLock` if eval-harness shows pressure.
 
+### Amendment 6 — 2026-05-18 — Task 6 review = clean, no findings
+
+T6 (idle_pause + Amendment 4 topic_drift fix) reviewed **Approved** (not "with minor changes"). Only minor stylistic note (`reason: "idle_with_present_character"` doesn't exactly match `trigger_id`); no deferred fixes.
+
+### Amendment 7 — 2026-05-18 — Task 7 quality findings (Important)
+
+**Change:** T7 code review flagged 2 Important + 3 Minor findings (none blocking; commit amended once for fmt-import-order).
+
+**Resolution (deferred to Phase G or follow-up):**
+
+1. **Redundant double lookup in `character_dissonance::evaluate`** — `by_id(...)` result bound to `_speaker` and discarded, then `list().iter().find(|r| r.id == *char_id)` does an O(N) scan for the same character. Fix: drop the `by_id` check (it's pure existence; `find()` covers it), OR add `pub fn row_by_id(&self, id: &str) -> Option<&CharacterRegistryRow>` to `CharacterRegistry` for an O(1) path.
+
+2. **`tokenize(paragraph)` recomputed per (field × character)** — `anti_loop::tokenize` rebuilds the `stopwords()` HashSet on every call. For 3 fields × N characters, this is 3N HashSet allocations per evaluate on a hot path. Fix options: (a) hoist `let paragraph_toks = tokenize(paragraph)` outside the character loop + add `jaccard_with_tokens(&HashSet, &str)` helper to `lemma_overlap.rs`; (b) memoize stopwords in `anti_loop::stopwords` via `OnceLock<HashSet<&'static str>>` (M2 also benefits).
+
+3. **`read_str` / `read_list_joined` duplication** with `voice/character_template.rs` — different sig but same body. Extract to shared module if Phase G touches both files.
+
+4. **Test paragraph adaptation under-documented** — `character_dissonance.rs:166-168` explains the math but not the history (plan fixture didn't clear threshold). Add a comment referencing commit `9d1780c`.
+
+5. **`field_label: String` clones compile-time constants** — could be `&'static str`. Defer to T9 where the real producer lives.
+
+### Amendment 8 — 2026-05-18 — Task 7 fmt fix amended
+
+T7's initial commit `79e3865` had a stale import-order in `app/src-tauri/src/orchestrator_service.rs` (the new `use water_core::character::registry::CharacterRegistry;` inserted after `use water_core::llm::LlmRouter;` violated alphabetical order). Fix applied via `git commit --amend` → new SHA `9d1780c`. No semantic change.
+
+Other fmt diffs visible in `app/src-tauri/src/commands/*.rs` and lines 39/70/181/265/310/502/721 of `orchestrator_service.rs` are pre-existing on the branch (not introduced by T7). Phase G should run a workspace-wide `cargo fmt` cleanup as part of the audit.
+
 ---
 
 ## Plan summary
