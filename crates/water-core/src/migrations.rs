@@ -22,10 +22,15 @@ use rusqlite_migration::{Migrations, M};
 
 const V1_INIT: &str = include_str!("../sql/v1_init.sql");
 const V2_PILL_ENGINE: &str = include_str!("../sql/v2_pill_engine.sql");
+const V3_CHARACTER_HUE: &str = include_str!("../sql/v3_character_hue.sql");
 
 #[must_use]
 pub fn all() -> Migrations<'static> {
-    Migrations::new(vec![M::up(V1_INIT), M::up(V2_PILL_ENGINE)])
+    Migrations::new(vec![
+        M::up(V1_INIT),
+        M::up(V2_PILL_ENGINE),
+        M::up(V3_CHARACTER_HUE),
+    ])
 }
 
 /// Returns the value of the `schema_version` table. This is the
@@ -86,8 +91,8 @@ mod tests {
     }
 
     #[test]
-    fn migration_ratchets_from_v1_to_v2() {
-        // Open Db::open against a fresh path; it runs both migrations.
+    fn migration_ratchets_from_v1_to_latest() {
+        // Open Db::open against a fresh path; it runs all migrations.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("project.db");
 
@@ -100,9 +105,9 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 1);
         drop(conn);
 
-        // Db::open now sees a v1 DB and ratchets to v2.
+        // Db::open now sees a v1 DB and ratchets to latest (v3).
         let db = Db::open(&path).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 2);
+        assert_eq!(current_version(db.conn()).unwrap(), 3);
     }
 
     #[test]
@@ -189,9 +194,89 @@ mod tests {
     #[test]
     fn migration_is_idempotent() {
         let (_tmp, mut db) = fresh_v1_db();
-        // Db::open already ratcheted to v2; another run_pending must be a no-op.
+        // Db::open already ratcheted to latest; another run_pending must be a no-op.
         run_pending(&mut db).unwrap();
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 2);
+        assert_eq!(current_version(db.conn()).unwrap(), 3);
+    }
+
+    #[test]
+    fn migration_ratchets_to_v3() {
+        let (_tmp, mut db) = fresh_v1_db();
+        // fresh_v1_db actually returns a DB already ratcheted to latest via
+        // Db::open; another run_pending is a no-op that still leaves us at v3.
+        run_pending(&mut db).unwrap();
+        assert_eq!(current_version(db.conn()).unwrap(), 3);
+    }
+
+    #[test]
+    fn migration_v3_adds_hue_token_column() {
+        let (_tmp, mut db) = fresh_v1_db();
+        run_pending(&mut db).unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(character)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            cols.iter().any(|c| c == "hue_token"),
+            "missing hue_token column (have: {cols:?})"
+        );
+    }
+
+    #[test]
+    fn migration_v3_backfills_hue_round_robin() {
+        // Build a true v1 DB, insert a project + 4 characters using the v1
+        // schema (no hue_token column yet), then ratchet to latest via
+        // Db::open and assert the backfill produced round-robin hues.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("project.db");
+
+        {
+            let mut conn = rusqlite::Connection::open(&path).unwrap();
+            conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+            Migrations::new(vec![M::up(V1_INIT)])
+                .to_latest(&mut conn)
+                .unwrap();
+
+            conn.execute(
+                "INSERT INTO project (id, name, created_at, updated_at)
+                 VALUES ('p1', 'P', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                params![],
+            )
+            .unwrap();
+            for (i, id) in ["c1", "c2", "c3", "c4"].iter().enumerate() {
+                let created_at = format!("2026-01-0{}T00:00:00Z", i + 1);
+                conn.execute(
+                    "INSERT INTO character
+                     (id, project_id, name, schema_version, data_json, file_path, created_at, updated_at)
+                     VALUES (?1, 'p1', ?2, 'lsm-v2.1', '{}', ?3, ?4, ?4)",
+                    params![id, id, format!("characters/{}.toml", id), created_at],
+                )
+                .unwrap();
+            }
+        }
+
+        let db = Db::open(&path).unwrap();
+        let hues: Vec<String> = db
+            .conn()
+            .prepare("SELECT hue_token FROM character ORDER BY created_at")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            hues,
+            vec![
+                "--water-hue-character-1".to_string(),
+                "--water-hue-character-2".to_string(),
+                "--water-hue-character-3".to_string(),
+                "--water-hue-character-4".to_string(),
+            ]
+        );
     }
 }
