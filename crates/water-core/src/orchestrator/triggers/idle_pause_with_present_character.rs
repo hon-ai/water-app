@@ -42,6 +42,7 @@ impl Trigger for IdlePauseWithPresentCharacter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::registry::CharacterRegistry;
     use crate::orchestrator::*;
     use crate::Id;
 
@@ -50,6 +51,7 @@ mod tests {
         analysis: AnalysisSnapshot,
         scene: SceneSnapshot,
         project: ProjectSnapshot,
+        characters: CharacterRegistry,
     }
 
     impl Fixture {
@@ -59,6 +61,7 @@ mod tests {
                 analysis: &self.analysis,
                 scene: &self.scene,
                 project: &self.project,
+                characters: &self.characters,
             }
         }
     }
@@ -90,6 +93,7 @@ mod tests {
             analysis,
             scene,
             project: ProjectSnapshot::default(),
+            characters: CharacterRegistry::empty(),
         }
     }
 

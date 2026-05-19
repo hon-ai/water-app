@@ -34,6 +34,7 @@ impl Trigger for BlockAnchoredDrift {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::registry::CharacterRegistry;
     use crate::orchestrator::*;
     use crate::Id;
 
@@ -84,11 +85,13 @@ mod tests {
     fn fires_on_high_divergence() {
         let (telem, analysis, scene, project) =
             make_ctx(CursorClassification::AtParagraphEnd, "^bk-0001", 0.75, 0.5);
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         assert!(BlockAnchoredDrift.evaluate(&ctx).is_some());
     }
@@ -97,11 +100,13 @@ mod tests {
     fn fires_on_low_coherence() {
         let (telem, analysis, scene, project) =
             make_ctx(CursorClassification::AtParagraphEnd, "^bk-0001", 0.3, 0.2);
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         assert!(BlockAnchoredDrift.evaluate(&ctx).is_some());
     }
@@ -110,11 +115,13 @@ mod tests {
     fn does_not_fire_mid_sentence() {
         let (telem, analysis, scene, project) =
             make_ctx(CursorClassification::MidSentence, "^bk-0001", 0.9, 0.1);
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         assert!(BlockAnchoredDrift.evaluate(&ctx).is_none());
     }
@@ -123,11 +130,13 @@ mod tests {
     fn does_not_fire_when_metrics_normal() {
         let (telem, analysis, scene, project) =
             make_ctx(CursorClassification::AtParagraphEnd, "^bk-0001", 0.3, 0.7);
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         assert!(BlockAnchoredDrift.evaluate(&ctx).is_none());
     }

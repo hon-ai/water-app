@@ -34,6 +34,7 @@ impl Trigger for NoUniverseYet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::registry::CharacterRegistry;
     use crate::orchestrator::*;
     use crate::Id;
 
@@ -59,11 +60,13 @@ mod tests {
             character_count: 0,
             world_entry_count: 0,
         };
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         assert!(NoUniverseYet.evaluate(&ctx).is_some());
     }
@@ -90,11 +93,13 @@ mod tests {
             character_count: 2,
             world_entry_count: 0,
         };
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         assert!(NoUniverseYet.evaluate(&ctx).is_none());
     }
