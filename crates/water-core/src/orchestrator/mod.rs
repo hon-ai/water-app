@@ -95,36 +95,100 @@ pub enum SpeakerTrack {
     Either,
 }
 
-/// Sheet-write confirmation request raised by a trigger when it wants the
-/// renderer to surface a "save this trait?" affordance.
-///
-/// **T5 stub.** This task only introduces the type + the
-/// `TriggerCandidate.requires_confirmation: Option<ConfirmationRequest>`
-/// field so the M3 voice router tests compile. T9 fills in the producer
-/// (trait-extraction trigger), the renderer wiring, and the end-to-end
-/// tests.
-#[derive(Debug, Clone)]
+/// A small system+user pair sent to the LLM as a yes/no gate before
+/// proceeding with level-0 pill generation. Used today by
+/// `character_dissonance` Stage 2; reusable for any future two-stage
+/// trigger. Cheap by design: ~150 tokens in, 1 token out.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfirmationRequest {
-    pub task_id: &'static str,
-    pub character_id: Id,
-    pub field_label: String,
-    pub field_value: String,
+    /// System prompt (instructive role copy).
+    pub system: String,
+    /// User prompt with all variables already substituted.
+    pub user: String,
+    /// Tag for telemetry / replay-log filtering. Currently only
+    /// `"pill_dissonance_check"` but other two-stage triggers would
+    /// add more variants.
+    pub kind: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TriggerCandidate {
-    pub trigger_id: &'static str,
+    pub trigger_id: String,
     pub priority: f32,
     pub preferred_track: SpeakerTrack,
     pub reason: String,
     pub block_target_id: Option<String>,
-    /// Set by triggers that need the renderer to prompt the user for
-    /// confirmation before writing a value back to a character sheet.
-    /// `None` for the M3 T5 fleet; T9 wires up the producer.
+    /// When `Some`, the orchestrator runs `ConfirmationRequest` as a
+    /// yes/no LLM call before dispatching the level-0 prompt. When the
+    /// confirmation returns "no" (or any non-"yes" string), the candidate
+    /// is dropped without emitting a pill.
+    ///
+    /// New in M3. Defaults to `None` for backward-compat with M2 replay
+    /// logs and any existing trigger that doesn't need two-stage gating.
+    #[serde(default)]
     pub requires_confirmation: Option<ConfirmationRequest>,
+}
+
+impl Default for TriggerCandidate {
+    fn default() -> Self {
+        Self {
+            trigger_id: String::new(),
+            priority: 0.0,
+            preferred_track: SpeakerTrack::Either,
+            reason: String::new(),
+            block_target_id: None,
+            requires_confirmation: None,
+        }
+    }
 }
 
 pub trait Trigger: Send + Sync {
     fn id(&self) -> &'static str;
     fn evaluate(&self, ctx: &TriggerContext<'_>) -> Option<TriggerCandidate>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trigger_candidate_default_has_no_confirmation() {
+        let c = TriggerCandidate::default();
+        assert!(c.requires_confirmation.is_none());
+    }
+
+    #[test]
+    fn trigger_candidate_with_confirmation_serializes_round_trip() {
+        let original = TriggerCandidate {
+            trigger_id: "character_dissonance".to_string(),
+            priority: 5.5,
+            preferred_track: SpeakerTrack::Character,
+            reason: "test".to_string(),
+            block_target_id: Some("block-1".to_string()),
+            requires_confirmation: Some(ConfirmationRequest {
+                system: "sys".to_string(),
+                user: "usr".to_string(),
+                kind: "pill_dissonance_check".to_string(),
+            }),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: TriggerCandidate = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed.requires_confirmation.as_ref().unwrap().kind,
+            "pill_dissonance_check"
+        );
+    }
+
+    #[test]
+    fn trigger_candidate_missing_confirmation_field_deserializes_as_none() {
+        let m2_json = r#"{
+            "trigger_id": "topic_drift",
+            "priority": 5.0,
+            "preferred_track": "persona",
+            "reason": "test",
+            "block_target_id": null
+        }"#;
+        let parsed: TriggerCandidate = serde_json::from_str(m2_json).unwrap();
+        assert!(parsed.requires_confirmation.is_none());
+    }
 }

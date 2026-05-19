@@ -52,7 +52,7 @@ impl Trigger for StructuralInflectionTrigger {
             }
         };
         Some(TriggerCandidate {
-            trigger_id: self.id(),
+            trigger_id: self.id().to_string(),
             priority: base_priority * multiplier,
             preferred_track: track,
             reason: format!("{kind:?}"),

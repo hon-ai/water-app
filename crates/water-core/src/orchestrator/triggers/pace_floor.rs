@@ -18,7 +18,7 @@ impl Trigger for PaceFloor {
         // requiring sustained low pace (caller's debounce ensures this).
         if pace < 0.3 && ctx.telemetry.recent_word_delta.unsigned_abs() < 40 {
             Some(TriggerCandidate {
-                trigger_id: self.id(),
+                trigger_id: self.id().to_string(),
                 priority: 5.0,
                 preferred_track: SpeakerTrack::Persona,
                 reason: format!(

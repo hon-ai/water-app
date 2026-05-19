@@ -17,7 +17,7 @@ impl Trigger for TopicDrift {
         let div = ctx.analysis.divergence?;
         if coh < 0.35 && div > 0.5 {
             Some(TriggerCandidate {
-                trigger_id: self.id(),
+                trigger_id: self.id().to_string(),
                 priority: 7.0,
                 preferred_track: SpeakerTrack::Either,
                 reason: format!("coherence={coh:.2} divergence={div:.2}"),

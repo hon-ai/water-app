@@ -18,7 +18,7 @@ impl Trigger for NoUniverseYet {
             && ctx.scene.word_count > 200
         {
             Some(TriggerCandidate {
-                trigger_id: self.id(),
+                trigger_id: self.id().to_string(),
                 priority: 4.5,
                 preferred_track: SpeakerTrack::Persona, // Chorus
                 reason: "eliciting_mode".to_string(),

@@ -18,7 +18,7 @@ impl Trigger for BlockAnchoredDrift {
         let coh = m.coherence.unwrap_or(1.0);
         if div > 0.6 || coh < 0.35 {
             Some(TriggerCandidate {
-                trigger_id: self.id(),
+                trigger_id: self.id().to_string(),
                 priority: 8.0,
                 preferred_track: SpeakerTrack::Either,
                 reason: format!("divergence={div:.2} coherence={coh:.2}"),

@@ -53,16 +53,20 @@ impl Trigger for CharacterDissonance {
                 let ovl = overlap(paragraph, field_value);
                 if ovl >= GATE_THRESHOLD {
                     return Some(TriggerCandidate {
-                        trigger_id: self.id(),
+                        trigger_id: self.id().to_string(),
                         priority: 5.5,
                         preferred_track: SpeakerTrack::Character,
                         reason: format!("dissonance_gate field={field_label} overlap={ovl:.2}"),
                         block_target_id: Some(ctx.telemetry.block_id.clone()),
                         requires_confirmation: Some(ConfirmationRequest {
-                            task_id: "pill_dissonance_check",
-                            character_id: char_id.clone(),
-                            field_label: (*field_label).to_string(),
-                            field_value: field_value.clone(),
+                            system: build_dissonance_system_prompt(),
+                            user: build_dissonance_user_prompt(
+                                &row.name,
+                                field_label,
+                                field_value,
+                                paragraph,
+                            ),
+                            kind: "pill_dissonance_check".to_string(),
                         }),
                     });
                 }
@@ -70,6 +74,39 @@ impl Trigger for CharacterDissonance {
         }
         None
     }
+}
+
+/// Stage-2 system prompt for the dissonance yes/no gate.
+///
+/// **T9 inline.** T10 will move this string into `prompts/library.toml`
+/// and replace this helper with a `prompts.render_confirmation_request(...)`
+/// call so the prompt is editable without a rebuild. Keeping it inline
+/// for now lets T9 ship as a self-contained type-reshape commit.
+fn build_dissonance_system_prompt() -> String {
+    "You evaluate whether a paragraph genuinely contradicts a character's stated belief, value, or fear.".to_string()
+}
+
+/// Stage-2 user prompt for the dissonance yes/no gate. See spec § 12.2.
+///
+/// **T9 inline.** Same T10 migration story as the system-prompt helper.
+fn build_dissonance_user_prompt(
+    full_name: &str,
+    field_label: &str,
+    field_value: &str,
+    paragraph: &str,
+) -> String {
+    format!(
+        "Character: {full_name}\n\
+         Their stated {field_label}: {field_value}\n\
+         \n\
+         Paragraph just written:\n\
+         \"{paragraph}\"\n\
+         \n\
+         Is this paragraph genuinely showing this character contradicting their stated {field_label}?\n\
+         (Not just touching the topic — actually contradicting it in a way that creates meaningful friction.)\n\
+         \n\
+         Respond with only one word: yes or no."
+    )
 }
 
 fn read_str(sheet: &serde_json::Value, section: &str, key: &str) -> String {
