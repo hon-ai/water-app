@@ -34,6 +34,36 @@ export interface DiagnosticsStatus {
   provider_health: ProviderHealth[];
 }
 
+/**
+ * One row in the character index panel. Mirrors
+ * `commands::character::CharacterIndexEntry` on the Rust side. `completion`
+ * is the 0..=100 percent of LSM v2.1 required fields filled (rounded
+ * down).
+ */
+export interface CharacterIndexEntry {
+  id: string;
+  full_name: string;
+  role: string | null;
+  hue_token: string;
+  completion: number;
+}
+
+/**
+ * On-disk projection of a character TOML. Mirrors `water_core::CharacterFile`.
+ * `data` is the raw LSM v2.1 sheet (with sections `main`, `bonus_traits`,
+ * `arc`, `perspectives` at the top level).
+ */
+export interface CharacterFile {
+  id: string;
+  name: string;
+  schema_version: string;
+  // `data` is flattened on the Rust side via `#[serde(flatten)]`, so the
+  // section keys appear at the top level alongside `id`/`name`/etc.
+  // We type the catch-all here as `unknown` per-key so call sites have to
+  // narrow before reading.
+  [key: string]: unknown;
+}
+
 export const ipc = {
   createProject: (parentDir: string, name: string): Promise<OpenProjectInfo> =>
     invoke("create_project", { parentDir, name }),
@@ -49,6 +79,25 @@ export const ipc = {
   sceneList: (): Promise<SceneInfo[]> => invoke("scene_list"),
   sceneRename: (id: string, name: string): Promise<SceneInfo> =>
     invoke("scene_rename", { id, name }),
+
+  // Character CRUD (M3 T12). `characterUpdateField` is called once per
+  // answer in the Conversational Intake flow; the Rust side serializes
+  // concurrent calls for the same id via a per-character write lock so
+  // the on-disk `.toml` cannot tear.
+  characterCreate: (): Promise<CharacterIndexEntry> =>
+    invoke("character_create"),
+  characterRead: (id: string): Promise<CharacterFile> =>
+    invoke("character_read", { id }),
+  characterList: (): Promise<CharacterIndexEntry[]> =>
+    invoke("character_list"),
+  characterUpdateField: (
+    id: string,
+    fieldId: string,
+    value: unknown,
+  ): Promise<CharacterIndexEntry> =>
+    invoke("character_update_field", { id, fieldId, value }),
+  characterDelete: (id: string): Promise<void> =>
+    invoke("character_delete", { id }),
 
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),

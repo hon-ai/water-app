@@ -349,6 +349,50 @@ pub const LSM_V2_1: &[(&str, &[IntakeField])] = &[
     ("perspectives", LSM_PERSPECTIVES),
 ];
 
+/// Dotted field IDs of the 8 LSM v2.1 fields with `optional_skip = false`.
+///
+/// `completion_pct` reads `data_json` against these paths. Kept in sync with
+/// the `optional_skip: false` entries above — the
+/// `required_field_ids_matches_intake` test in `mod.rs` enforces the link
+/// so this list cannot silently drift.
+pub const REQUIRED_FIELD_IDS: &[&str] = &[
+    "main.full_name",
+    "main.role_in_story",
+    "main.want",
+    "main.need",
+    "main.lie_they_believe",
+    "bonus_traits.voice",
+    "bonus_traits.fears",
+    "bonus_traits.values",
+];
+
+/// Returns the percentage (0..=100) of [`REQUIRED_FIELD_IDS`] that are
+/// "filled" in `data_json`. A field is filled when it's a non-empty trimmed
+/// string OR a non-empty array; everything else (missing key, null, false,
+/// number, empty string, empty array) counts as unfilled.
+///
+/// The dotted field id (e.g. `"main.full_name"`) is resolved to JSON
+/// pointer `/main/full_name`.
+#[must_use]
+pub fn completion_pct(data_json: &serde_json::Value) -> u8 {
+    let total = REQUIRED_FIELD_IDS.len();
+    if total == 0 {
+        return 100;
+    }
+    let filled = REQUIRED_FIELD_IDS
+        .iter()
+        .filter(|fid| {
+            let path = format!("/{}", fid.replace('.', "/"));
+            match data_json.pointer(&path) {
+                Some(v) if v.is_string() => !v.as_str().unwrap_or("").trim().is_empty(),
+                Some(v) if v.is_array() => v.as_array().is_some_and(|a| !a.is_empty()),
+                _ => false,
+            }
+        })
+        .count();
+    u8::try_from((filled * 100) / total).unwrap_or(100)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,6 +426,67 @@ mod tests {
         let original_len = all.len();
         all.dedup();
         assert_eq!(all.len(), original_len, "duplicate field id in LSM_V2_1");
+    }
+
+    #[test]
+    fn required_field_ids_matches_intake_optional_skip_false() {
+        let mut from_intake: Vec<&str> = LSM_V2_1
+            .iter()
+            .flat_map(|(_, fields)| fields.iter().filter(|f| !f.optional_skip).map(|f| f.id))
+            .collect();
+        from_intake.sort_unstable();
+        let mut declared: Vec<&str> = REQUIRED_FIELD_IDS.to_vec();
+        declared.sort_unstable();
+        assert_eq!(
+            from_intake, declared,
+            "REQUIRED_FIELD_IDS must match every optional_skip=false field in LSM v2.1"
+        );
+    }
+
+    #[test]
+    fn completion_pct_empty_data_returns_zero() {
+        let data = serde_json::json!({});
+        assert_eq!(completion_pct(&data), 0);
+    }
+
+    #[test]
+    fn completion_pct_all_filled_returns_100() {
+        let data = serde_json::json!({
+            "main": {
+                "full_name": "Marcus",
+                "role_in_story": "protagonist",
+                "want": "x",
+                "need": "y",
+                "lie_they_believe": "z"
+            },
+            "bonus_traits": {
+                "voice": "spare",
+                "fears": ["losing"],
+                "values": ["truth"]
+            }
+        });
+        assert_eq!(completion_pct(&data), 100);
+    }
+
+    #[test]
+    fn completion_pct_string_whitespace_is_unfilled() {
+        let data = serde_json::json!({"main": {"full_name": "   "}});
+        assert_eq!(completion_pct(&data), 0);
+    }
+
+    #[test]
+    fn completion_pct_empty_array_is_unfilled() {
+        let data = serde_json::json!({"bonus_traits": {"fears": []}});
+        assert_eq!(completion_pct(&data), 0);
+    }
+
+    #[test]
+    fn completion_pct_partial_fill_rounds_down() {
+        // 4 / 8 filled = 50%
+        let data = serde_json::json!({
+            "main": {"full_name": "A", "role_in_story": "B", "want": "C", "need": "D"}
+        });
+        assert_eq!(completion_pct(&data), 50);
     }
 
     #[test]
