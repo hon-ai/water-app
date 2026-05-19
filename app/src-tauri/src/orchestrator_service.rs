@@ -48,7 +48,7 @@ use water_core::prompts::{
 };
 use water_core::replay_log::{ReplayEntry, ReplayLog};
 use water_core::voice::registry::PersonaRegistry;
-use water_core::voice::router::{route, CooldownState};
+use water_core::voice::router::{route_with_chars, CooldownState};
 use water_core::voice::speaker::SpeakerArc;
 use water_core::Id;
 
@@ -64,7 +64,15 @@ pub type SharedRouter = Arc<Mutex<Option<Arc<LlmRouter>>>>;
 // stable as those land.
 #[allow(dead_code)]
 pub enum OrchestratorRequest {
-    Telemetry(TypingTelemetry),
+    /// Live typing-telemetry tick. `last_block_text` is populated only on
+    /// idle pulses (>=3 s) so the orchestrator can update
+    /// `AnalysisSnapshot.last_block_text` for `character_dissonance`;
+    /// during typing bursts (5 Hz cap) the renderer sends `None` to keep
+    /// the wire small.
+    Telemetry {
+        telemetry: TypingTelemetry,
+        last_block_text: Option<String>,
+    },
     Analysis(AnalysisSnapshot),
     /// Scene + project snapshot AND the full scene body text. The
     /// orchestrator caches the body so each telemetry tick can build a
@@ -98,6 +106,12 @@ pub struct OrchestratorService {
     app: AppHandle,
     router: SharedRouter,
     personas: PersonaRegistry,
+    /// Loaded once at `start` from the project DB. Re-loading on character
+    /// upsert is an M3+ concern; the current registry is a snapshot of the
+    /// project's characters at open time. Used by `route_with_chars` for
+    /// POV-prefer routing and by `pick_best_trigger` for the
+    /// `character_dissonance` gate.
+    characters: CharacterRegistry,
     prompts: Arc<PromptLibrary>,
     pills: Vec<Pill>,
     cooldowns: CooldownState,
@@ -173,6 +187,7 @@ impl OrchestratorService {
         app: AppHandle,
         router: SharedRouter,
         personas: PersonaRegistry,
+        characters: CharacterRegistry,
         project_root: PathBuf,
     ) -> OrchestratorHandle {
         // Channel depth 64 was picked to comfortably absorb a burst of
@@ -212,6 +227,7 @@ impl OrchestratorService {
             app,
             router,
             personas,
+            characters,
             prompts,
             pills: Vec::new(),
             cooldowns: CooldownState::default(),
@@ -241,7 +257,10 @@ impl OrchestratorService {
 
     async fn handle(&mut self, req: OrchestratorRequest) {
         match req {
-            OrchestratorRequest::Telemetry(t) => self.on_telemetry(t).await,
+            OrchestratorRequest::Telemetry {
+                telemetry,
+                last_block_text,
+            } => self.on_telemetry(telemetry, last_block_text).await,
             OrchestratorRequest::Analysis(a) => {
                 self.analysis = a;
             }
@@ -275,7 +294,16 @@ impl OrchestratorService {
         }
     }
 
-    async fn on_telemetry(&mut self, t: TypingTelemetry) {
+    async fn on_telemetry(&mut self, t: TypingTelemetry, last_block_text: Option<String>) {
+        // Apply the renderer's idle-pulse block text BEFORE evaluating
+        // triggers so `character_dissonance` (which reads
+        // `analysis.last_block_text`) sees the latest paragraph the writer
+        // paused on. During typing bursts the renderer sends `None`; we
+        // preserve the prior value in that case so a trigger that fired on
+        // the previous idle pulse can still gate against it.
+        if let Some(text) = last_block_text {
+            self.analysis.last_block_text = Some(text);
+        }
         // Gate 1: never surface mid-sentence (spec § 6.1).
         if t.cursor_classification == CursorClassification::MidSentence {
             return;
@@ -286,21 +314,20 @@ impl OrchestratorService {
         };
 
         // Highest-priority candidate among the 10 built-in triggers.
-        // M3 T7: empty character registry stub. T8 wires `SceneState` to
-        // load the project's registry and stores it on the service; until
-        // then `character_dissonance` correctly evaluates to None because
-        // there are no characters present in the registry to gate against.
-        let characters = CharacterRegistry::empty();
-        let Some(cand) = pick_best_trigger(&t, &self.analysis, &scene, &self.project, &characters)
+        let Some(cand) =
+            pick_best_trigger(&t, &self.analysis, &scene, &self.project, &self.characters)
         else {
             return;
         };
 
-        // Voice-route the candidate (cooldown-respecting). `None` means
-        // every relevant speaker is cooled down — skip this tick.
-        let Some(speaker) = route(
+        // Voice-route the candidate (cooldown-respecting, POV-prefer for
+        // character-track triggers). `None` means every relevant speaker
+        // is cooled down — skip this tick.
+        let Some(speaker) = route_with_chars(
             &cand,
             &self.personas,
+            &self.characters,
+            &scene,
             &self.cooldowns,
             std::time::Instant::now(),
         ) else {

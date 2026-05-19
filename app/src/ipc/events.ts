@@ -22,6 +22,13 @@ export interface WaterEventPayloads {
     block_id: string;
     recent_word_delta: number;
     structural_inflection: "new_scene" | "new_chapter" | "pov_change" | "location_change" | "none";
+    /**
+     * Text of the current block; only populated on idle pulses
+     * (`idle_for_ms >= 3000`). `null` during typing bursts (5 Hz cap)
+     * to keep the renderer→core wire size small. Consumed by
+     * `character_dissonance` via the orchestrator's `AnalysisSnapshot`.
+     */
+    last_block_text: string | null;
   };
   "pill:emerged": {
     pill_id: string;

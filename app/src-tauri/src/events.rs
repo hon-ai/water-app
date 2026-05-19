@@ -51,4 +51,11 @@ pub struct TypingTelemetryPayload {
     pub block_id: String,
     pub recent_word_delta: i32,
     pub structural_inflection: String, // "new_scene" | "new_chapter" | "pov_change" | "location_change" | "none"
+    /// Text of the current block; only populated on idle pulses
+    /// (`idle_for_ms >= 3000`). `None` during typing bursts (5 Hz cap) so
+    /// the renderer→core wire size stays small during live typing.
+    /// Consumed by the orchestrator to populate
+    /// `AnalysisSnapshot.last_block_text`, which `character_dissonance`
+    /// gates against.
+    pub last_block_text: Option<String>,
 }
