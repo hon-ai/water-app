@@ -30,6 +30,15 @@
   --water-hue-cartographer:   #e0c397;   /* Cartographer: dune amber */
   --water-hue-chorus:          #e8e3da;  /* Chorus: pearl */
 
+  /* Character voice palette — round-robin assigned at character create time.
+     Final shades pinned in M7. Distinct from persona hues. */
+  --water-hue-character-1: #c5d4e8;  /* soft periwinkle */
+  --water-hue-character-2: #e8c5d4;  /* soft rose */
+  --water-hue-character-3: #d4e8c5;  /* soft sage */
+  --water-hue-character-4: #e8d4c5;  /* soft sand */
+  --water-hue-character-5: #c5e8d4;  /* soft mint */
+  --water-hue-character-6: #d4c5e8;  /* soft lilac */
+
   /* Radii — aggressive Notion/Apple-fluid */
   --water-r-8:   8px;
   --water-r-16: 16px;
@@ -89,6 +98,14 @@
     --water-hue-editor:          #cbc1e3;
     --water-hue-cartographer:    #efc592;
     --water-hue-chorus:          #f1ece1;
+
+    /* Character voice palette — dark-mode (placeholder, M7 pin). */
+    --water-hue-character-1: #c5d4e8;
+    --water-hue-character-2: #e8c5d4;
+    --water-hue-character-3: #d4e8c5;
+    --water-hue-character-4: #e8d4c5;
+    --water-hue-character-5: #c5e8d4;
+    --water-hue-character-6: #d4c5e8;
   }
 }
 
