@@ -5826,6 +5826,38 @@ T13 **Approved** by both reviewers — 0 Critical, 0 Important, 4 Minor (style n
 
 **Phase D progress:** 2/3 done. T14 (autosuggest + intake_schema) remains.
 
+### Amendment 15 — 2026-05-18 — Task 14 closeout (Phase D complete)
+
+T14 **Approved** by spec reviewer (10/10 conformance points pass, 0 Critical, 0 Important). Code-quality reviewer: **Approved with minor changes** (0 Critical, 1 Important, 5 Minor).
+
+**Important finding fixed inline before commit:**
+- `character_autosuggest_for_scene_core` held the DB mutex across the regex scan (`db_guard` covered both `list_all_with_aliases` AND `suggest_for_scene_body`). Since `list_all_with_aliases` drains its statement into an owned `Vec<AutosuggestRow>`, the regex scan needs no DB access. The autosuggest command runs on the 2s debounced autosave loop (F4 wiring), so the over-broad lock would have starved concurrent DB writers on every save. Fix: scope-block the guard to just the SELECT (`commands/character.rs:330-336`).
+
+**Minor fixes inline:**
+- Module doc on `autosuggest.rs` extended with a Unicode `\b` caveat (CJK names embedded in compounds don't match — same family as the no-co-ref limitation).
+- `intake_schema_returns_29_fields_for_lsm_v2_1` renamed to `intake_schema_returns_lsm_v2_1_in_full` and the redundant `assert_eq!(total, 29)` removed (the canonical 29 assertion lives in `intake.rs::lsm_v2_1_has_29_fields_total`). Docstring updated to reflect the new single-source-of-truth pattern.
+
+**Disclosed adaptations (all validated by both reviewers):**
+- New `AutosuggestRow` type in `autosuggest.rs` (necessary — plan's `CharacterRow` reference was stale; M1 `CharacterRow` has only `id`/`name`/`file_path`, no aliases).
+- `intake_schema_core` is a sync free fn (no state, no IO; avoids spinning up tokio for the unknown-schema test).
+- `CharacterStore::list_all_with_aliases` swallows JSON-decode errors as `Value::Null` and falls back to the SQL `name` column. Matches `list_index` precedent. Graceful degradation for legacy rows.
+- TS wrappers added to `app/src/ipc/commands.ts` `ipc{}` object (not separate `ipc/character.ts`).
+- Both new commands extracted into `_core` async helpers + `#[tauri::command]` shims.
+- All character DTOs serialize snake_case (matching sibling `CharacterIndexEntry`, `CharacterFile`, etc. — Tauri does NOT auto-camelcase struct serialization, only command parameter names).
+- `IntakeFieldKind` uses `#[serde(tag = "type", content = "options", rename_all = "snake_case")]`; TS mirrors via discriminated union.
+- `_scene_id` parsed-and-discarded at command boundary (validates malformed IDs error early; documented inline; reserved for future scene-scoped filtering).
+
+**Minor findings deferred (small style nits, can stay deferred indefinitely):**
+- `Regex::new` fallback at `autosuggest.rs:82-84` is dead code (`regex::escape` guarantees a valid pattern). Acceptable as belt-and-suspenders; alternative is `.expect("regex::escape guarantees valid pattern")` for clearer crash diagnostics.
+- Test helper `row(_id, ...)` ignores its first arg in `ranked_by_count_top_5` (calls pass literal `"c"` rather than distinct labels). Cosmetic.
+- `let _scene_id: Id = scene_id.parse()...?;` could be written `let _ = scene_id.parse::<Id>().map_err(...)?;` to make the discard more explicit. Style only.
+
+**Test count delta:**
+- water-core `character::autosuggest`: **0 → 6 passing** (`full_name_match`, `word_boundary_excludes_substring`, `case_sensitive`, `aliases_counted`, `ranked_by_count_top_5`, `empty_alias_doesnt_match_everything`).
+- water-app `commands::character`: **8 → 11 passing** (`intake_schema_returns_lsm_v2_1_in_full`, `intake_schema_unknown_errors`, `autosuggest_excludes_zero_mention_chars`).
+
+**Phase D progress:** ✅ **3/3 complete.** Phase E (T15-T17 React intake) begins next.
+
 ---
 
 ## Plan summary
