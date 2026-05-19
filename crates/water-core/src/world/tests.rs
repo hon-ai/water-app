@@ -5,6 +5,28 @@
 use super::store::WorldStore;
 use crate::{Db, Id, ProjectStore};
 
+/// Helper: spin up an in-memory DB + tempdir project root + `WorldStore`
+/// with built-ins seeded, and return the resolved `locations` segment
+/// (the only built-in collection). Used by all entry-CRUD tests.
+#[cfg(test)]
+fn loc_setup() -> (
+    tempfile::TempDir,
+    Db,
+    crate::Project,
+    crate::world::WorldSegmentRow,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open_in_memory().unwrap();
+    let p = ProjectStore::new(&db).insert("P").unwrap();
+    let store = WorldStore::new(&db, dir.path().to_path_buf());
+    store.seed_builtins(&p.id).unwrap();
+    let seg = store
+        .find_segment_by_slug(&p.id, "locations")
+        .unwrap()
+        .unwrap();
+    (dir, db, p, seg)
+}
+
     #[test]
     fn upsert_and_list_segments() {
         let dir = tempfile::tempdir().unwrap();
@@ -439,4 +461,270 @@ use crate::{Db, Id, ProjectStore};
 
         assert_ne!(hash1, hash2, "file_hash should change after data update");
         assert!(!hash2.is_empty());
+    }
+
+    // ----- Task 5: collection-entry CRUD -----
+
+    #[test]
+    fn create_entry_inserts_row_and_returns_id() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store.create_entry(&seg.id, "Old Library").unwrap();
+
+        let entries = store.list_entries(&seg.id).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, id);
+        assert_eq!(entries[0].name, "Old Library");
+    }
+
+    #[test]
+    fn create_entry_with_empty_name_is_allowed_for_chorus_stub() {
+        // Task 29's pin-handler calls `create_entry_seeded(&loc.id, "", ...)`,
+        // so the empty-name path MUST succeed.
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store.create_entry(&seg.id, "").unwrap();
+        let file = store.read_entry(&id).unwrap();
+        assert_eq!(file.name, "");
+    }
+
+    #[test]
+    fn create_entry_refuses_non_collection_segment() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let p = ProjectStore::new(&db).insert("P").unwrap();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        store.seed_builtins(&p.id).unwrap();
+        let concept = store.find_segment_by_slug(&p.id, "concept").unwrap().unwrap();
+        let err = store.create_entry(&concept.id, "Nope").unwrap_err();
+        assert!(
+            err.to_string().contains("not a collection"),
+            "expected 'not a collection' in error; got {err}"
+        );
+    }
+
+    #[test]
+    fn create_entry_seeded_writes_initial_field_value() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store
+            .create_entry_seeded(&seg.id, "Atrium", "main.sensory_detail", "cold marble")
+            .unwrap();
+
+        let file = store.read_entry(&id).unwrap();
+        let main = file.data.get("main").unwrap().as_object().unwrap();
+        assert_eq!(
+            main.get("sensory_detail").unwrap().as_str().unwrap(),
+            "cold marble"
+        );
+
+        // Disk file must exist at world/locations/<id>.toml.
+        let on_disk = dir
+            .path()
+            .join("world")
+            .join("locations")
+            .join(format!("{}.toml", id.as_str()));
+        assert!(on_disk.exists(), "expected {} on disk", on_disk.display());
+    }
+
+    #[test]
+    fn update_entry_field_persists_to_disk_with_correct_path() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store.create_entry(&seg.id, "Crypt").unwrap();
+
+        store
+            .update_entry_field(
+                &id,
+                "main.sensory_detail",
+                &serde_json::Value::String("dust and copper".to_string()),
+            )
+            .unwrap();
+
+        let on_disk = dir
+            .path()
+            .join("world")
+            .join("locations")
+            .join(format!("{}.toml", id.as_str()));
+        assert!(on_disk.exists(), "TOML file should exist at {}", on_disk.display());
+        let body = std::fs::read_to_string(&on_disk).unwrap();
+        assert!(body.contains("dust and copper"));
+    }
+
+    #[test]
+    fn update_entry_field_rename_cascade_guard_rejects_non_string_main_name() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store.create_entry(&seg.id, "Original").unwrap();
+
+        let err = store
+            .update_entry_field(&id, "main.name", &serde_json::json!(42))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("main.name"),
+            "expected 'main.name' guard error; got {err}"
+        );
+
+        // DB row name must be untouched.
+        let still: String = db
+            .conn()
+            .query_row(
+                "SELECT name FROM world_entry WHERE id = ?1",
+                [id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(still, "Original");
+    }
+
+    #[test]
+    fn update_entry_field_main_name_renames_world_entry_row() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store.create_entry(&seg.id, "Old Name").unwrap();
+
+        store
+            .update_entry_field(
+                &id,
+                "main.name",
+                &serde_json::Value::String("New Name".to_string()),
+            )
+            .unwrap();
+
+        let row_name: String = db
+            .conn()
+            .query_row(
+                "SELECT name FROM world_entry WHERE id = ?1",
+                [id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(row_name, "New Name", "main.name should rename the row");
+
+        // read_entry must also reflect the cascade.
+        let file = store.read_entry(&id).unwrap();
+        assert_eq!(file.name, "New Name");
+    }
+
+    #[test]
+    fn update_entry_aliases_persists_to_db_and_disk() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store.create_entry(&seg.id, "The Spire").unwrap();
+
+        store
+            .update_entry_aliases(&id, &["Spire".to_string(), "Tower".to_string()])
+            .unwrap();
+
+        // DB column.
+        let aliases_json: String = db
+            .conn()
+            .query_row(
+                "SELECT aliases_json FROM world_entry WHERE id = ?1",
+                [id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let parsed: Vec<String> = serde_json::from_str(&aliases_json).unwrap();
+        assert_eq!(parsed, vec!["Spire", "Tower"]);
+
+        // read_entry round-trip.
+        let file = store.read_entry(&id).unwrap();
+        assert_eq!(file.aliases, vec!["Spire", "Tower"]);
+
+        // On-disk TOML body should mention the aliases too.
+        let on_disk = dir
+            .path()
+            .join("world")
+            .join("locations")
+            .join(format!("{}.toml", id.as_str()));
+        let body = std::fs::read_to_string(&on_disk).unwrap();
+        assert!(body.contains("Spire"));
+        assert!(body.contains("Tower"));
+    }
+
+    #[test]
+    fn delete_entry_removes_row_and_file() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store
+            .create_entry_seeded(&seg.id, "Mausoleum", "main.sensory_detail", "shadows")
+            .unwrap();
+
+        let on_disk = dir
+            .path()
+            .join("world")
+            .join("locations")
+            .join(format!("{}.toml", id.as_str()));
+        assert!(on_disk.exists(), "precondition: file written");
+
+        store.delete_entry(&id).unwrap();
+
+        assert!(!on_disk.exists(), "file should be removed");
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM world_entry WHERE id = ?1",
+                [id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0, "DB row should be removed");
+    }
+
+    #[test]
+    fn delete_entry_if_empty_returns_true_for_blank_entry() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        // Empty name, no aliases, no data — Chorus-style draft stub.
+        let id = store.create_entry(&seg.id, "").unwrap();
+        let reaped = store.delete_entry_if_empty(&id).unwrap();
+        assert!(reaped, "blank entry should be reaped");
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM world_entry WHERE id = ?1",
+                [id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn delete_entry_if_empty_returns_false_for_populated_entry() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let id = store
+            .create_entry_seeded(&seg.id, "", "main.sensory_detail", "wind in pines")
+            .unwrap();
+        let reaped = store.delete_entry_if_empty(&id).unwrap();
+        assert!(!reaped, "populated entry must NOT be reaped");
+        // And the row is still there.
+        let still = store.read_entry(&id).unwrap();
+        assert_eq!(
+            still
+                .data
+                .get("main")
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .get("sensory_detail")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "wind in pines"
+        );
+    }
+
+    #[test]
+    fn read_entry_returns_not_found_for_unknown_id() {
+        let (dir, db, _p, _seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let unknown = Id::new();
+        let err = store.read_entry(&unknown).unwrap_err();
+        assert!(
+            matches!(err, crate::Error::NotFound(_)),
+            "expected NotFound, got {err:?}"
+        );
     }

@@ -33,6 +33,32 @@ pub struct WorldSingleDocFile {
     pub data: serde_json::Map<String, serde_json::Value>,
 }
 
+/// On-disk shape for one row of a collection segment (e.g. one location).
+/// Section keys (`"main"`, `"lists"`, ...) land at top level via
+/// `#[serde(flatten)]`. `aliases` defaults to an empty vec so entries
+/// written before Task 5 still round-trip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorldEntryFile {
+    pub id: Id,
+    pub segment_id: Id,
+    pub schema_version: String,
+    pub name: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(flatten)]
+    pub data: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Lightweight row used by `list_entries` — name + a one-line preview
+/// derived from the entry's `[main]` section.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorldEntryIndexRow {
+    pub id: Id,
+    pub segment_id: Id,
+    pub name: String,
+    pub preview: String,
+}
+
 pub struct WorldStore<'a> {
     db: &'a Db,
     project_root: PathBuf,
@@ -479,6 +505,348 @@ impl<'a> WorldStore<'a> {
         tx.commit()?;
         Ok(())
     }
+
+    // ----- Collection-entry CRUD (Task 5) -----
+
+    /// Lists entries for a collection segment, ordered by name. Each row
+    /// includes a short `preview` derived from `[main]` (first non-empty
+    /// string field, truncated to 80 chars).
+    pub fn list_entries(&self, segment_id: &Id) -> Result<Vec<WorldEntryIndexRow>> {
+        let mut stmt = self.db.conn().prepare(
+            "SELECT id, name, data_json FROM world_entry WHERE segment_id = ?1 ORDER BY name",
+        )?;
+        let rows = stmt.query_map([segment_id.as_str()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            let (id_str, name, data_json) = r?;
+            let id = id_str
+                .parse::<Id>()
+                .map_err(|e| Error::Other(format!("invalid id in world_entry: {e}")))?;
+            let data: serde_json::Value = match serde_json::from_str(&data_json) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "water::world",
+                        entry_id = %id.as_str(),
+                        error = %e,
+                        "world_entry.data_json failed to parse; treating as empty for preview"
+                    );
+                    serde_json::Value::Null
+                }
+            };
+            out.push(WorldEntryIndexRow {
+                id,
+                segment_id: segment_id.clone(),
+                name,
+                preview: compute_preview(&data),
+            });
+        }
+        Ok(out)
+    }
+
+    /// Reads one collection entry by id.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `entry_id` is unknown.
+    pub fn read_entry(&self, entry_id: &Id) -> Result<WorldEntryFile> {
+        let (segment_id_str, name, data_json, aliases_json, schema_version): (
+            String,
+            String,
+            String,
+            String,
+            String,
+        ) = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT segment_id, name, data_json, aliases_json, schema_version
+                 FROM world_entry WHERE id = ?1",
+                [entry_id.as_str()],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                    ))
+                },
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    Error::NotFound(format!("world_entry {}", entry_id.as_str()))
+                }
+                other => Error::from(other),
+            })?;
+        let segment_id = segment_id_str
+            .parse::<Id>()
+            .map_err(|e| Error::Other(format!("invalid segment_id in world_entry: {e}")))?;
+        let data: serde_json::Map<String, serde_json::Value> =
+            match serde_json::from_str(&data_json) {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "water::world",
+                        entry_id = %entry_id.as_str(),
+                        error = %e,
+                        "world_entry.data_json failed to parse; treating as empty map"
+                    );
+                    serde_json::Map::new()
+                }
+            };
+        let aliases: Vec<String> = match serde_json::from_str(&aliases_json) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(
+                    target: "water::world",
+                    entry_id = %entry_id.as_str(),
+                    error = %e,
+                    "world_entry.aliases_json failed to parse; treating as empty list"
+                );
+                Vec::new()
+            }
+        };
+        Ok(WorldEntryFile {
+            id: entry_id.clone(),
+            segment_id,
+            schema_version,
+            name,
+            aliases,
+            data,
+        })
+    }
+
+    /// Creates a new entry in a collection segment.
+    ///
+    /// Empty `name` is intentionally allowed — Task 29's Chorus-stub flow
+    /// (`create_entry_seeded(&loc.id, "", "main.sensory_detail", &snippet)`)
+    /// depends on the empty-name path round-tripping cleanly so the orphan
+    /// reaper can later collect abandoned stubs.
+    ///
+    /// # Errors
+    /// - [`Error::Other`] if the segment is not a collection.
+    /// - [`Error::NotFound`] if `segment_id` is unknown.
+    pub fn create_entry(&self, segment_id: &Id, name: &str) -> Result<Id> {
+        let seg = self.read_segment(segment_id)?;
+        if !seg.is_collection {
+            return Err(Error::Other(format!(
+                "segment {} is not a collection; cannot create entry",
+                seg.slug
+            )));
+        }
+        let id = Id::new();
+        let now = Utc::now().to_rfc3339();
+        let file_path = format!("world/{}/{}.toml", seg.slug, id.as_str());
+        let schema_version = format!("{}@1", seg.slug);
+        self.db.conn().execute(
+            "INSERT INTO world_entry
+             (id, segment_id, name, data_json, file_path, file_hash, aliases_json, schema_version, created_at, updated_at)
+             VALUES (?1, ?2, ?3, '{}', ?4, '', '[]', ?5, ?6, ?6)",
+            (
+                id.as_str(),
+                segment_id.as_str(),
+                name,
+                &file_path,
+                &schema_version,
+                &now,
+            ),
+        )?;
+        Ok(id)
+    }
+
+    /// Creates an entry and immediately writes one seed field. Used by the
+    /// Chorus-pin stub handler (Task 29) which materializes a draft entry
+    /// from a generated snippet.
+    pub fn create_entry_seeded(
+        &self,
+        segment_id: &Id,
+        name: &str,
+        seed_field_id: &str,
+        seed_value: &str,
+    ) -> Result<Id> {
+        let id = self.create_entry(segment_id, name)?;
+        self.update_entry_field(
+            &id,
+            seed_field_id,
+            &serde_json::Value::String(seed_value.to_string()),
+        )?;
+        Ok(id)
+    }
+
+    /// Updates one field in a collection entry by dotted `section.leaf`
+    /// path. If `field_id == "main.name"`, the entry's `name` column is
+    /// also updated (rename-cascade). Non-string values for `main.name`
+    /// are rejected up front so the cascade can never produce a bad row.
+    ///
+    /// Transaction shape mirrors [`Self::update_single_doc_field`]:
+    /// `BEGIN` → `UPDATE data_json` (+ optionally `name`) + `updated_at` →
+    /// `fs::write` → `hash_file` → `UPDATE file_hash` → `COMMIT`.
+    ///
+    /// # Panics
+    /// Will not panic in practice: the only `expect` is gated behind the
+    /// `main.name` `is_string` guard at the top of the function.
+    ///
+    /// # Errors
+    /// - [`Error::Other`] if `field_id == "main.name"` and `value` is not a
+    ///   JSON string; if `field_id` fails dotted-path validation; if
+    ///   mkdir/write/hash/serialization fails.
+    /// - [`Error::NotFound`] if `entry_id` is unknown.
+    pub fn update_entry_field(
+        &self,
+        entry_id: &Id,
+        field_id: &str,
+        value: &serde_json::Value,
+    ) -> Result<()> {
+        // Rename-cascade guard — checked BEFORE any DB work so a bad call
+        // never leaves a half-mutated state.
+        if field_id == "main.name" && !value.is_string() {
+            return Err(Error::Other(
+                "main.name must be a string (rename-cascade guard)".to_string(),
+            ));
+        }
+
+        let mut file = self.read_entry(entry_id)?;
+        apply_dotted_mutation(&mut file.data, field_id, value.clone())?;
+
+        let seg = self.read_segment(&file.segment_id)?;
+        let file_path = format!("world/{}/{}.toml", seg.slug, entry_id.as_str());
+        let disk_path = self.project_root.join(&file_path);
+
+        let new_name = if field_id == "main.name" {
+            // Guarded above — safe to unwrap.
+            let s = value
+                .as_str()
+                .expect("main.name string guard checked above")
+                .to_string();
+            file.name.clone_from(&s);
+            Some(s)
+        } else {
+            None
+        };
+
+        if let Some(parent) = disk_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::Other(format!("mkdir {}: {e}", parent.display())))?;
+        }
+        let toml_text = render_entry_toml(&file)?;
+        let now = Utc::now().to_rfc3339();
+        let data_json = serde_json::Value::Object(file.data.clone()).to_string();
+
+        let tx = self.db.conn().unchecked_transaction()?;
+
+        if let Some(name) = &new_name {
+            tx.execute(
+                "UPDATE world_entry SET data_json = ?1, name = ?2, updated_at = ?3 WHERE id = ?4",
+                (&data_json, name, &now, entry_id.as_str()),
+            )?;
+        } else {
+            tx.execute(
+                "UPDATE world_entry SET data_json = ?1, updated_at = ?2 WHERE id = ?3",
+                (&data_json, &now, entry_id.as_str()),
+            )?;
+        }
+
+        std::fs::write(&disk_path, &toml_text)
+            .map_err(|e| Error::Other(format!("write {}: {e}", disk_path.display())))?;
+
+        let hash = crate::scene::hash_file(&disk_path)?;
+        tx.execute(
+            "UPDATE world_entry SET file_hash = ?1 WHERE id = ?2",
+            (&hash, entry_id.as_str()),
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Replaces the entry's alias list (DB + disk) using the same
+    /// transactional pattern as [`Self::update_entry_field`].
+    pub fn update_entry_aliases(&self, entry_id: &Id, aliases: &[String]) -> Result<()> {
+        let mut file = self.read_entry(entry_id)?;
+        file.aliases = aliases.to_vec();
+
+        let seg = self.read_segment(&file.segment_id)?;
+        let file_path = format!("world/{}/{}.toml", seg.slug, entry_id.as_str());
+        let disk_path = self.project_root.join(&file_path);
+
+        if let Some(parent) = disk_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| Error::Other(format!("mkdir {}: {e}", parent.display())))?;
+        }
+        let toml_text = render_entry_toml(&file)?;
+        let now = Utc::now().to_rfc3339();
+        let aliases_json = serde_json::to_string(aliases)?;
+
+        let tx = self.db.conn().unchecked_transaction()?;
+        tx.execute(
+            "UPDATE world_entry SET aliases_json = ?1, updated_at = ?2 WHERE id = ?3",
+            (&aliases_json, &now, entry_id.as_str()),
+        )?;
+        std::fs::write(&disk_path, &toml_text)
+            .map_err(|e| Error::Other(format!("write {}: {e}", disk_path.display())))?;
+        let hash = crate::scene::hash_file(&disk_path)?;
+        tx.execute(
+            "UPDATE world_entry SET file_hash = ?1 WHERE id = ?2",
+            (&hash, entry_id.as_str()),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Deletes a collection entry — removes the DB row and (if present)
+    /// the on-disk TOML file.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `entry_id` is unknown.
+    pub fn delete_entry(&self, entry_id: &Id) -> Result<()> {
+        let file_path: String = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT file_path FROM world_entry WHERE id = ?1",
+                [entry_id.as_str()],
+                |r| r.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    Error::NotFound(format!("world_entry {}", entry_id.as_str()))
+                }
+                other => Error::from(other),
+            })?;
+        let disk_path = self.project_root.join(&file_path);
+        if disk_path.exists() {
+            std::fs::remove_file(&disk_path)
+                .map_err(|e| Error::Other(format!("remove {}: {e}", disk_path.display())))?;
+        }
+        self.db.conn().execute(
+            "DELETE FROM world_entry WHERE id = ?1",
+            [entry_id.as_str()],
+        )?;
+        Ok(())
+    }
+
+    /// Orphan-draft reaper: deletes the entry iff its `name`, `aliases`,
+    /// and every section in `data` are all empty. Returns `true` if the
+    /// entry was deleted, `false` if it still contained content.
+    ///
+    /// Wraps [`Self::delete_entry`] for the actual removal.
+    ///
+    /// # Errors
+    /// - [`Error::NotFound`] if `entry_id` is unknown.
+    pub fn delete_entry_if_empty(&self, entry_id: &Id) -> Result<bool> {
+        let file = self.read_entry(entry_id)?;
+        if is_world_entry_empty(&file) {
+            self.delete_entry(entry_id)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
 }
 
 /// Applies a dotted `section.leaf` mutation against a single-doc data map,
@@ -515,4 +883,51 @@ fn apply_dotted_mutation(
 /// Serializes a `WorldSingleDocFile` to pretty TOML.
 fn render_single_doc_toml(file: &WorldSingleDocFile) -> Result<String> {
     toml::to_string_pretty(file).map_err(|e| Error::Other(format!("toml render: {e}")))
+}
+
+/// Serializes a `WorldEntryFile` to pretty TOML.
+fn render_entry_toml(file: &WorldEntryFile) -> Result<String> {
+    toml::to_string_pretty(file).map_err(|e| Error::Other(format!("toml render: {e}")))
+}
+
+/// Picks the first non-empty string in `data["main"]` (if any) and
+/// truncates to 80 chars. Falls back to an empty string when there's
+/// nothing presentable.
+fn compute_preview(data: &serde_json::Value) -> String {
+    if let Some(main) = data.get("main").and_then(serde_json::Value::as_object) {
+        for v in main.values() {
+            if let Some(s) = v.as_str() {
+                if !s.trim().is_empty() {
+                    return s.chars().take(80).collect();
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+/// True iff the entry has no name, no aliases, and every section in
+/// `data` is recursively empty. Used by [`WorldStore::delete_entry_if_empty`].
+fn is_world_entry_empty(file: &WorldEntryFile) -> bool {
+    if !file.name.is_empty() {
+        return false;
+    }
+    if !file.aliases.is_empty() {
+        return false;
+    }
+    file.data.values().all(is_value_empty)
+}
+
+/// Recursive "is this JSON value content-free?" predicate. Numbers and
+/// bools always count as non-empty (an explicit `false` or `0` is still
+/// authored content); strings, arrays, and objects empty out by
+/// shape/contents.
+fn is_value_empty(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => true,
+        serde_json::Value::String(s) => s.is_empty(),
+        serde_json::Value::Array(a) => a.is_empty() || a.iter().all(is_value_empty),
+        serde_json::Value::Object(m) => m.is_empty() || m.values().all(is_value_empty),
+        serde_json::Value::Bool(_) | serde_json::Value::Number(_) => false,
+    }
 }

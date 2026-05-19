@@ -14,4 +14,6 @@ pub mod templates;
 #[cfg(test)]
 mod tests;
 
-pub use store::{WorldSegmentRow, WorldSingleDocFile, WorldStore};
+pub use store::{
+    WorldEntryFile, WorldEntryIndexRow, WorldSegmentRow, WorldSingleDocFile, WorldStore,
+};
