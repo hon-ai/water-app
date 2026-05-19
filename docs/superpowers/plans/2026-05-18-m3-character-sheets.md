@@ -5899,6 +5899,37 @@ T15 **Needs revision** on first pass — code-quality reviewer surfaced **2 Crit
 
 **Phase E progress:** 1/3 done. T16 (CharacterIntakeSheet) + T17 (entry points) remain.
 
+### Amendment 17 — 2026-05-18 — Task 16 closeout (Phase E mid)
+
+T16 **Approved with minor changes** by combined reviewer (0 Critical, 1 Important I-1 fixed inline, 4 Minor deferred). Plan deviations all sanctioned. Cadence note: T16 used a single thorough combined review (spec + code quality) rather than two parallel reviewers — appropriate for a narrow glue task using established patterns. Will continue dual review for larger tasks.
+
+**Critical adaptations from plan (all sanctioned upfront in prompt):**
+- IPC: `ipc.intakeSchema/characterRead/characterUpdateField` via the singleton `ipc{}` object, not bare imports from a stale `../ipc/character` path.
+- `CharacterFile` shape: `#[serde(flatten)]` puts section keys (`main`, `bonus_traits`, `arc`, `perspectives`) at the TOP LEVEL of the file alongside `id`/`name`/`schema_version` — there is NO `file.data` wrapper.
+- `IntakeField.id` is the **dotted path** (`"main.full_name"`), not the leaf name.
+- `flattenCharacterToDottedPaths(file)` produces `{ "main.full_name": ..., "bonus_traits.preserve": ..., ... }` matching `IntakeField.id`. Plan's `flattenCharacterData(file.data)` would have produced bare leaf keys that wouldn't match.
+- Test mock: `vi.mock("../ipc/commands")` providing the full `ipc{}` object; factory is hoist-safe (no outer-scope references).
+- Mock data uses real types throughout (discriminated `kind`, dotted-path IDs, `optional_skip` not `required`).
+
+**Important #1 finding fixed inline (with a subtle wrinkle):**
+- Reviewer flagged: in-flight `characterUpdateField` for c1 could land its optimistic `setValues` on c2's state after a parent-driven character switch.
+- Reviewer's suggested 2-line fix (`const writingFor = characterId; ...; if (writingFor !== characterId) return;`) **does NOT work** — both `writingFor` and the comparison `characterId` are captured from the same closure, so they're always equal. The closure has no way to observe React's prop change.
+- Correct fix: `useRef(characterId)` updated during render (`characterIdRef.current = characterId`), then compare `writingFor !== characterIdRef.current` after the await. The ref is stable across renders but its `.current` is always live. Applied at `CharacterIntakeSheet.tsx:35-42`.
+- **Regression test attempted but removed:** the poison would land on the parent's `values` state, but `ConversationalIntake` (T15) tracks `confirmedValues` internally after mount and re-reads `initialValues` only at mount-time. A sheet re-open re-loads from disk via `characterRead`. So the poisoned state has no observable UI effect under current architecture. The `useRef` guard remains as defense-in-depth for future code paths that DO observe parent `values` after mount. Test file documents the gap (lines ~210-218). Phase G can revisit if a more direct assertion path emerges.
+
+**Minor findings deferred to Phase G or post-M3:**
+- `setTimeout(r, 10)` slop in the race test is not the M2 T4 idiom (`await act(async () => {...})` then `waitFor` is preferred). Works correctly; stylistically out of step.
+- `HTMLDialogElement` polyfill duplicated for the 7th time across test files. Hoist into `src/test-setup.ts` during T22 audit. Pre-existing convention.
+- `flattenCharacterToDottedPaths` is one-deep only — works for LSM v2.1's flat `section.leaf` shape; would silently drop nested fields if a future schema (M4 World Bible?) goes deeper. Document with a recursive walker if needed.
+- `[key: string]: unknown` on `CharacterFile` interface makes the `Object.entries(file)` walk implicitly typed — relies on the `typeof === "object"` narrowing in the loop. Acceptable.
+
+**Test count delta:**
+- `CharacterIntakeSheet.test.tsx`: **0 → 4 tests** (load, write-per-answer, complete-fires-onCompleted+onClose, load-race).
+- Full app TS suite: **116 → 120 tests** (across 27 files), all passing.
+- Build clean.
+
+**Phase E progress:** 2/3 done. T17 (entry points: "+ New character" + "Continue intake") remains.
+
 ---
 
 ## Plan summary
