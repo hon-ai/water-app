@@ -2,7 +2,8 @@
 
 pub mod templates;
 
-use crate::{Db, Id, Result};
+use crate::{Db, Error, Id, Result};
+use chrono::Utc;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -18,30 +19,6 @@ pub struct WorldSegmentRow {
     pub hidden: bool,
     /// Computed: true iff `template_json IS NOT NULL` (segment has a user override).
     pub has_template_override: bool,
-}
-
-/// Canonical slugs of the six built-in world segments.
-///
-/// Used by [`WorldStore::delete_user_segment`] to refuse deletion of built-ins.
-const BUILTIN_SLUGS: &[&str] = &[
-    "concept",
-    "locations",
-    "politics_and_social",
-    "culture",
-    "world",
-    "history",
-];
-
-/// Returns the current unix timestamp in seconds as a string.
-///
-/// Used as `created_at` / `updated_at` for world segments. Returns `"0"` if the
-/// system clock predates the UNIX epoch (effectively impossible).
-fn current_timestamp_string() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    secs.to_string()
 }
 
 pub struct WorldStore<'a> {
@@ -123,6 +100,10 @@ impl<'a> WorldStore<'a> {
 
     /// Reads a single segment by id, returning all v4 columns including
     /// the computed `has_template_override` flag.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotFound`] if `segment_id` is unknown.
     pub fn read_segment(&self, segment_id: &Id) -> Result<WorldSegmentRow> {
         let mut stmt = self.db.conn().prepare(
             "SELECT id, name, ordering, is_collection, slug, hue_token, hidden,
@@ -149,7 +130,12 @@ impl<'a> WorldStore<'a> {
                 has_template_override: row.get::<_, i64>(7)? != 0,
             })
         })
-        .map_err(Into::into)
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                Error::NotFound(format!("world_segment {}", segment_id.as_str()))
+            }
+            other => Error::from(other),
+        })
     }
 
     /// Finds a segment by `(project_id, slug)`. Returns `Ok(None)` if no match.
@@ -166,7 +152,9 @@ impl<'a> WorldStore<'a> {
     ///
     /// Idempotent: each canonical slug is inserted at most once per project. On
     /// subsequent calls, slugs already present are skipped (the existing row's
-    /// `name`/`ordering`/`hue_token`/`hidden` are left untouched).
+    /// `name`/`ordering`/`hue_token`/`hidden` are left untouched). Wrapped in a
+    /// transaction so SELECT-then-INSERT races between concurrent callers
+    /// cannot both observe "no existing row" and both insert.
     ///
     /// Hue tokens are assigned round-robin against `--water-hue-world-1..6` in
     /// slug order (so a fresh project gets exactly hues 1..6).
@@ -176,11 +164,10 @@ impl<'a> WorldStore<'a> {
     /// backfill only fires once at migration time).
     pub fn seed_builtins(&self, project_id: &Id) -> Result<()> {
         use crate::world::templates::built_in_templates;
-        let now = current_timestamp_string();
+        let tx = self.db.conn().unchecked_transaction()?;
+        let now = Utc::now().to_rfc3339();
         for (idx, t) in built_in_templates().iter().enumerate() {
-            let existing: Option<String> = self
-                .db
-                .conn()
+            let existing: Option<String> = tx
                 .query_row(
                     "SELECT id FROM world_segment WHERE project_id = ?1 AND slug = ?2",
                     (project_id.as_str(), t.slug),
@@ -192,7 +179,7 @@ impl<'a> WorldStore<'a> {
             }
             let id = Id::new();
             let hue = format!("--water-hue-world-{}", (idx % 6) + 1);
-            self.db.conn().execute(
+            tx.execute(
                 "INSERT INTO world_segment
                  (id, project_id, name, ordering, is_collection, slug, hue_token, hidden, created_at, updated_at, template_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?8, NULL)",
@@ -208,6 +195,7 @@ impl<'a> WorldStore<'a> {
                 ),
             )?;
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -224,21 +212,21 @@ impl<'a> WorldStore<'a> {
         template: &crate::world::templates::WorldTemplateSchema,
     ) -> Result<Id> {
         let id = Id::new();
-        let now = current_timestamp_string();
+        let now = Utc::now().to_rfc3339();
         let json = serde_json::to_string(template)?;
-        let next_ord: i64 = self.db.conn().query_row(
-            "SELECT COALESCE(MAX(ordering), -1) + 1 FROM world_segment WHERE project_id = ?1",
+
+        let tx = self.db.conn().unchecked_transaction()?;
+
+        // Single round-trip for both derived values; eliminates the race where
+        // MAX(ordering) and COUNT(*) could observe different snapshots.
+        let (next_ord, count): (i64, i64) = tx.query_row(
+            "SELECT COALESCE(MAX(ordering), -1) + 1, COUNT(*) FROM world_segment WHERE project_id = ?1",
             [project_id.as_str()],
-            |r| r.get(0),
-        )?;
-        let count: i64 = self.db.conn().query_row(
-            "SELECT COUNT(*) FROM world_segment WHERE project_id = ?1",
-            [project_id.as_str()],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         let hue = format!("--water-hue-world-{}", (count % 6) + 1);
 
-        self.db.conn().execute(
+        tx.execute(
             "INSERT INTO world_segment
              (id, project_id, name, ordering, is_collection, slug, hue_token, hidden, created_at, updated_at, template_json)
              VALUES (?1, ?2, ?3, ?4, ?5, '', ?6, 0, ?7, ?7, ?8)",
@@ -253,6 +241,7 @@ impl<'a> WorldStore<'a> {
                 &json,
             ),
         )?;
+        tx.commit()?;
         Ok(id)
     }
 
@@ -264,7 +253,7 @@ impl<'a> WorldStore<'a> {
         template: &crate::world::templates::WorldTemplateSchema,
     ) -> Result<()> {
         let json = serde_json::to_string(template)?;
-        let now = current_timestamp_string();
+        let now = Utc::now().to_rfc3339();
         self.db.conn().execute(
             "UPDATE world_segment SET template_json = ?1, updated_at = ?2 WHERE id = ?3",
             (&json, &now, segment_id.as_str()),
@@ -275,7 +264,7 @@ impl<'a> WorldStore<'a> {
     /// Toggles the `hidden` flag on a segment. Hidden segments stay in the DB
     /// (and remain reachable by `list_segments`) but the UI filters them out.
     pub fn set_segment_hidden(&self, segment_id: &Id, hidden: bool) -> Result<()> {
-        let now = current_timestamp_string();
+        let now = Utc::now().to_rfc3339();
         self.db.conn().execute(
             "UPDATE world_segment SET hidden = ?1, updated_at = ?2 WHERE id = ?3",
             (i64::from(hidden), &now, segment_id.as_str()),
@@ -286,18 +275,34 @@ impl<'a> WorldStore<'a> {
     /// Deletes a user-added segment. Refuses to delete any of the six canonical
     /// built-ins — callers should use [`Self::set_segment_hidden`] instead.
     ///
+    /// The built-in check derives from [`crate::world::templates::built_in_templates`]
+    /// at call time so adding a 7th built-in doesn't silently bypass the guard.
+    ///
     /// # Errors
     ///
-    /// Returns [`crate::Error::Other`] if `segment_id` resolves to a built-in
-    /// slug (precondition violation, not a "not found").
+    /// - [`Error::NotFound`] if `segment_id` is unknown.
+    /// - [`Error::Other`] if `segment_id` resolves to a built-in slug
+    ///   (precondition violation, not a "not found").
     pub fn delete_user_segment(&self, segment_id: &Id) -> Result<()> {
-        let slug: String = self.db.conn().query_row(
-            "SELECT slug FROM world_segment WHERE id = ?1",
-            [segment_id.as_str()],
-            |r| r.get(0),
-        )?;
-        if BUILTIN_SLUGS.contains(&slug.as_str()) {
-            return Err(crate::Error::Other(format!(
+        let slug: String = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT slug FROM world_segment WHERE id = ?1",
+                [segment_id.as_str()],
+                |r| r.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    Error::NotFound(format!("world_segment {}", segment_id.as_str()))
+                }
+                other => Error::from(other),
+            })?;
+        let is_builtin = crate::world::templates::built_in_templates()
+            .iter()
+            .any(|t| t.slug == slug);
+        if is_builtin {
+            return Err(Error::Other(format!(
                 "cannot delete built-in segment '{slug}' — use set_segment_hidden instead"
             )));
         }
@@ -552,5 +557,33 @@ mod tests {
         store.delete_user_segment(&id).unwrap();
         let segs = store.list_segments(&p.id).unwrap();
         assert!(segs.iter().all(|s| s.id != id));
+    }
+
+    #[test]
+    fn read_segment_returns_not_found_for_unknown_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let _p = ProjectStore::new(&db).insert("P").unwrap();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let unknown = Id::new();
+        let err = store.read_segment(&unknown).unwrap_err();
+        assert!(
+            matches!(err, crate::Error::NotFound(_)),
+            "expected NotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn delete_user_segment_returns_not_found_for_unknown_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let _p = ProjectStore::new(&db).insert("P").unwrap();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        let unknown = Id::new();
+        let err = store.delete_user_segment(&unknown).unwrap_err();
+        assert!(
+            matches!(err, crate::Error::NotFound(_)),
+            "expected NotFound, got {err:?}"
+        );
     }
 }
