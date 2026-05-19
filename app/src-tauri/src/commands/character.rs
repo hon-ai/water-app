@@ -24,7 +24,7 @@ use tauri::State;
 use tokio::sync::Mutex;
 use water_core::{
     character::{completion_pct, next_hue_token, CharacterFile, CharacterStore, NewCharacter},
-    CharacterWriteLocks, Db, Id,
+    CharacterWriteLocks, Db, Id, SceneWriteLocks,
 };
 
 /// Renderer-facing index view of a character. Carries every field the
@@ -135,6 +135,136 @@ async fn character_delete_core(
 }
 
 // ----------------------------------------------------------------------
+// Scene linkage core helpers (M3 T13)
+// ----------------------------------------------------------------------
+//
+// These take the scene write lock (NOT the character write lock) because
+// they mutate scene metadata — `scene_character_presence` rows and
+// `scene.pov_character_id`. The lock-ordering convention matches scene
+// commands (KNOWN_FRAGILE #6): acquire the per-scene write lock BEFORE
+// the DB lock so concurrent body/rename writes for the same scene
+// serialize at the scene-lock layer rather than the DB layer.
+
+async fn character_link_to_scene_core(
+    db: Arc<Mutex<Db>>,
+    scene_locks: SceneWriteLocks,
+    scene_id: String,
+    character_id: String,
+) -> Result<(), String> {
+    let scene_id: Id = scene_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let character_id: Id = character_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    // Scene write lock — link touches scene metadata (the body is
+    // unchanged but the metadata table is logically part of "scene state").
+    let _g = scene_locks.acquire(&scene_id).await;
+    let db_guard = db.lock().await;
+    db_guard
+        .conn()
+        .execute(
+            "INSERT OR IGNORE INTO scene_character_presence (scene_id, character_id) VALUES (?1, ?2)",
+            rusqlite::params![scene_id.as_str(), character_id.as_str()],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn character_unlink_from_scene_core(
+    db: Arc<Mutex<Db>>,
+    scene_locks: SceneWriteLocks,
+    scene_id: String,
+    character_id: String,
+) -> Result<(), String> {
+    let scene_id: Id = scene_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let character_id: Id = character_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let _g = scene_locks.acquire(&scene_id).await;
+    let db_guard = db.lock().await;
+    // Transactional: remove the presence row and, if this character was
+    // POV for the scene, clear POV in the same step. Per spec § 20:
+    // "If a writer removes a character from `characters_present` while
+    // they are still POV, the POV is auto-cleared."
+    //
+    // `unchecked_transaction()` is the documented `rusqlite` escape hatch
+    // for shared connections — `Connection::transaction()` requires
+    // `&mut Connection`, but `Db::conn()` exposes `&Connection`.
+    let tx = db_guard
+        .conn()
+        .unchecked_transaction()
+        .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM scene_character_presence WHERE scene_id = ?1 AND character_id = ?2",
+        rusqlite::params![scene_id.as_str(), character_id.as_str()],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE scene SET pov_character_id = NULL WHERE id = ?1 AND pov_character_id = ?2",
+        rusqlite::params![scene_id.as_str(), character_id.as_str()],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn character_set_pov_core(
+    db: Arc<Mutex<Db>>,
+    scene_locks: SceneWriteLocks,
+    scene_id: String,
+    character_id: Option<String>,
+) -> Result<(), String> {
+    let scene_id: Id = scene_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let _g = scene_locks.acquire(&scene_id).await;
+    let db_guard = db.lock().await;
+
+    match character_id {
+        Some(c_str) => {
+            let c_id: Id = c_str
+                .parse()
+                .map_err(|e: water_core::Error| e.to_string())?;
+            // Constraint enforced application-side (the schema FK only
+            // points POV → character.id, not POV → presence): the POV
+            // character must already be in `scene_character_presence` for
+            // this scene. Per spec § 20.
+            let present: i64 = db_guard
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM scene_character_presence WHERE scene_id = ?1 AND character_id = ?2",
+                    rusqlite::params![scene_id.as_str(), c_id.as_str()],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if present == 0 {
+                return Err("POV character must be in characters_present; link them first".into());
+            }
+            db_guard
+                .conn()
+                .execute(
+                    "UPDATE scene SET pov_character_id = ?1 WHERE id = ?2",
+                    rusqlite::params![c_id.as_str(), scene_id.as_str()],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        None => {
+            db_guard
+                .conn()
+                .execute(
+                    "UPDATE scene SET pov_character_id = NULL WHERE id = ?1",
+                    rusqlite::params![scene_id.as_str()],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+// ----------------------------------------------------------------------
 // Tauri command shims
 // ----------------------------------------------------------------------
 
@@ -212,6 +342,48 @@ pub async fn character_delete(state: State<'_, AppState>, id: String) -> Result<
     character_delete_core(db, root, locks, id).await
 }
 
+#[tauri::command]
+pub async fn character_link_to_scene(
+    state: State<'_, AppState>,
+    scene_id: String,
+    character_id: String,
+) -> Result<(), String> {
+    let (db, scene_locks) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        (project.db.clone(), project.scene_write_locks.clone())
+    };
+    character_link_to_scene_core(db, scene_locks, scene_id, character_id).await
+}
+
+#[tauri::command]
+pub async fn character_unlink_from_scene(
+    state: State<'_, AppState>,
+    scene_id: String,
+    character_id: String,
+) -> Result<(), String> {
+    let (db, scene_locks) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        (project.db.clone(), project.scene_write_locks.clone())
+    };
+    character_unlink_from_scene_core(db, scene_locks, scene_id, character_id).await
+}
+
+#[tauri::command]
+pub async fn character_set_pov(
+    state: State<'_, AppState>,
+    scene_id: String,
+    character_id: Option<String>,
+) -> Result<(), String> {
+    let (db, scene_locks) = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        (project.db.clone(), project.scene_write_locks.clone())
+    };
+    character_set_pov_core(db, scene_locks, scene_id, character_id).await
+}
+
 // ----------------------------------------------------------------------
 // Tests
 // ----------------------------------------------------------------------
@@ -221,7 +393,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use tempfile::TempDir;
-    use water_core::ProjectStore;
+    use water_core::{ManuscriptStore, NewScene, ProjectStore, SceneRow, SceneStore};
 
     /// Build a fresh project on disk + DB. Returns `(temp_dir, db, root,
     /// project_id, locks)` — the inputs every `_core` helper takes.
@@ -248,6 +420,63 @@ mod tests {
             project_id.to_string(),
             CharacterWriteLocks::new(),
         )
+    }
+
+    /// Same as `test_project` but also creates a manuscript and one scene
+    /// so T13 scene-linkage tests have something to link characters to.
+    /// Returns the existing tuple extended with `(scene_row, scene_locks)`.
+    /// We bypass `scene_create` (the Tauri command) because that requires
+    /// `tauri::State` and the snapshot scheduler — neither of which we
+    /// need here. Going through `SceneStore::create` directly mirrors what
+    /// the production command does for the bits we care about.
+    async fn test_project_with_scene() -> (
+        TempDir,
+        Arc<Mutex<Db>>,
+        PathBuf,
+        String,
+        CharacterWriteLocks,
+        SceneRow,
+        SceneWriteLocks,
+    ) {
+        let (dir, db, root, pid, char_locks) = test_project().await;
+        let project_id: Id = pid.parse().unwrap();
+        let scene = {
+            let g = db.lock().await;
+            let manuscript = ManuscriptStore::new(&g)
+                .insert(&project_id, "Manuscript", 0)
+                .unwrap();
+            let store = SceneStore::new(&g, root.clone());
+            store
+                .create(NewScene {
+                    manuscript_id: manuscript.id,
+                    chapter_id: None,
+                    name: "Scene 1".into(),
+                    ordering: 0,
+                })
+                .unwrap()
+        };
+        (
+            dir,
+            db,
+            root,
+            pid,
+            char_locks,
+            scene,
+            SceneWriteLocks::new(),
+        )
+    }
+
+    /// Read `scene.pov_character_id` for assertions. Returns `None` when
+    /// POV is NULL.
+    async fn read_pov(db: &Arc<Mutex<Db>>, scene_id: &str) -> Option<String> {
+        let g = db.lock().await;
+        g.conn()
+            .query_row(
+                "SELECT pov_character_id FROM scene WHERE id = ?1",
+                [scene_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .unwrap()
     }
 
     #[tokio::test]
@@ -355,5 +584,106 @@ mod tests {
         // placeholder asserts the cascade contract end-to-end through the
         // command surface. The same cascade is already covered at the
         // water-core unit-test level in `delete_and_cascade_clears_scene_pov_and_presence`.
+    }
+
+    // ------------------------------------------------------------------
+    // M3 T13: scene linkage
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn link_then_set_pov_succeeds() {
+        let (_dir, db, root, pid, _char_locks, scene, scene_locks) =
+            test_project_with_scene().await;
+        let c = character_create_core(db.clone(), root.clone(), pid.clone())
+            .await
+            .unwrap();
+        character_link_to_scene_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            c.id.clone(),
+        )
+        .await
+        .unwrap();
+        character_set_pov_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            Some(c.id.clone()),
+        )
+        .await
+        .unwrap();
+        let pov = read_pov(&db, scene.id.as_str()).await;
+        assert_eq!(pov.as_deref(), Some(c.id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn set_pov_without_link_returns_error() {
+        let (_dir, db, root, pid, _char_locks, scene, scene_locks) =
+            test_project_with_scene().await;
+        let c = character_create_core(db.clone(), root.clone(), pid.clone())
+            .await
+            .unwrap();
+        let err = character_set_pov_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            Some(c.id.clone()),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.contains("characters_present"),
+            "expected presence-constraint error, got: {err}"
+        );
+        // POV must still be NULL.
+        let pov = read_pov(&db, scene.id.as_str()).await;
+        assert!(
+            pov.is_none(),
+            "POV should remain NULL on rejected set, got {pov:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn unlink_clears_pov_if_was_pov() {
+        let (_dir, db, root, pid, _char_locks, scene, scene_locks) =
+            test_project_with_scene().await;
+        let c = character_create_core(db.clone(), root.clone(), pid.clone())
+            .await
+            .unwrap();
+        character_link_to_scene_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            c.id.clone(),
+        )
+        .await
+        .unwrap();
+        character_set_pov_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            Some(c.id.clone()),
+        )
+        .await
+        .unwrap();
+        // Sanity: POV is set before we unlink.
+        assert_eq!(
+            read_pov(&db, scene.id.as_str()).await.as_deref(),
+            Some(c.id.as_str())
+        );
+        character_unlink_from_scene_core(
+            db.clone(),
+            scene_locks.clone(),
+            scene.id.to_string(),
+            c.id.clone(),
+        )
+        .await
+        .unwrap();
+        let pov = read_pov(&db, scene.id.as_str()).await;
+        assert!(
+            pov.is_none(),
+            "unlinking the POV character should auto-clear POV (spec § 20), got {pov:?}"
+        );
     }
 }
