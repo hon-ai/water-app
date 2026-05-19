@@ -5858,6 +5858,47 @@ T14 **Approved** by spec reviewer (10/10 conformance points pass, 0 Critical, 0 
 
 **Phase D progress:** ✅ **3/3 complete.** Phase E (T15-T17 React intake) begins next.
 
+### Amendment 16 — 2026-05-18 — Task 15 closeout (Phase E start)
+
+T15 **Needs revision** on first pass — code-quality reviewer surfaced **2 Critical + 4 Important findings**. Spec reviewer found 1 spec § 7 violation. All blockers fixed inline before commit; the final commit (`8388432`) includes both the impl and the revision in a single landing.
+
+**Critical fixes:**
+- **C1 — `autoFocus` lost across same-kind field transitions.** React reconciles `<input type="text">` between consecutive `short_text` fields without remounting, so `autoFocus` (one-shot on mount) silently no-ops on the second field. The provided test schema (full_name + role, both short_text) exhibited this in production but tests didn't catch it. Fix: `key={field.id}` on the `<FieldInput>` call site (`ConversationalIntake.tsx:192`) forces remount on every field change. Side-benefit: also fixes Important #2 below.
+- **C2 — `onComplete` never fires if all fields are already answered at mount.** When `initialValues` covers every field, `findFirstUnanswered` returns `fields.length`, and the component renders the "Intake complete" stub — but `onComplete()` is only called inside `advance()`. A "Continue intake" CTA on an already-complete character would hang the popup. Fix: mount-only `useEffect` (lines 114-118) fires `onComplete()` when `fields.length === 0` or `initialIndex >= fields.length`. No ESLint comment needed (repo doesn't run ESLint).
+
+**Important fixes:**
+- **I1 — Back-navigation showed stale `initialValues`, not the just-confirmed answer.** Fix: new internal `confirmedValues` state (lines 106-107), updated inside `advance()` after successful `await onAnswer(...)`, threaded through both `advance` and `back` via a `newConfirmed` local to avoid stale-closure issues.
+- **I2 — `StringArrayEditor` local `text` staleness.** Fixed as side-effect of C1's `key={field.id}` fix (inner editor's state resets on every field change).
+- **Spec § 7 — Resume should land on first unanswered REQUIRED field, then first unanswered optional.** Fix: rewrote `findFirstUnanswered` as a two-pass scan (required-first, then any unanswered).
+- **I3 — Test schema couldn't detect focus regression.** Added 4 regression tests:
+  1. `focuses the next field's input on advance` (catches C1)
+  2. `calls onComplete on mount if all fields are already answered` (catches C2)
+  3. `Back restores the just-confirmed answer from in-session state` (catches I1)
+  4. `resumes at first unanswered required, skipping prior unanswered optionals (spec § 7)` (catches required-first violation)
+
+**Important deferred to Phase G (or post-M3):**
+- **I4 — `Save & close` not disabled during `busy`.** If user clicks Save & close mid-await, the parent likely unmounts and `setBusy(false)` lands on a dead component. React 18 silently swallows this. Either disable during busy or have `onClose` await the in-flight `onAnswer`. Acceptable risk for M3; flag for M3 polish or post-M3 hardening.
+- **Save & close drops in-progress draft on the current field.** If user types into a field and clicks Save & close (not Next), the unconfirmed draft is silently lost. UX-design question, not a typed-data bug. Defer.
+
+**Disclosed adaptations (no action needed):**
+- **No non-null assertions** anywhere in the component. `noUncheckedIndexedAccess`-clean. Each `fields[i]` access is preceded by `if (!f) ...` defensive narrowing. Stricter than the plan's `fields[index]!` pattern.
+- **Lazy `useState` for draft** via `initialDraft` helper.
+- **`asString` / `asStringArray` defensive coercers** silently drop non-string initial values rather than crash. Matches the per-advance-write contract.
+- **Empty-schema renders stub then fires onComplete via useEffect** (treats empty schema same as already-complete).
+- **`Save &amp; close` JSX entity** for the literal ampersand.
+- **`StringArrayEditor` parse logic** verified for edge cases: `"a,b,,,c"` → `["a","b","c"]`, `"   "` → `[]`, `","` → `[]`.
+
+**Out-of-scope follow-up observations (not fixed):**
+- The `<select>` for `choice` fields cannot advance via Enter — only Next button or Tab+Enter on the button. Probably intentional (browsers don't naturally accept Enter on selects), but worth a UX check during T20.
+- Pre-existing `act()`-related warnings in unrelated test files (`ScenesPanel`, `SettingsSheet`) — already explicitly deferred from earlier milestones.
+
+**Test count delta:**
+- `ConversationalIntake.test.tsx`: **0 → 11 tests** (7 original + 4 regression).
+- Full app TS suite: **105 → 116 tests** (across 26 files), all passing.
+- `pnpm --filter @water/app build`: clean.
+
+**Phase E progress:** 1/3 done. T16 (CharacterIntakeSheet) + T17 (entry points) remain.
+
 ---
 
 ## Plan summary
