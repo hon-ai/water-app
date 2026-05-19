@@ -99,6 +99,22 @@ export const ipc = {
   characterDelete: (id: string): Promise<void> =>
     invoke("character_delete", { id }),
 
+  // Scene linkage (M3 T13). `characterSetPov` accepts `null` to clear the
+  // POV; passing a non-null id requires the character to already be linked
+  // via `characterLinkToScene` (spec § 20). Unlinking a character who is
+  // currently POV transactionally clears POV as part of the same call.
+  characterLinkToScene: (sceneId: string, characterId: string): Promise<void> =>
+    invoke("character_link_to_scene", { sceneId, characterId }),
+  characterUnlinkFromScene: (
+    sceneId: string,
+    characterId: string,
+  ): Promise<void> =>
+    invoke("character_unlink_from_scene", { sceneId, characterId }),
+  characterSetPov: (
+    sceneId: string,
+    characterId: string | null,
+  ): Promise<void> => invoke("character_set_pov", { sceneId, characterId }),
+
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),
   providerSetKey: (providerId: string, key: string): Promise<void> =>
