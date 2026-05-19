@@ -5763,6 +5763,45 @@ T11 reviewed **Approved** (no "with minor changes" caveat). Phase C end-to-end w
 
 **Phase D begins next:** Tauri commands + autosuggest (T12 character CRUD; T13 scene linkage; T14 intake_schema + autosuggest core).
 
+### Amendment 13 — 2026-05-18 — Task 12 quality findings (Phase D start)
+
+T12 **Approved with minor changes**. 2 Important + 6 Minor findings.
+
+**Important (recommend hardening commit in Phase G or before T13):**
+
+1. **Stale comment in `delete_and_cascade`** (`character/mod.rs:508-511`) claims "happens before commit so a failure to move doesn't leave the DB inconsistent" — but the code swallows move failures via `warn!` + commits anyway. Doc-only fix: rewrite comment to reflect orphan-toml-acceptable design.
+
+2. **`update_field` accepts non-string `main.full_name` with silent data loss.** If renderer sends `value: null`, `value: 42`, `value: false`, or `value: []`, the rename-cascade is silently skipped AND the DB `name` column gets set to `""`. Fix: 3-line guard at `mod.rs:~372`:
+   ```rust
+   if is_rename && !value.is_string() {
+       return Err(Error::Other("main.full_name must be a string".into()));
+   }
+   ```
+
+**Minor (Phase G):**
+
+3. **Silent JSON-decode swallowing** in `list_index` (`mod.rs:298`) + `update_field` (`mod.rs:361-365`). `update_field` re-writes `{}` on next save, destroying the corrupted data permanently. Add `tracing::warn!` at minimum.
+
+4. **`list_index` is associated fn, not `&self` method** — inconsistent with sibling CRUD methods. Stylistic.
+
+5. **`list_index` not project-scoped** (no `WHERE project_id = ?`). Today single-project-per-DB so benign; latent multi-project hazard.
+
+6. **`json_value_to_toml_table` maps `Value::Null` → empty string.** Lossy. LSM v2.1 has no nullable fields so benign today; trap for M4 World Bible if any field becomes nullable.
+
+7. **Empty-name characters get non-deterministic ORDER BY** — tie-break with `, id` would make stable.
+
+8. **CharacterStore growth** — `character/mod.rs` at ~1000 lines. Extract JSON-path helpers (`ensure_path_objects`, `walk_to_parent_mut`, `json_value_to_toml_table`) into `character/json_path.rs` (~80 lines).
+
+**Disclosed adaptations (legitimate, no action needed):**
+- TS IPC on existing `ipc{}` object (matches repo convention)
+- `CharacterIndexRow` Option A (precomputes role, avoids JSON walk at each site)
+- Dotted `field_id` convention (matches `LSM_V2_1.id` dotted paths)
+- `OpenProject.project_id` added (required for FK)
+- `upsert` COALESCE hue preservation (prevents rebuild from clobbering hues)
+- Delete cascade test at water-core layer (since T13 deferred)
+
+**Phase D progress:** 1/3 done. T13 (scene linkage) and T14 (autosuggest + intake_schema) remain.
+
 ---
 
 ## Plan summary
