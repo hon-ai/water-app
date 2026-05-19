@@ -5,6 +5,7 @@ import { ScenesPanel } from "./chrome/ScenesPanel";
 import { ProjectMenu } from "./chrome/ProjectMenu";
 import { EditorCanvas } from "./chrome/EditorCanvas";
 import { EmptyState } from "./chrome/EmptyState";
+import { CharactersSurface } from "./chrome/CharactersSurface";
 import { CreateProjectSheet } from "./sheets/CreateProjectSheet";
 import { SettingsSheet } from "./sheets/SettingsSheet";
 import { ipc, type SceneInfo } from "./ipc/commands";
@@ -125,6 +126,8 @@ export default function App() {
             onCreate={() => setCreateOpen(true)}
             onOpen={handleOpenExisting}
           />
+        ) : activeNav === "characters" ? (
+          <CharactersSurface />
         ) : (
           <>
             <div style={{ position: "relative", display: "flex" }}>
