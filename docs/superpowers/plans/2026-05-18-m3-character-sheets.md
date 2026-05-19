@@ -5609,7 +5609,23 @@ Use this section to record deviations from the plan as they happen. Each amendme
 
 ### Amendments
 
-_(none yet — first amendment goes here)_
+### Amendment 1 — 2026-05-18 — Task 2 deferred quality fixes
+
+**Change:** Three code-quality findings from the T2 code-review subagent were noted but not fixed inline, deferred to Phase G's combined audit (or to Task 3 if convenient since they live in the same module).
+
+**Reason:** Continuous-execution cadence (user-selected "surface only blockers"). Findings are real but reviewer assessed "Approved with minor changes," not "needs revision." Documented here so Phase G picks them up.
+
+**Resolution (pending):**
+
+1. **Round-robin claim is not tested with ≥7 characters.** `migration_v3_backfills_hue_round_robin` seeds only 4 characters; a buggy `% 5` or no-modulo would still pass. Fix: seed 7+ characters and assert the 7th wraps to `--water-hue-character-1`. Cost: ~5 lines in `migrations.rs::tests`.
+
+2. **`hue_token TEXT NOT NULL DEFAULT ''` is a footgun.** Future `INSERT INTO character` statements forgetting `hue_token` silently produce invalid empty-string hues. Fix: either add a `CHECK (hue_token LIKE '--water-hue-character-%')` constraint to the schema, OR leave a `-- TODO(m7): replace empty default with CHECK constraint` in the SQL. Decided fix: append the TODO comment in T3 if touching that SQL file; otherwise defer to Phase G.
+
+3. **Tie-break branch (same `created_at`, different `id`) uncovered.** Lower priority — rare in practice. Skip unless Phase G has bandwidth.
+
+4. **Test polish (low priority):** `migration_ratchets_to_v3` is redundant with `migration_is_idempotent` + `migration_ratchets_from_v1_to_latest` and hard-codes the version number. Recommend deleting in Phase G.
+
+5. **`db.rs:127 assertion `v == 3`** also hard-codes the version. Recommend changing to compare against `migrations::all().current_version()` or similar in Phase G.
 
 ---
 
