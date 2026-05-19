@@ -1,5 +1,7 @@
 //! `CharacterStore` — `TOML` on disk + `SQLite` index.
 
+pub mod intake;
+
 use crate::{Db, Error, Id, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
