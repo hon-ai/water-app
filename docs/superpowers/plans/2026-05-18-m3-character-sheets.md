@@ -5802,6 +5802,30 @@ T12 **Approved with minor changes**. 2 Important + 6 Minor findings.
 
 **Phase D progress:** 1/3 done. T13 (scene linkage) and T14 (autosuggest + intake_schema) remain.
 
+### Amendment 14 — 2026-05-18 — Task 13 closeout (Phase D mid)
+
+T13 **Approved** by both reviewers — 0 Critical, 0 Important, 4 Minor (style nits only).
+
+**Disclosed adaptations from plan:**
+- TS wrappers added to `app/src/ipc/commands.ts` `ipc{}` object (not separate `ipc/character.ts` — matches T12 convention).
+- All 3 commands extracted into `_core` async helpers + thin `#[tauri::command]` shims (matches T12; required to bypass un-constructible `tauri::State<'_, T>` in tests).
+- New test fixture `test_project_with_scene()` returns 7-tuple `(TempDir, db, root, project_id, char_locks, SceneRow, SceneWriteLocks)`. Bypasses `scene_create` command (which needs `tauri::State` + scheduler not relevant for linkage tests) by calling `ManuscriptStore::insert` + `SceneStore::create` directly.
+- `read_pov(&db, scene_id)` test helper for direct DB assertion (no caching layer).
+- `set_pov` `Option<String>` → TS `string | null` (correct round-trip; `undefined` would NOT serialize through `tauri::invoke`).
+- `unchecked_transaction()` in unlink (rusqlite escape hatch — `Db::conn()` returns `&Connection` not `&mut`); inline comment documents it.
+
+**Followup commit (same session, `e9911bf`):** the T12-era `#[ignore]`d test `delete_cascades_to_scene_presence_and_pov` had its dependency comment satisfied by T13. Fleshed out inline: link → set POV → assert presence + POV → delete via T12 command → assert presence row gone + POV NULL. End-to-end cascade through the command surface (water-core unit-test coverage of the same contract still exists in `delete_and_cascade_clears_scene_pov_and_presence`).
+
+**Minor findings deferred to Phase G:**
+- `read_pov()` helper uses `.unwrap()` rather than `.expect("read_pov: scene row missing")` — would produce a more informative test-failure message on fixture drift.
+- `character_set_pov_core` error message `"POV character must be in characters_present; link them first"` is `String` rather than a typed error variant; if UI needs to localize/distinguish it programmatically, a typed variant would be cleaner. Currently matches sibling-command style (all stringify `water_core::Error`).
+- Module preamble comments at the top of `_core` helper block (character.rs:140-146) slightly restate per-function `// Scene write lock` comments — could be trimmed.
+- Sibling files (`scene.rs`, `project.rs`) still have no `_core` extraction; if/when they need test coverage, the same refactor pattern applies.
+
+**Test count delta:** commands::character `4 passed + 1 ignored` → `8 passed + 0 ignored` (+3 T13 tests + un-ignored T12 cascade test).
+
+**Phase D progress:** 2/3 done. T14 (autosuggest + intake_schema) remains.
+
 ---
 
 ## Plan summary
