@@ -8,6 +8,9 @@ publish = false
 [build-dependencies]
 tauri-build = { workspace = true, features = [] }
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [dependencies]
 tauri = { workspace = true, features = [] }
 tauri-plugin-dialog = "2"
