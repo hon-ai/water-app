@@ -1,0 +1,55 @@
+# M3 acceptance reference fixture — Marcus Vale
+#
+# Hand-authored character covering all 29 LSM v2.1 fields. Used for:
+#   1. Manual smoke (spec § 18 exit criteria walkthrough).
+#   2. Future eval-harness regression — voice template should render
+#      Marcus-flavored pills (dry, technical, parenthetical) consistently.
+#   3. `character_dissonance` Stage 1 trip test: a paragraph containing
+#      "Marcus felt the weight of being forgotten" should fire the gate
+#      against `arc.lie_they_believe`.
+#
+# Shape mirrors `water_core::CharacterFile`: `id`/`name`/`schema_version`
+# at the top, then `[main] [bonus_traits] [arc] [perspectives]` flattened
+# in via `#[serde(flatten)]`. `hue_token` is NOT in the TOML — it lives
+# in the `character` SQL row, round-robin-assigned at create time.
+
+id = "01HX0NGKM3MARCUSVALE000000"
+name = "Marcus Vale"
+schema_version = "lsm-v2.1"
+
+[main]
+full_name = "Marcus Vale"
+aliases = []
+age = "47"
+pronouns = "he/him"
+role_in_story = "Skeptical archivist who guards the last copy"
+want = "To finish cataloguing the Pell library before the storm season closes the passes."
+need = "To accept that knowledge is a living thing, not a frozen one."
+ghost_wound = "His sister Iree's research vanished when the second cellar flooded; the last copy was on a shelf he had personally promised to move."
+lie_they_believe = "I'll be remembered for what I built, not what I lost."
+truth = "What you preserve is also what you choose to forget."
+fatal_flaw = "Mistakes preservation for love."
+strength = "An almost feral precision; remembers every catalogue number he has ever issued."
+
+[bonus_traits]
+voice = "dry, technical, parenthetical asides; favours subordinate clauses over short declarations"
+tells = ["taps his pen three times before speaking", "removes his glasses when challenged"]
+habits = ["double-checks every door at night", "alphabetises receipts"]
+speech_patterns = ["lists three things when nervous", "deflects with citations", "says 'as it happens' before any pivot"]
+physicality = "slight, ink-stained fingers, perpetually slightly cold; favours layered wool"
+preferences = ["bitter tea over sweet", "thin paper over thick", "marginalia in pencil only"]
+fears = ["drowning in his own irrelevance", "being the last reader of something important", "watching a fire he could have prevented"]
+values = ["accuracy", "patience", "stewardship", "discretion"]
+
+[arc]
+starting_state = "Custodian-by-default. Tells himself the library is fine because he is here."
+ending_state = "Steward-by-choice. Lets a younger archivist take a key, and is afraid, and lets them anyway."
+inciting_change = "A visiting scholar requests a manuscript Marcus has quietly refused to circulate for twelve years."
+midpoint_shift = "Marcus realises Iree's notebook is in the restricted stacks — not lost, but withheld by his own hand."
+climax_choice = "Hand Iree's notebook to the scholar, or burn it in the grate and tell no one."
+
+[perspectives]
+self_view = "A small man doing a quiet duty. Honest. Useful. Replaceable, eventually."
+others_view = "Exacting. Generous in private and miserly in public. Trusted absolutely with anything that matters."
+narrator_view = "A man holding very still while a slow current pulls everything he loves toward the door."
+antagonist_view = "Sentimental. Unreliable. Easier to outwait than to convince. The library would survive him with less friction."

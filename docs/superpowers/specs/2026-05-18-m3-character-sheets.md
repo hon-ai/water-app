@@ -1,6 +1,6 @@
 # M3 — Character Sheets Spec
 
-**Status:** Approved
+**Status:** Closed at tag `m3` on 2026-05-19. See `docs/superpowers/plans/2026-05-18-m3-character-sheets.md` for the executed plan and amendments 1-18 + final closure.
 **Date:** 2026-05-18
 **Base:** tag `m2.5` (commit `d13f484`)
 **Master spec:** `docs/superpowers/specs/2026-05-16-water-design.md` § 4.5 + § 3.5 + § 6.2
