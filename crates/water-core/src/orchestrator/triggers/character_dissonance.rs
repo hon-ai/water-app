@@ -12,8 +12,7 @@
 
 use crate::orchestrator::lemma_overlap::overlap;
 use crate::orchestrator::{
-    ConfirmationRequest, CursorClassification, SpeakerTrack, Trigger, TriggerCandidate,
-    TriggerContext,
+    CursorClassification, SpeakerTrack, Trigger, TriggerCandidate, TriggerContext,
 };
 
 const GATE_THRESHOLD: f32 = 0.30;
@@ -52,61 +51,36 @@ impl Trigger for CharacterDissonance {
                 }
                 let ovl = overlap(paragraph, field_value);
                 if ovl >= GATE_THRESHOLD {
+                    // Render Stage-2 confirmation from the built-in
+                    // `pill_dissonance_check` TOML. If rendering fails
+                    // (only possible if the id is somehow missing), drop
+                    // the candidate — better silent than a half-built
+                    // confirmation surface.
+                    let req = ctx
+                        .prompts
+                        .render_confirmation_request(
+                            "pill_dissonance_check",
+                            &[
+                                ("full_name", row.name.as_str()),
+                                ("field_label", field_label),
+                                ("field_value", field_value.as_str()),
+                                ("paragraph_text", paragraph),
+                            ],
+                        )
+                        .ok()?;
                     return Some(TriggerCandidate {
                         trigger_id: self.id().to_string(),
                         priority: 5.5,
                         preferred_track: SpeakerTrack::Character,
                         reason: format!("dissonance_gate field={field_label} overlap={ovl:.2}"),
                         block_target_id: Some(ctx.telemetry.block_id.clone()),
-                        requires_confirmation: Some(ConfirmationRequest {
-                            system: build_dissonance_system_prompt(),
-                            user: build_dissonance_user_prompt(
-                                &row.name,
-                                field_label,
-                                field_value,
-                                paragraph,
-                            ),
-                            kind: "pill_dissonance_check".to_string(),
-                        }),
+                        requires_confirmation: Some(req),
                     });
                 }
             }
         }
         None
     }
-}
-
-/// Stage-2 system prompt for the dissonance yes/no gate.
-///
-/// **T9 inline.** T10 will move this string into `prompts/library.toml`
-/// and replace this helper with a `prompts.render_confirmation_request(...)`
-/// call so the prompt is editable without a rebuild. Keeping it inline
-/// for now lets T9 ship as a self-contained type-reshape commit.
-fn build_dissonance_system_prompt() -> String {
-    "You evaluate whether a paragraph genuinely contradicts a character's stated belief, value, or fear.".to_string()
-}
-
-/// Stage-2 user prompt for the dissonance yes/no gate. See spec § 12.2.
-///
-/// **T9 inline.** Same T10 migration story as the system-prompt helper.
-fn build_dissonance_user_prompt(
-    full_name: &str,
-    field_label: &str,
-    field_value: &str,
-    paragraph: &str,
-) -> String {
-    format!(
-        "Character: {full_name}\n\
-         Their stated {field_label}: {field_value}\n\
-         \n\
-         Paragraph just written:\n\
-         \"{paragraph}\"\n\
-         \n\
-         Is this paragraph genuinely showing this character contradicting their stated {field_label}?\n\
-         (Not just touching the topic — actually contradicting it in a way that creates meaningful friction.)\n\
-         \n\
-         Respond with only one word: yes or no."
-    )
 }
 
 fn read_str(sheet: &serde_json::Value, section: &str, key: &str) -> String {
@@ -197,6 +171,7 @@ mod tests {
             scene,
             project,
             characters: registry,
+            prompts: crate::orchestrator::test_util::test_prompts(),
         }
     }
 

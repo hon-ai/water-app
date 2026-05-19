@@ -62,6 +62,7 @@ mod tests {
                 scene: &self.scene,
                 project: &self.project,
                 characters: &self.characters,
+                prompts: crate::orchestrator::test_util::test_prompts(),
             }
         }
     }

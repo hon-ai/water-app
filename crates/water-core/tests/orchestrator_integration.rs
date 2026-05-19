@@ -66,6 +66,7 @@ async fn end_to_end_trigger_evaluation_picks_speaker_and_assembles_prompt() {
         scene: &scene,
         project: &project,
         characters: &characters,
+        prompts: &prompts,
     };
 
     // --- trigger evaluation: highest-priority candidate wins ---

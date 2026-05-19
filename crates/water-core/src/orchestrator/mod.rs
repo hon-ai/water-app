@@ -85,6 +85,7 @@ pub struct TriggerContext<'a> {
     pub scene: &'a SceneSnapshot,
     pub project: &'a ProjectSnapshot,
     pub characters: &'a crate::character::registry::CharacterRegistry,
+    pub prompts: &'a crate::prompts::loader::PromptLibrary,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,6 +146,29 @@ impl Default for TriggerCandidate {
 pub trait Trigger: Send + Sync {
     fn id(&self) -> &'static str;
     fn evaluate(&self, ctx: &TriggerContext<'_>) -> Option<TriggerCandidate>;
+}
+
+/// Shared test fixtures for trigger evaluation. Exposes a single,
+/// process-lifetime `PromptLibrary` so each test that builds a
+/// `TriggerContext` does not re-parse all of the embedded TOML.
+#[cfg(test)]
+pub mod test_util {
+    use crate::prompts::loader::PromptLibrary;
+    use std::sync::OnceLock;
+
+    /// Return a borrow of a `'static` `PromptLibrary` initialized exactly
+    /// once for the test binary. Avoids per-test TOML parsing across the
+    /// dozens of trigger tests now that `TriggerContext` carries a
+    /// `prompts` field.
+    ///
+    /// # Panics
+    /// Panics if the built-in TOML fails to parse — an unrecoverable
+    /// test-environment bug equivalent to the production startup failure
+    /// in `OrchestratorService::new`.
+    pub fn test_prompts() -> &'static PromptLibrary {
+        static LIB: OnceLock<PromptLibrary> = OnceLock::new();
+        LIB.get_or_init(|| PromptLibrary::load_builtin().expect("built-in prompts must load"))
+    }
 }
 
 #[cfg(test)]
