@@ -89,7 +89,7 @@ async fn end_to_end_trigger_evaluation_picks_speaker_and_assembles_prompt() {
     let req = assemble_level_0(
         &prompts,
         &*speaker,
-        cand.trigger_id,
+        &cand.trigger_id,
         "She walked across the square.",
     )
     .unwrap();

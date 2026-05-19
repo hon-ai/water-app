@@ -28,7 +28,7 @@ impl Trigger for ValenceSpike {
                 SpeakerTrack::Character
             };
             Some(TriggerCandidate {
-                trigger_id: self.id(),
+                trigger_id: self.id().to_string(),
                 priority: 6.5,
                 preferred_track: track,
                 reason: format!("valence_delta={delta:.2}"),

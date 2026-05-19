@@ -16,7 +16,7 @@ impl Trigger for SceneFlowDip {
         let flow = ctx.analysis.flow?;
         if flow < 0.4 && ctx.scene.seconds_since_last_pill >= 30 {
             Some(TriggerCandidate {
-                trigger_id: self.id(),
+                trigger_id: self.id().to_string(),
                 priority: 6.0,
                 preferred_track: SpeakerTrack::Persona,
                 reason: format!("flow={flow:.2}"),

@@ -340,12 +340,12 @@ impl OrchestratorService {
         let prompt = match assemble_level_0(
             &self.prompts,
             &*speaker,
-            cand.trigger_id,
+            &cand.trigger_id,
             &scene_excerpt,
         ) {
             Ok(r) => r,
             Err(e) => {
-                tracing::warn!(error = %e, trigger = cand.trigger_id, "prompt assembly failed");
+                tracing::warn!(error = %e, trigger = %cand.trigger_id, "prompt assembly failed");
                 return;
             }
         };

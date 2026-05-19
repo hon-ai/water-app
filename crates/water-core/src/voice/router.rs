@@ -64,7 +64,7 @@ pub fn route(
     // as "fall back to persona" until M3 wires the CharacterRegistry.
     let _ = candidate.preferred_track;
 
-    let preferred_id = default_persona_for_trigger(candidate.trigger_id);
+    let preferred_id = default_persona_for_trigger(&candidate.trigger_id);
 
     // Filter out cooled-down speakers.
     let available: Vec<SpeakerArc> = personas
@@ -111,7 +111,7 @@ pub fn route_with_chars(
     cooldowns: &CooldownState,
     now: Instant,
 ) -> Option<SpeakerArc> {
-    let is_char_track = CHAR_TRACK_TRIGGERS.contains(&candidate.trigger_id)
+    let is_char_track = CHAR_TRACK_TRIGGERS.contains(&candidate.trigger_id.as_str())
         && (candidate.preferred_track == SpeakerTrack::Character
             || candidate.preferred_track == SpeakerTrack::Either);
     if is_char_track && !scene.characters_present.is_empty() {
@@ -157,12 +157,9 @@ mod tests {
 
     fn cand(id: &'static str) -> TriggerCandidate {
         TriggerCandidate {
-            trigger_id: id,
+            trigger_id: id.to_string(),
             priority: 5.0,
-            preferred_track: SpeakerTrack::Either,
-            reason: String::new(),
-            block_target_id: None,
-            requires_confirmation: None,
+            ..Default::default()
         }
     }
 
@@ -230,12 +227,10 @@ mod tests {
 
     fn cand_with_track(id: &'static str, track: SpeakerTrack) -> TriggerCandidate {
         TriggerCandidate {
-            trigger_id: id,
+            trigger_id: id.to_string(),
             priority: 5.0,
             preferred_track: track,
-            reason: String::new(),
-            block_target_id: None,
-            requires_confirmation: None,
+            ..Default::default()
         }
     }
 

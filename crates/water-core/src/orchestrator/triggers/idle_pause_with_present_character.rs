@@ -29,7 +29,7 @@ impl Trigger for IdlePauseWithPresentCharacter {
             return None;
         }
         Some(TriggerCandidate {
-            trigger_id: self.id(),
+            trigger_id: self.id().to_string(),
             priority: 4.0,
             preferred_track: SpeakerTrack::Character,
             reason: "idle_with_present_character".to_string(),
