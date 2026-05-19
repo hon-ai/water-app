@@ -23,6 +23,7 @@ use rusqlite_migration::{Migrations, M};
 const V1_INIT: &str = include_str!("../sql/v1_init.sql");
 const V2_PILL_ENGINE: &str = include_str!("../sql/v2_pill_engine.sql");
 const V3_CHARACTER_HUE: &str = include_str!("../sql/v3_character_hue.sql");
+const V4_WORLD_BIBLE: &str = include_str!("../sql/v4_world_bible.sql");
 
 #[must_use]
 pub fn all() -> Migrations<'static> {
@@ -30,6 +31,7 @@ pub fn all() -> Migrations<'static> {
         M::up(V1_INIT),
         M::up(V2_PILL_ENGINE),
         M::up(V3_CHARACTER_HUE),
+        M::up(V4_WORLD_BIBLE),
     ])
 }
 
@@ -105,9 +107,9 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 1);
         drop(conn);
 
-        // Db::open now sees a v1 DB and ratchets to latest (v3).
+        // Db::open now sees a v1 DB and ratchets to latest (v4).
         let db = Db::open(&path).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 3);
+        assert_eq!(current_version(db.conn()).unwrap(), 4);
     }
 
     #[test]
@@ -197,16 +199,16 @@ mod tests {
         // Db::open already ratcheted to latest; another run_pending must be a no-op.
         run_pending(&mut db).unwrap();
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 3);
+        assert_eq!(current_version(db.conn()).unwrap(), 4);
     }
 
     #[test]
     fn migration_ratchets_to_v3() {
         let (_tmp, mut db) = fresh_v1_db();
         // fresh_v1_db actually returns a DB already ratcheted to latest via
-        // Db::open; another run_pending is a no-op that still leaves us at v3.
+        // Db::open; another run_pending is a no-op that still leaves us at v4.
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 3);
+        assert_eq!(current_version(db.conn()).unwrap(), 4);
     }
 
     #[test]
@@ -278,5 +280,93 @@ mod tests {
                 "--water-hue-character-4".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn v4_adds_world_segment_template_columns() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(world_segment)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in [
+            "template_json",
+            "hidden",
+            "hue_token",
+            "slug",
+            "created_at",
+            "updated_at",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "world_segment missing column {required}; got {cols:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn v4_adds_world_entry_alias_and_timestamp_columns() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(world_entry)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in [
+            "aliases_json",
+            "schema_version",
+            "created_at",
+            "updated_at",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "world_entry missing column {required}; got {cols:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn v4_adds_pinned_pill_origin_trigger() {
+        let db = Db::open_in_memory().unwrap();
+        let has_col: bool = db
+            .conn()
+            .prepare("PRAGMA table_info(pinned_pill)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(std::result::Result::ok)
+            .any(|c| c == "origin_trigger");
+        assert!(has_col, "pinned_pill missing origin_trigger column");
+    }
+
+    #[test]
+    fn v4_schema_version_is_four() {
+        let db = Db::open_in_memory().unwrap();
+        let version: u32 = db
+            .conn()
+            .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
+    }
+
+    #[test]
+    fn v4_creates_world_entry_by_segment_index() {
+        let db = Db::open_in_memory().unwrap();
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='world_entry_by_segment'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "world_entry_by_segment index missing");
     }
 }
