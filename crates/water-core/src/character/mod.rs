@@ -1,6 +1,9 @@
 //! `CharacterStore` — `TOML` on disk + `SQLite` index.
 
 pub mod intake;
+pub mod registry;
+
+pub use registry::{CharacterRegistry, CharacterRegistryRow};
 
 use crate::{Db, Error, Id, Result};
 use chrono::Utc;

@@ -124,6 +124,62 @@ impl Speaker for PersonaSpeaker {
 /// Convenient alias for shared, type-erased speakers.
 pub type SpeakerArc = Arc<dyn Speaker>;
 
+/// Character speaker: a user-defined voice constructed from a project's
+/// `character` table row.
+///
+/// **T3 stub.** Identity + hue + sensible defaults are wired here so the
+/// `CharacterRegistry` can hand back `SpeakerArc`s today. T4 will fill
+/// `prompt_fragment` by rendering a voice template against the sheet data.
+#[derive(Debug, Clone)]
+pub struct CharacterSpeaker {
+    id: String,
+    display_name: String,
+    hue_token: String,
+    prompt_fragment: String,
+    anti_loop_threshold: f32,
+    cooldown_ms: u64,
+}
+
+impl CharacterSpeaker {
+    /// Construct from a `CharacterRegistryRow`. T4 fills the prompt
+    /// template rendering; this stub just wires identity + defaults.
+    #[must_use]
+    pub fn from_row(row: &crate::character::registry::CharacterRegistryRow) -> Self {
+        Self {
+            id: row.id.as_str().to_string(),
+            display_name: row.name.clone(),
+            hue_token: row.hue_token.clone(),
+            prompt_fragment: String::new(), // T4 fills this
+            anti_loop_threshold: 0.70,
+            cooldown_ms: 60_000, // slightly longer than personas (45s)
+        }
+    }
+}
+
+impl Speaker for CharacterSpeaker {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn kind(&self) -> SpeakerKind {
+        SpeakerKind::Character
+    }
+    fn display_name(&self) -> &str {
+        &self.display_name
+    }
+    fn hue_token(&self) -> &str {
+        &self.hue_token
+    }
+    fn prompt_fragment(&self) -> &str {
+        &self.prompt_fragment
+    }
+    fn anti_loop_threshold(&self) -> f32 {
+        self.anti_loop_threshold
+    }
+    fn cooldown_ms(&self) -> u64 {
+        self.cooldown_ms
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
