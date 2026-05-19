@@ -5627,6 +5627,23 @@ Use this section to record deviations from the plan as they happen. Each amendme
 
 5. **`db.rs:127 assertion `v == 3`** also hard-codes the version. Recommend changing to compare against `migrations::all().current_version()` or similar in Phase G.
 
+### Amendment 2 — 2026-05-18 — Task 3 type rename + deferred quality fixes
+
+**Change:** Two deviations from plan T3, both documented.
+
+**Reason:** (1) Real type-name collision; (2) continuous-execution cadence defers minor quality fixes.
+
+**Resolution:**
+
+1. **`CharacterRow` → `CharacterRegistryRow`** (applied in commit `84131ba`). The plan's `CharacterRow` collided with M1's pre-existing `character::CharacterRow` (`CharacterStore` row, fields `{id, name, file_path}`). Implementer renamed the new struct to `CharacterRegistryRow` and updated `pub use` re-exports and `CharacterSpeaker::from_row` signature. Downstream impact: T14 autosuggest spec (§ 15) references `CharacterRow` — that will need to be either the M1 store row or a new third type. **Decision (for T14 implementer):** use a third name like `CharacterAutosuggestRow` or, cleaner, query the registry for `full_name` + `aliases` via `CharacterRegistryRow.data.pointer("/main/full_name")`-style access. The registry row's `data: serde_json::Value` covers both.
+
+2. **Deferred T3 quality findings** (Phase G or as convenient):
+   - LRU test (`pick_lru_present_returns_least_recently_used`) only tests `None < Some(_)` branch. Add a sibling test with two `Some(Instant)` values at different times to verify the actual LRU comparison.
+   - Cooldown filter `>=` boundary uncovered. Add a 2-line test: one character at `now - (cooldown_ms - 1)ms` → filtered; same character at `now - cooldown_ms` → eligible.
+   - Silent JSON-parse swallowing in `registry.rs:60` (`unwrap_or(Value::Null)`). Add `tracing::warn!` log OR propagate as `Err`. Mark with `// TODO(m3-T4)` if T4 ends up consuming `data` and surfacing the issue naturally.
+   - `CharacterSpeaker` magic numbers `0.70` / `60_000` should be `const`s (`CHARACTER_DEFAULT_COOLDOWN_MS`).
+   - `CharacterSpeaker::from_row` couples `voice/speaker.rs` upward to `character::registry`. Acceptable but stylistically a layering inversion; could accept primitives `(id, name, hue)` instead.
+
 ---
 
 ## Plan summary
