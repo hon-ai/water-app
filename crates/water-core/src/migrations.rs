@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_ratchets_to_v3() {
+    fn migration_ratchets_to_v4() {
         let (_tmp, mut db) = fresh_v1_db();
         // fresh_v1_db actually returns a DB already ratcheted to latest via
         // Db::open; another run_pending is a no-op that still leaves us at v4.
@@ -368,5 +368,57 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1, "world_entry_by_segment index missing");
+    }
+
+    #[test]
+    fn v4_backfills_slug_from_name_on_existing_world_segment_rows() {
+        // Build a v3-shape DB by hand and insert a world_segment row with
+        // the v1-shape columns only (no slug column yet — it doesn't exist
+        // until v4). Then ratchet to v4 and verify the backfill UPDATE ran.
+        // `Connection`, `Migrations`, `M`, and `TempDir` are all in scope
+        // via `use super::*` + the module-level `use tempfile::TempDir`.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("project.db");
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+            conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+            let v3 = Migrations::new(vec![
+                M::up(V1_INIT),
+                M::up(V2_PILL_ENGINE),
+                M::up(V3_CHARACTER_HUE),
+            ]);
+            v3.to_latest(&mut conn).unwrap();
+
+            // Insert a project + a world_segment row (v1 shape: no slug column).
+            conn.execute(
+                "INSERT INTO project (id, name, default_manuscript_id, created_at, updated_at)
+                 VALUES ('p1', 'TestProj', NULL, '0', '0')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO world_segment (id, project_id, name, ordering, is_collection)
+                 VALUES ('s1', 'p1', 'Hello World', 0, 0)",
+                [],
+            )
+            .unwrap();
+        }
+
+        // Now open via Db, which runs run_pending and ratchets v3 -> v4.
+        let db = Db::open(&path).unwrap();
+
+        let slug: String = db
+            .conn()
+            .query_row(
+                "SELECT slug FROM world_segment WHERE id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            slug, "hello_world",
+            "v4 migration must backfill slug = LOWER(REPLACE(name, ' ', '_')) for pre-existing rows; got {slug:?}"
+        );
     }
 }
