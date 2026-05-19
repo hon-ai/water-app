@@ -21,9 +21,11 @@
 //! `next_hue_token` is exposed at module level so the command layer can
 //! call it without instantiating a store.
 
+pub mod autosuggest;
 pub mod intake;
 pub mod registry;
 
+pub use autosuggest::{suggest_for_scene_body, AutosuggestResult, AutosuggestRow};
 pub use intake::{completion_pct, REQUIRED_FIELD_IDS};
 pub use registry::{CharacterRegistry, CharacterRegistryRow};
 
@@ -310,6 +312,65 @@ impl<'a> CharacterStore<'a> {
         })?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Into::into)
+    }
+
+    /// Slim listing for the scene-character autosuggest scanner.
+    /// Returns every character with its `full_name` (from
+    /// `data_json.main.full_name`, falling back to the `name` SQL column
+    /// when the JSON field is absent) and its aliases (string entries in
+    /// `data_json.main.aliases`; non-string entries are dropped, empty
+    /// strings filtered).
+    ///
+    /// Characters whose `full_name` AND aliases are all empty are
+    /// excluded — they'd contribute zero matches and just inflate the
+    /// scanner's iteration count.
+    ///
+    /// Mirrors the SQL-then-collect pattern used by [`Self::list_index`]
+    /// so the `rusqlite::Statement` (which is `!Send`) doesn't cross any
+    /// `.await` point.
+    pub fn list_all_with_aliases(db: &Db) -> Result<Vec<AutosuggestRow>> {
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT id, name, data_json FROM character")?;
+        let rows = stmt.query_map([], |row| {
+            let id_s: String = row.get(0)?;
+            let id = id_s.parse::<Id>().map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+            let name_col: String = row.get(1)?;
+            let data_json_str: String = row.get(2)?;
+            let data_json: Value = serde_json::from_str(&data_json_str).unwrap_or(Value::Null);
+            let full_name = data_json
+                .pointer("/main/full_name")
+                .and_then(|v| v.as_str())
+                .map_or(name_col, str::to_string);
+            let aliases: Vec<String> = data_json
+                .pointer("/main/aliases")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(AutosuggestRow {
+                character_id: id,
+                full_name,
+                aliases,
+            })
+        })?;
+        let collected = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        // Filter out rows that would contribute zero matches anyway.
+        Ok(collected
+            .into_iter()
+            .filter(|r| !r.full_name.is_empty() || !r.aliases.is_empty())
+            .collect())
     }
 
     /// Update a single field on a character. `field_id` is the dotted-path
