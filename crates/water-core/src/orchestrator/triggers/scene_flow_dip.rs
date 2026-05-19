@@ -21,6 +21,7 @@ impl Trigger for SceneFlowDip {
                 preferred_track: SpeakerTrack::Persona,
                 reason: format!("flow={flow:.2}"),
                 block_target_id: None,
+                requires_confirmation: None,
             })
         } else {
             None

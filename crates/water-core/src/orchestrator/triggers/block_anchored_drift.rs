@@ -23,6 +23,7 @@ impl Trigger for BlockAnchoredDrift {
                 preferred_track: SpeakerTrack::Either,
                 reason: format!("divergence={div:.2} coherence={coh:.2}"),
                 block_target_id: Some(ctx.telemetry.block_id.clone()),
+                requires_confirmation: None,
             })
         } else {
             None

@@ -22,6 +22,7 @@ impl Trigger for TopicDrift {
                 preferred_track: SpeakerTrack::Persona,
                 reason: format!("coherence={coh:.2} divergence={div:.2}"),
                 block_target_id: None,
+                requires_confirmation: None,
             })
         } else {
             None

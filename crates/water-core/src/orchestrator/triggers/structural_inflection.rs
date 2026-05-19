@@ -57,6 +57,7 @@ impl Trigger for StructuralInflectionTrigger {
             preferred_track: track,
             reason: format!("{kind:?}"),
             block_target_id: Some(ctx.telemetry.block_id.clone()),
+            requires_confirmation: None,
         })
     }
 }

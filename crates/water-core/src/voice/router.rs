@@ -10,9 +10,21 @@
 
 use super::registry::PersonaRegistry;
 use super::speaker::SpeakerArc;
-use crate::orchestrator::TriggerCandidate;
+use crate::character::registry::CharacterRegistry;
+use crate::orchestrator::{SceneSnapshot, SpeakerTrack, TriggerCandidate};
 use std::collections::HashMap;
 use std::time::Instant;
+
+/// Trigger IDs that should prefer a character speaker (POV → present LRU)
+/// before falling back to the persona track. Mirrors master spec § 6.2 +
+/// the M3 character-track trigger fleet.
+const CHAR_TRACK_TRIGGERS: &[&str] = &[
+    "block_anchored_drift",
+    "topic_drift",
+    "valence_spike",
+    "idle_pause_with_present_character",
+    "character_dissonance",
+];
 
 #[derive(Default)]
 pub struct CooldownState {
@@ -79,11 +91,62 @@ pub fn route(
         .min_by_key(|s| cooldowns.last_emit.get(s.id()).copied().unwrap_or(now))
 }
 
+/// Character-aware variant of [`route`].
+///
+/// Routing order for character-track triggers (see `CHAR_TRACK_TRIGGERS`)
+/// when the candidate's `preferred_track` is `Character` or `Either`:
+/// 1. The scene's POV character, if set, present, and not cooled down.
+/// 2. LRU among the present, non-cooled-down characters
+///    (`CharacterRegistry::pick_lru_present`).
+/// 3. Persona fallback via [`route`].
+///
+/// All other cases (persona-track triggers, no characters present,
+/// non-character-track trigger ids) fall straight through to [`route`].
+#[must_use]
+pub fn route_with_chars(
+    candidate: &TriggerCandidate,
+    personas: &PersonaRegistry,
+    characters: &CharacterRegistry,
+    scene: &SceneSnapshot,
+    cooldowns: &CooldownState,
+    now: Instant,
+) -> Option<SpeakerArc> {
+    let is_char_track = CHAR_TRACK_TRIGGERS.contains(&candidate.trigger_id)
+        && (candidate.preferred_track == SpeakerTrack::Character
+            || candidate.preferred_track == SpeakerTrack::Either);
+    if is_char_track && !scene.characters_present.is_empty() {
+        // 1) POV if set and present (and not on cooldown).
+        if let Some(pov_id) = scene.pov_character_id.as_ref() {
+            if scene.characters_present.contains(pov_id) {
+                if let Some(speaker) = characters.by_id(pov_id.as_str()) {
+                    let last = cooldowns.last_emit.get(speaker.id()).copied();
+                    let on_cooldown = last.is_some_and(|t| {
+                        now.duration_since(t).as_millis() < u128::from(speaker.cooldown_ms())
+                    });
+                    if !on_cooldown {
+                        return Some(speaker);
+                    }
+                }
+            }
+        }
+        // 2) LRU among present, non-cooled-down characters.
+        if let Some(speaker) =
+            characters.pick_lru_present(&scene.characters_present, &cooldowns.last_emit, now)
+        {
+            return Some(speaker);
+        }
+    }
+    // 3) Fall through to persona routing (existing M2 logic).
+    route(candidate, personas, cooldowns, now)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestrator::{SpeakerTrack, TriggerCandidate};
-    use crate::Db;
+    use crate::character::registry::CharacterRegistry;
+    use crate::orchestrator::{SceneSnapshot, SpeakerTrack, TriggerCandidate};
+    use crate::voice::speaker::SpeakerKind;
+    use crate::{Db, Id};
     use tempfile::TempDir;
 
     fn registry() -> PersonaRegistry {
@@ -99,6 +162,7 @@ mod tests {
             preferred_track: SpeakerTrack::Either,
             reason: String::new(),
             block_target_id: None,
+            requires_confirmation: None,
         }
     }
 
@@ -145,5 +209,142 @@ mod tests {
         let s1 = route(&cand("topic_drift"), &reg, &cd, t).unwrap();
         let s2 = route(&cand("topic_drift"), &reg, &cd, t).unwrap();
         assert_eq!(s1.id(), s2.id());
+    }
+
+    // ------------------------------------------------------------------
+    // M3 T5: route_with_chars — POV-prefer + LRU fallback + persona fallback
+    // ------------------------------------------------------------------
+
+    /// 26-char Crockford-base32 ULID for the POV character used in tests.
+    /// (Plan said `01HE000000000000000000POV1` but `O` is not valid in
+    /// Crockford base32; substituted with a valid ULID-shaped string.)
+    fn pov_character_id_str() -> &'static str {
+        "01HE000000000000000000P0V1"
+    }
+
+    /// 26-char Crockford-base32 ULID for the second character ("OTHER")
+    /// used in tests. Same substitution rationale as `pov_character_id_str`.
+    fn other_character_id_str() -> &'static str {
+        "01HE000000000000000000TH3R"
+    }
+
+    fn cand_with_track(id: &'static str, track: SpeakerTrack) -> TriggerCandidate {
+        TriggerCandidate {
+            trigger_id: id,
+            priority: 5.0,
+            preferred_track: track,
+            reason: String::new(),
+            block_target_id: None,
+            requires_confirmation: None,
+        }
+    }
+
+    fn setup_character_registry_with_pov() -> (TempDir, CharacterRegistry) {
+        let dir = TempDir::new().unwrap();
+        let db = Db::open(dir.path().join("p.db")).unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO project (id, name, created_at, updated_at)
+                 VALUES ('p1', 'P', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                rusqlite::params![],
+            )
+            .unwrap();
+        let data = serde_json::json!({
+            "main": { "full_name": "POV" },
+            "bonus_traits": { "voice": "v" }
+        })
+        .to_string();
+        db.conn().execute(
+            "INSERT INTO character (id, project_id, name, schema_version, data_json, hue_token, file_path, created_at, updated_at)
+             VALUES (?1, 'p1', 'POV', 'lsm-v2.1', ?2, '--water-hue-character-1', 'x', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            rusqlite::params![pov_character_id_str(), data],
+        ).unwrap();
+        let data2 = serde_json::json!({
+            "main": { "full_name": "OTHER" },
+            "bonus_traits": { "voice": "v" }
+        })
+        .to_string();
+        db.conn().execute(
+            "INSERT INTO character (id, project_id, name, schema_version, data_json, hue_token, file_path, created_at, updated_at)
+             VALUES (?1, 'p1', 'OTHER', 'lsm-v2.1', ?2, '--water-hue-character-2', 'y', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z')",
+            rusqlite::params![other_character_id_str(), data2],
+        ).unwrap();
+        let reg = CharacterRegistry::from_db(&db).unwrap();
+        (dir, reg)
+    }
+
+    fn scene_with_pov_and_present() -> SceneSnapshot {
+        SceneSnapshot {
+            id: Id::new(),
+            pov_character_id: Some(pov_character_id_str().parse::<Id>().unwrap()),
+            location_id: None,
+            characters_present: vec![
+                pov_character_id_str().parse::<Id>().unwrap(),
+                other_character_id_str().parse::<Id>().unwrap(),
+            ],
+            word_count: 500,
+            seconds_since_last_pill: 60,
+        }
+    }
+
+    #[test]
+    fn pov_character_picked_for_character_track_trigger() {
+        let persona_reg = registry();
+        let (_tmp, char_reg) = setup_character_registry_with_pov();
+        let cd = CooldownState::default();
+        let cand = cand_with_track("block_anchored_drift", SpeakerTrack::Character);
+        let scene = scene_with_pov_and_present();
+        let s =
+            route_with_chars(&cand, &persona_reg, &char_reg, &scene, &cd, Instant::now()).unwrap();
+        assert_eq!(s.id(), pov_character_id_str());
+        assert_eq!(s.kind(), SpeakerKind::Character);
+    }
+
+    #[test]
+    fn pov_cooled_down_falls_to_lru_present_character() {
+        let persona_reg = registry();
+        let (_tmp, char_reg) = setup_character_registry_with_pov();
+        let mut cd = CooldownState::default();
+        cd.note_emit(pov_character_id_str());
+        let cand = cand_with_track("block_anchored_drift", SpeakerTrack::Character);
+        let scene = scene_with_pov_and_present();
+        let s =
+            route_with_chars(&cand, &persona_reg, &char_reg, &scene, &cd, Instant::now()).unwrap();
+        assert_eq!(s.kind(), SpeakerKind::Character);
+        assert_ne!(s.id(), pov_character_id_str());
+    }
+
+    #[test]
+    fn no_present_characters_falls_back_to_persona() {
+        let persona_reg = registry();
+        let char_reg = CharacterRegistry::empty();
+        let cd = CooldownState::default();
+        let cand = cand_with_track("block_anchored_drift", SpeakerTrack::Character);
+        let scene = SceneSnapshot {
+            id: Id::new(),
+            pov_character_id: None,
+            location_id: None,
+            characters_present: vec![],
+            word_count: 500,
+            seconds_since_last_pill: 60,
+        };
+        let s =
+            route_with_chars(&cand, &persona_reg, &char_reg, &scene, &cd, Instant::now()).unwrap();
+        assert_eq!(s.kind(), SpeakerKind::Persona);
+        assert_eq!(s.id(), "editor"); // M2 default persona for block_anchored_drift
+    }
+
+    #[test]
+    fn persona_track_trigger_unchanged_by_character_data() {
+        let persona_reg = registry();
+        let (_tmp, char_reg) = setup_character_registry_with_pov();
+        let cd = CooldownState::default();
+        // no_universe_yet is persona-track only
+        let cand = cand_with_track("no_universe_yet", SpeakerTrack::Persona);
+        let scene = scene_with_pov_and_present();
+        let s =
+            route_with_chars(&cand, &persona_reg, &char_reg, &scene, &cd, Instant::now()).unwrap();
+        assert_eq!(s.kind(), SpeakerKind::Persona);
+        assert_eq!(s.id(), "chorus");
     }
 }

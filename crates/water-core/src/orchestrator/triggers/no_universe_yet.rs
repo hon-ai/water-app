@@ -23,6 +23,7 @@ impl Trigger for NoUniverseYet {
                 preferred_track: SpeakerTrack::Persona, // Chorus
                 reason: "eliciting_mode".to_string(),
                 block_target_id: None,
+                requires_confirmation: None,
             })
         } else {
             None
