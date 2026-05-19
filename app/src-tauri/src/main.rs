@@ -36,6 +36,8 @@ fn main() {
             commands::character::character_link_to_scene,
             commands::character::character_unlink_from_scene,
             commands::character::character_set_pov,
+            commands::character::intake_schema,
+            commands::character::character_autosuggest_for_scene,
             commands::provider::provider_test,
             commands::provider::provider_set_key,
             commands::diagnostics::diagnostics_status,

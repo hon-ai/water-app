@@ -64,6 +64,52 @@ export interface CharacterFile {
   [key: string]: unknown;
 }
 
+/**
+ * The variant shape of `IntakeField.kind`. Mirrors
+ * `water_core::character::intake::IntakeFieldKind`, which derives
+ * `#[serde(rename_all = "snake_case", tag = "type", content = "options")]`.
+ * `choice` carries an `options` array; the other variants do not.
+ */
+export type IntakeFieldKind =
+  | { type: "short_text" }
+  | { type: "long_text" }
+  | { type: "string_list" }
+  | { type: "choice"; options: string[] };
+
+/**
+ * One question in an intake schema. Mirrors
+ * `water_core::character::intake::IntakeField` — note that the Rust side
+ * uses `&'static str` everywhere and serde emits plain JSON strings, so
+ * every field below is a `string`/`string[]`/`null`. `optional_skip`
+ * controls whether the renderer shows a "Skip" affordance.
+ */
+export interface IntakeField {
+  id: string;
+  section: string;
+  label: string;
+  prompt_question: string;
+  helper: string | null;
+  examples: string[];
+  kind: IntakeFieldKind;
+  optional_skip: boolean;
+}
+
+/** One section of an intake schema. */
+export interface IntakeSchemaSection {
+  section: string;
+  fields: IntakeField[];
+}
+
+/**
+ * One hit from the scene-character autosuggest scanner. Snake_case to
+ * match the rest of the character command surface (`hue_token`, etc.).
+ */
+export interface AutosuggestResult {
+  character_id: string;
+  full_name: string;
+  mention_count: number;
+}
+
 export const ipc = {
   createProject: (parentDir: string, name: string): Promise<OpenProjectInfo> =>
     invoke("create_project", { parentDir, name }),
@@ -114,6 +160,19 @@ export const ipc = {
     sceneId: string,
     characterId: string | null,
   ): Promise<void> => invoke("character_set_pov", { sceneId, characterId }),
+
+  // Intake schema + autosuggest (M3 T14). `intakeSchema` is stateless;
+  // `characterAutosuggestForScene` validates the scene id at the command
+  // boundary but currently autosuggests based on body text alone (the
+  // scene id is reserved for future presence-aware filtering — see the
+  // command's `_core` helper for rationale).
+  intakeSchema: (schemaId: string): Promise<IntakeSchemaSection[]> =>
+    invoke("intake_schema", { schemaId }),
+  characterAutosuggestForScene: (
+    sceneId: string,
+    bodyText: string,
+  ): Promise<AutosuggestResult[]> =>
+    invoke("character_autosuggest_for_scene", { sceneId, bodyText }),
 
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),

@@ -23,7 +23,12 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 use water_core::{
-    character::{completion_pct, next_hue_token, CharacterFile, CharacterStore, NewCharacter},
+    character::{
+        autosuggest::suggest_for_scene_body,
+        completion_pct,
+        intake::{IntakeField, LSM_V2_1},
+        next_hue_token, CharacterFile, CharacterStore, NewCharacter,
+    },
     CharacterWriteLocks, Db, Id, SceneWriteLocks,
 };
 
@@ -36,6 +41,26 @@ pub struct CharacterIndexEntry {
     pub role: Option<String>,
     pub hue_token: String,
     pub completion: u8,
+}
+
+/// One section of an intake schema. Mirrors `(section, fields)` pairs in
+/// [`water_core::character::intake::LSM_V2_1`]. Serialized with snake_case
+/// field names to match the rest of the character command surface.
+#[derive(Serialize, Debug, Clone)]
+pub struct IntakeSchemaSection {
+    pub section: String,
+    pub fields: Vec<IntakeField>,
+}
+
+/// Renderer-facing autosuggest hit. `character_id` is stringified for
+/// JSON friendliness (the renderer treats it as opaque). `mention_count`
+/// is `u32` to match the scanner — the renderer typically displays it
+/// as "N mentions" next to the hit.
+#[derive(Serialize, Debug, Clone)]
+pub struct AutosuggestResultDto {
+    pub character_id: String,
+    pub full_name: String,
+    pub mention_count: u32,
 }
 
 // ----------------------------------------------------------------------
@@ -265,6 +290,65 @@ async fn character_set_pov_core(
 }
 
 // ----------------------------------------------------------------------
+// Intake schema + autosuggest core helpers (M3 T14)
+// ----------------------------------------------------------------------
+
+/// Resolve a static intake schema id to its section list. Pure — no
+/// state, no IO — but kept as a free function so the Tauri shim and the
+/// tests share the same code path (no need for a tokio runtime in the
+/// "unknown schema" test).
+///
+/// LSM v2.1 is currently the only supported schema. M4 will add World
+/// Bible segment schemas against the same descriptor type.
+fn intake_schema_core(schema_id: &str) -> Result<Vec<IntakeSchemaSection>, String> {
+    if schema_id != "lsm-v2.1" {
+        return Err(format!("unknown schema_id: {schema_id}"));
+    }
+    Ok(LSM_V2_1
+        .iter()
+        .map(|(section, fields)| IntakeSchemaSection {
+            section: (*section).to_string(),
+            fields: fields.to_vec(),
+        })
+        .collect())
+}
+
+async fn character_autosuggest_for_scene_core(
+    db: Arc<Mutex<Db>>,
+    scene_id: String,
+    body_text: String,
+) -> Result<Vec<AutosuggestResultDto>, String> {
+    // Parse-and-discard: validates the scene id at the command boundary
+    // so a malformed id errors loudly instead of silently being ignored.
+    // The id itself is unused today (we autosuggest based on body text
+    // alone) but a future implementation can use it to e.g. exclude
+    // already-linked characters from suggestions.
+    let _scene_id: Id = scene_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+
+    // Hold the DB lock only for the SELECT — `list_all_with_aliases`
+    // drains its statement into an owned `Vec<AutosuggestRow>` before
+    // returning, so the regex scan that follows needs no DB access.
+    // Drop the guard before the (potentially multi-KB body × N character)
+    // regex scan so concurrent DB writers aren't blocked on autosave.
+    // (This command runs on the 2s debounced autosave loop in F4.)
+    let all_chars = {
+        let db_guard = db.lock().await;
+        CharacterStore::list_all_with_aliases(&db_guard).map_err(|e| e.to_string())?
+    };
+    let results = suggest_for_scene_body(&body_text, &all_chars);
+    Ok(results
+        .into_iter()
+        .map(|r| AutosuggestResultDto {
+            character_id: r.character_id.to_string(),
+            full_name: r.full_name,
+            mention_count: r.mention_count,
+        })
+        .collect())
+}
+
+// ----------------------------------------------------------------------
 // Tauri command shims
 // ----------------------------------------------------------------------
 
@@ -382,6 +466,35 @@ pub async fn character_set_pov(
         (project.db.clone(), project.scene_write_locks.clone())
     };
     character_set_pov_core(db, scene_locks, scene_id, character_id).await
+}
+
+/// Return the intake schema sections for `schema_id`. The renderer's
+/// `ConversationalIntake` component reads this once on mount to render
+/// questions one at a time.
+///
+/// Stateless — no project needs to be open. `async` only because the
+/// Tauri macro infrastructure prefers async commands.
+#[tauri::command]
+pub async fn intake_schema(schema_id: String) -> Result<Vec<IntakeSchemaSection>, String> {
+    intake_schema_core(&schema_id)
+}
+
+/// Scan `body_text` for character names + aliases and return the top
+/// five hits. Called from the Scene Metadata sheet's autosave loop
+/// (F4). `scene_id` is validated but not yet used for filtering — see
+/// `character_autosuggest_for_scene_core` for the rationale.
+#[tauri::command]
+pub async fn character_autosuggest_for_scene(
+    state: State<'_, AppState>,
+    scene_id: String,
+    body_text: String,
+) -> Result<Vec<AutosuggestResultDto>, String> {
+    let db = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        project.db.clone()
+    };
+    character_autosuggest_for_scene_core(db, scene_id, body_text).await
 }
 
 // ----------------------------------------------------------------------
@@ -703,6 +816,77 @@ mod tests {
             pov.is_none(),
             "POV should remain NULL on rejected set, got {pov:?}"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // M3 T14: intake schema + autosuggest
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn intake_schema_returns_lsm_v2_1_in_full() {
+        // Asserts the command surfaces exactly what's in the source-of-truth
+        // constant. The canonical `== 29` assertion lives in `intake.rs`
+        // (`lsm_v2_1_has_29_fields_total`); duplicating it here would mean
+        // two test failures with the same root cause on schema growth.
+        let sections = intake_schema_core("lsm-v2.1").unwrap();
+        let total: usize = sections.iter().map(|s| s.fields.len()).sum();
+        let expected: usize = water_core::character::intake::LSM_V2_1
+            .iter()
+            .map(|(_, fields)| fields.len())
+            .sum();
+        assert_eq!(total, expected);
+    }
+
+    #[test]
+    fn intake_schema_unknown_errors() {
+        let err = intake_schema_core("garbage").unwrap_err();
+        assert!(
+            err.contains("unknown schema_id"),
+            "expected 'unknown schema_id' in error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn autosuggest_excludes_zero_mention_chars() {
+        let (_dir, db, root, pid, locks, scene, _scene_locks) =
+            test_project_with_scene().await;
+        let c1 = character_create_core(db.clone(), root.clone(), pid.clone())
+            .await
+            .unwrap();
+        character_update_field_core(
+            db.clone(),
+            root.clone(),
+            locks.clone(),
+            c1.id.clone(),
+            "main.full_name".into(),
+            json!("Marcus"),
+        )
+        .await
+        .unwrap();
+        let c2 = character_create_core(db.clone(), root.clone(), pid.clone())
+            .await
+            .unwrap();
+        character_update_field_core(
+            db.clone(),
+            root.clone(),
+            locks.clone(),
+            c2.id.clone(),
+            "main.full_name".into(),
+            json!("Talia"),
+        )
+        .await
+        .unwrap();
+
+        let results = character_autosuggest_for_scene_core(
+            db.clone(),
+            scene.id.to_string(),
+            "Marcus walked in.".into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(results.len(), 1, "Talia has zero mentions; should be excluded");
+        assert_eq!(results[0].full_name, "Marcus");
+        assert_eq!(results[0].mention_count, 1);
     }
 
     #[tokio::test]
