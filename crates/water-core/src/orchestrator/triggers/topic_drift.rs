@@ -19,7 +19,7 @@ impl Trigger for TopicDrift {
             Some(TriggerCandidate {
                 trigger_id: self.id(),
                 priority: 7.0,
-                preferred_track: SpeakerTrack::Persona,
+                preferred_track: SpeakerTrack::Either,
                 reason: format!("coherence={coh:.2} divergence={div:.2}"),
                 block_target_id: None,
                 requires_confirmation: None,
