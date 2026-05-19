@@ -32,6 +32,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::{mpsc, Mutex};
+use water_core::character::registry::CharacterRegistry;
 use water_core::llm::LlmRouter;
 use water_core::orchestrator::{
     anti_loop::max_overlap,
@@ -285,7 +286,13 @@ impl OrchestratorService {
         };
 
         // Highest-priority candidate among the 10 built-in triggers.
-        let Some(cand) = pick_best_trigger(&t, &self.analysis, &scene, &self.project) else {
+        // M3 T7: empty character registry stub. T8 wires `SceneState` to
+        // load the project's registry and stores it on the service; until
+        // then `character_dissonance` correctly evaluates to None because
+        // there are no characters present in the registry to gate against.
+        let characters = CharacterRegistry::empty();
+        let Some(cand) = pick_best_trigger(&t, &self.analysis, &scene, &self.project, &characters)
+        else {
             return;
         };
 
@@ -688,12 +695,14 @@ fn pick_best_trigger(
     analysis: &AnalysisSnapshot,
     scene: &SceneSnapshot,
     project: &ProjectSnapshot,
+    characters: &CharacterRegistry,
 ) -> Option<TriggerCandidate> {
     let ctx = TriggerContext {
         telemetry: t,
         analysis,
         scene,
         project,
+        characters,
     };
     let triggers = builtin_triggers();
     triggers

@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 use std::time::Instant;
+use water_core::character::registry::CharacterRegistry;
 use water_core::llm::{CannedProvider, LlmProvider, LlmRouter};
 use water_core::orchestrator::triggers::builtin_triggers;
 use water_core::orchestrator::{
@@ -58,11 +59,13 @@ async fn end_to_end_trigger_evaluation_picks_speaker_and_assembles_prompt() {
         seconds_since_last_pill: 60,
     };
     let project = ProjectSnapshot::default();
+    let characters = CharacterRegistry::empty();
     let ctx = TriggerContext {
         telemetry: &telem,
         analysis: &analysis,
         scene: &scene,
         project: &project,
+        characters: &characters,
     };
 
     // --- trigger evaluation: highest-priority candidate wins ---

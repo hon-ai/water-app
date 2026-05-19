@@ -65,6 +65,7 @@ impl Trigger for StructuralInflectionTrigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::character::registry::CharacterRegistry;
     use crate::orchestrator::*;
     use crate::Id;
 
@@ -101,11 +102,13 @@ mod tests {
     fn pov_change_with_set_pov_is_high_priority() {
         let (telem, analysis, scene, project) =
             base_ctx(StructuralInflection::PovChange, Some(Id::new()), None);
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
         assert!(cand.priority > 7.0, "got priority {}", cand.priority);
@@ -115,11 +118,13 @@ mod tests {
     fn pov_change_with_null_pov_is_low_priority() {
         let (telem, analysis, scene, project) =
             base_ctx(StructuralInflection::PovChange, None, None);
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
         assert!(cand.priority < 4.0, "got priority {}", cand.priority);
@@ -128,11 +133,13 @@ mod tests {
     #[test]
     fn none_does_not_fire() {
         let (telem, analysis, scene, project) = base_ctx(StructuralInflection::None, None, None);
+        let characters = CharacterRegistry::empty();
         let ctx = TriggerContext {
             telemetry: &telem,
             analysis: &analysis,
             scene: &scene,
             project: &project,
+            characters: &characters,
         };
         assert!(StructuralInflectionTrigger.evaluate(&ctx).is_none());
     }

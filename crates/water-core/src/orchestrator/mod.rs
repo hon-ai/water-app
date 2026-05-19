@@ -3,6 +3,7 @@
 
 pub mod anti_loop;
 pub mod eviction;
+pub mod lemma_overlap;
 pub mod state;
 pub mod triggers;
 
@@ -48,6 +49,10 @@ pub struct AnalysisSnapshot {
     pub block_metrics: std::collections::HashMap<String, BlockMetrics>,
     /// Most recent valence reading for the scene (used by `valence_spike`).
     pub valence_history: Vec<f32>,
+    /// Text of the most recently-finished paragraph. Provided by the
+    /// renderer's `typing:telemetry` events when `idle_for_ms >= 3000`.
+    /// Used by `character_dissonance` to gate against character fields.
+    pub last_block_text: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -79,6 +84,7 @@ pub struct TriggerContext<'a> {
     pub analysis: &'a AnalysisSnapshot,
     pub scene: &'a SceneSnapshot,
     pub project: &'a ProjectSnapshot,
+    pub characters: &'a crate::character::registry::CharacterRegistry,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

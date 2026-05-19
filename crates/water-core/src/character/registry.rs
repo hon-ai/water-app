@@ -33,6 +33,16 @@ pub struct CharacterRegistry {
     rows: Vec<CharacterRegistryRow>,
 }
 
+impl std::fmt::Debug for CharacterRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `SpeakerArc` is `Arc<dyn Speaker>` (no Debug bound), so we render
+        // the row list and elide `by_id` (it's redundant with `rows`).
+        f.debug_struct("CharacterRegistry")
+            .field("rows", &self.rows)
+            .finish_non_exhaustive()
+    }
+}
+
 impl CharacterRegistry {
     /// Load every character from the project DB. Each row becomes a
     /// `CharacterSpeaker` (currently a stub — T4 fills the prompt
@@ -84,6 +94,16 @@ impl CharacterRegistry {
     #[must_use]
     pub fn by_id(&self, id: &str) -> Option<SpeakerArc> {
         self.by_id.get(id).cloned()
+    }
+
+    /// Test-only helper: insert a fully-formed `CharacterRegistryRow`
+    /// (and its derived `CharacterSpeaker`) directly into the registry,
+    /// bypassing the DB load path.
+    #[cfg(test)]
+    pub fn insert_for_test(&mut self, row: CharacterRegistryRow) {
+        let speaker: SpeakerArc = Arc::new(CharacterSpeaker::from_row(&row));
+        self.by_id.insert(row.id.as_str().to_string(), speaker);
+        self.rows.push(row);
     }
 
     /// All characters, in `created_at` order.
