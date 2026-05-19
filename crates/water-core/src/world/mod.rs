@@ -1,5 +1,7 @@
 //! `WorldStore` — world segments + entries on disk and in the index.
 
+pub mod templates;
+
 use crate::{Db, Id, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
