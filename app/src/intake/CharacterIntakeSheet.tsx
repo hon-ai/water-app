@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Sheet } from "../sheets/Sheet";
 import { ConversationalIntake } from "./ConversationalIntake";
 import { ipc } from "../ipc/commands";
-import type { CharacterFile, IntakeSchemaSection } from "../ipc/commands";
+import type { IntakeSchemaSection } from "../ipc/commands";
+import { flattenCharacterToDottedPaths } from "../characters/flattenCharacterData";
 
 interface Props {
   characterId: string;
@@ -110,33 +111,4 @@ export function CharacterIntakeSheet({
   );
 }
 
-/**
- * Flatten a `CharacterFile` into the `{ "<section>.<leaf>": value }`
- * shape that `ConversationalIntake` expects (its lookup key is
- * `IntakeField.id`, which is a dotted path per
- * `water_core::character::intake`).
- *
- * Top-level scalar metadata (`id`, `name`, `schema_version`) is
- * skipped — those are not intake fields. Any section that isn't a
- * plain object (corrupted file, null, array) is skipped without
- * crashing.
- */
-function flattenCharacterToDottedPaths(
-  file: CharacterFile,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  const skipKeys = new Set(["id", "name", "schema_version"]);
-  for (const [section, fields] of Object.entries(file)) {
-    if (skipKeys.has(section)) continue;
-    if (
-      typeof fields === "object" &&
-      fields !== null &&
-      !Array.isArray(fields)
-    ) {
-      for (const [k, v] of Object.entries(fields as Record<string, unknown>)) {
-        out[`${section}.${k}`] = v;
-      }
-    }
-  }
-  return out;
-}
+
