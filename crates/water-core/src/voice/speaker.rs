@@ -141,15 +141,18 @@ pub struct CharacterSpeaker {
 }
 
 impl CharacterSpeaker {
-    /// Construct from a `CharacterRegistryRow`. T4 fills the prompt
-    /// template rendering; this stub just wires identity + defaults.
+    /// Construct from a `CharacterRegistryRow`. Renders the LSM v2.1 sheet
+    /// data through the built-in character voice template at
+    /// `prompts/speakers/character/template.toml`.
     #[must_use]
     pub fn from_row(row: &crate::character::registry::CharacterRegistryRow) -> Self {
+        let template = crate::voice::character_template::CharacterTemplate::load_builtin();
+        let prompt_fragment = template.render(&row.data);
         Self {
             id: row.id.as_str().to_string(),
             display_name: row.name.clone(),
             hue_token: row.hue_token.clone(),
-            prompt_fragment: String::new(), // T4 fills this
+            prompt_fragment,
             anti_loop_threshold: 0.70,
             cooldown_ms: 60_000, // slightly longer than personas (45s)
         }
