@@ -11,14 +11,22 @@
 //! On disk the corresponding TOML uses `[main]` and `[lists]` sections via
 //! `#[serde(flatten)]` on the section enum.
 //!
-//! ## Why these types are M4-owned (not reused from `character::intake`)
+//! ## Relationship to M3 `character::intake`
 //!
-//! M3's `IntakeField` is `&'static str`-backed for compile-time schema
-//! definition and only derives `Serialize`. M4 needs to carry runtime-loaded
-//! schemas (from `template_json` or user-authored templates) which requires
-//! owned strings + `Deserialize`. The two type families are intentionally
-//! separate; both serialize to the same JSON shape so the TS-side
-//! `IntakeSchemaSection` type consumes both transparently.
+//! M3's `IntakeField` / `IntakeFieldKind` are `&'static str`-backed for compile-time
+//! schema definition (the LSM v2.1 character schema lives in `static` consts). M4
+//! schemas are loaded at runtime from `template_json` and must own their strings,
+//! so M4 defines a parallel type family here.
+//!
+//! The two families are NOT JSON-shape-compatible end-to-end:
+//! - The `kind` discriminator IS compatible: both produce
+//!   `{"type": "short_text"}` etc., so the TS-side field-renderer can be reused.
+//! - The schema/section container differs: M3 emits `{section, fields}`, M4 emits
+//!   `{id, label, fields}`. M3 fields carry `section`, `helper`, `examples` that
+//!   M4 fields do not.
+//!
+//! A future milestone may unify these (see brainstorming-doc note on the Task 2
+//! `NEEDS_CONTEXT` divergence).
 
 use crate::{Db, Error, Id, Result};
 use serde::{Deserialize, Serialize};
@@ -48,6 +56,7 @@ pub struct WorldTemplateSchema {
     pub fields: Vec<WorldTemplateField>,
 }
 
+#[derive(Debug)]
 pub struct BuiltInTemplate {
     pub slug: &'static str,
     pub display_name: &'static str,
@@ -350,8 +359,7 @@ pub fn effective_template(db: &Db, segment_id: &Id) -> Result<WorldTemplateSchem
     )?;
 
     if let Some(json) = template_json {
-        let parsed: WorldTemplateSchema = serde_json::from_str(&json)
-            .map_err(|e| Error::Other(format!("template_json parse: {e}")))?;
+        let parsed: WorldTemplateSchema = serde_json::from_str(&json)?;
         return Ok(parsed);
     }
 
@@ -361,8 +369,8 @@ pub fn effective_template(db: &Db, segment_id: &Id) -> Result<WorldTemplateSchem
         }
     }
 
-    Err(Error::Other(format!(
-        "no template: segment {} has slug '{slug}' which is not a built-in and has no template_json override",
+    Err(Error::NotFound(format!(
+        "template for segment {}: slug '{slug}' is not built-in and has no override",
         segment_id.as_str()
     )))
 }
@@ -532,8 +540,47 @@ mod tests {
             .unwrap();
         let err = effective_template(&db, &id).unwrap_err();
         assert!(
-            err.to_string().contains("no template"),
-            "expected 'no template' in error; got {err}"
+            matches!(err, Error::NotFound(_)),
+            "expected Error::NotFound; got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("not built-in"),
+            "expected 'not built-in' in error; got {err}"
+        );
+    }
+
+    #[test]
+    fn effective_template_errors_when_template_json_is_malformed() {
+        use crate::world::WorldStore;
+        use crate::{Db, ProjectStore};
+        let db = Db::open_in_memory().unwrap();
+        let p = ProjectStore::new(&db).insert("P").unwrap();
+        let store = WorldStore::new(&db, std::path::PathBuf::from("/tmp"));
+        let id = store
+            .upsert_segment(&p.id, "concept", "Concept", 0, false)
+            .unwrap();
+
+        // Force a malformed JSON override into the DB.
+        db.conn()
+            .execute(
+                "UPDATE world_segment SET template_json = ?1 WHERE id = ?2",
+                ("{ not valid json", id.as_str()),
+            )
+            .unwrap();
+
+        let err = effective_template(&db, &id).unwrap_err();
+        // After I2, malformed JSON surfaces as Error::Json via #[from]; assert
+        // both the variant and a stable substring of the underlying message.
+        assert!(
+            matches!(err, Error::Json(_)),
+            "expected Error::Json for malformed template_json; got {err:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.to_lowercase().contains("json")
+                || msg.contains("expected")
+                || msg.contains("EOF"),
+            "expected parse-error indication in message; got: {msg}"
         );
     }
 }
