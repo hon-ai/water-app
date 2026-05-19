@@ -7,9 +7,9 @@ use std::time::Duration;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 use water_core::{
-    chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, ActiveScene, Db,
-    ManuscriptStore, ProjectStore, SceneWriteLocks, Sidecar, SidecarSpec, SidecarStatus,
-    SidecarSupervisor, SnapshotScheduler,
+    chapters::ChaptersFile, rebuild_from_truth, repair, water_toml::WaterToml, ActiveScene,
+    CharacterWriteLocks, Db, ManuscriptStore, ProjectStore, SceneWriteLocks, Sidecar, SidecarSpec,
+    SidecarStatus, SidecarSupervisor, SnapshotScheduler,
 };
 
 #[derive(Serialize)]
@@ -92,11 +92,13 @@ pub async fn create_project(
     *g = Some(OpenProject {
         root,
         db,
+        project_id: project_id.to_string(),
         default_manuscript_id: manuscript_id.to_string(),
         scheduler,
         sidecar,
         supervisor,
         scene_write_locks: SceneWriteLocks::new(),
+        character_write_locks: CharacterWriteLocks::new(),
         orchestrator,
     });
     Ok(info)
@@ -186,11 +188,13 @@ pub async fn open_project(
     *g = Some(OpenProject {
         root,
         db,
+        project_id: water.project_id.to_string(),
         default_manuscript_id,
         scheduler,
         sidecar,
         supervisor,
         scene_write_locks: SceneWriteLocks::new(),
+        character_write_locks: CharacterWriteLocks::new(),
         orchestrator,
     });
     Ok(info)

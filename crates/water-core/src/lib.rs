@@ -39,11 +39,16 @@ pub use scene::{NewScene, SceneRow, SceneStore};
 pub mod scene_locks;
 pub use scene_locks::SceneWriteLocks;
 
+pub mod character_locks;
+pub use character_locks::CharacterWriteLocks;
+
 pub mod chapters;
 pub use chapters::{Chapter, ChaptersFile};
 
 pub mod character;
-pub use character::{CharacterFile, CharacterRow, CharacterStore};
+pub use character::{
+    next_hue_token, CharacterFile, CharacterIndexRow, CharacterRow, CharacterStore, NewCharacter,
+};
 
 pub mod world;
 pub use world::{WorldSegmentRow, WorldStore};
