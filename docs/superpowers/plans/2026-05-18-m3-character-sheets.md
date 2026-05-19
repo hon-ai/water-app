@@ -5644,6 +5644,35 @@ Use this section to record deviations from the plan as they happen. Each amendme
    - `CharacterSpeaker` magic numbers `0.70` / `60_000` should be `const`s (`CHARACTER_DEFAULT_COOLDOWN_MS`).
    - `CharacterSpeaker::from_row` couples `voice/speaker.rs` upward to `character::registry`. Acceptable but stylistically a layering inversion; could accept primitives `(id, name, hue)` instead.
 
+### Amendment 3 — 2026-05-18 — Task 4 minor quality findings
+
+**Change:** T4 code review flagged 4 minor issues (none blocking).
+
+**Resolution (deferred to Phase G):**
+
+1. **Order-dependent placeholder re-injection** in `render_with_omission`. A `full_name` value containing literal `{{voice}}` would be re-substituted on the next iteration. Degenerate edge case; no security boundary. Fix: index-scan replacement in a single pass.
+2. **`format!("{{{{{key}}}}}")` rebuilt per (line × key)** in inner loop (~190 allocations per render). Hoist to a pre-built `Vec<String>` of markers outside the loop.
+3. **No `version == "1"` validation in `CharacterTemplate::load_builtin`.** Mirrors M2 `PersonaSpeaker` precedent. Remove the `#[allow(dead_code)]` attrs on `TemplateFile::version` + `schema_version` by adding the check.
+4. **`renders_full_sheet` test doesn't assert `!rendered.contains("{{")`** — would catch the re-injection bug above in 1 line.
+
+### Amendment 4 — 2026-05-18 — Task 5 topic_drift spec drift
+
+**Change:** `topic_drift` is listed in `CHAR_TRACK_TRIGGERS` (router.rs:23) but its `evaluate()` emits `preferred_track: SpeakerTrack::Persona` (triggers/topic_drift.rs:22). This makes the `topic_drift` entry in the const list dead code today — POV-prefer can never fire for it.
+
+**Reason:** Spec § 14 lists `topic_drift` as a character-track trigger. M2 emitted it as Persona-track. T5 inherited the drift without resolving.
+
+**Resolution:** **Apply during T6** (which also touches `orchestrator/triggers/*.rs`). Change `triggers/topic_drift.rs` to emit `SpeakerTrack::Either` (matches `block_anchored_drift` + `valence_spike` precedent — character when present, persona fallback). Cost: 1 line.
+
+**Alternative if T6 implementer defers:** add a `// pending: M2 emits Persona-track; switching to Either pending evaluation` comment near router.rs:23, OR remove `topic_drift` from `CHAR_TRACK_TRIGGERS` until M2-trigger update lands.
+
+### Amendment 5 — 2026-05-18 — Task 5 other minor findings (Phase G)
+
+1. **`CHAR_TRACK_TRIGGERS` lacks "KEEP IN SYNC" doc warning** — short rustdoc on the const calling out the trigger-fleet sync requirement.
+2. **`cand_with_track` is a superset of `cand`** in router tests. Collapse to one helper.
+3. **Test-DB SQL boilerplate duplicated** across `character/registry.rs` and `voice/router.rs` tests. Extract to a `#[cfg(test)] pub mod test_db;` when a third caller hits it.
+4. **`pick_lru_present`'s `&HashMap<String, Instant>` param leaks `CooldownState` internals.** Acceptable today; revisit if `CooldownState` shape changes.
+5. **`CharacterTemplate::load_builtin()` runs per `CharacterSpeaker::from_row`** — loads + parses TOML per row. Cache via `OnceLock` if eval-harness shows pressure.
+
 ---
 
 ## Plan summary
