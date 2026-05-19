@@ -115,13 +115,13 @@ mod tests {
     fn schema_version_row_matches_latest_migration() {
         // `Db::open_in_memory` ratchets to the latest migration; the
         // `schema_version` table is human-readable bookkeeping kept in sync
-        // by each migration script. As of v3 (M3 character hue_token), the
-        // current version is 3.
+        // by each migration script. As of v4 (M4 world bible), the
+        // current version is 4.
         let db = Db::open_in_memory().unwrap();
         let v: i64 = db
             .conn()
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 3);
+        assert_eq!(v, 4);
     }
 }
