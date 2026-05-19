@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronLeft, Plus } from "lucide-react";
+import { ChevronDown, ChevronLeft, MoreHorizontal, Plus } from "lucide-react";
 import { ipc, type SceneInfo } from "../ipc/commands";
 
 interface Props {
@@ -15,6 +15,14 @@ interface Props {
    * component, so internal state (e.g. scroll position) is preserved.
    */
   reloadToken?: number;
+  /**
+   * Opens the SceneMetadataSheet for the given scene (M3 T21). The
+   * Details button per row calls this; the parent (App) owns the
+   * sheet's open state. Optional with a no-op default so existing
+   * callers and tests don't break, but in production App always
+   * supplies a real handler.
+   */
+  onOpenDetails?: (id: string) => void;
 }
 
 export function ScenesPanel({
@@ -26,6 +34,7 @@ export function ScenesPanel({
   collapsed,
   onToggleCollapsed,
   reloadToken = 0,
+  onOpenDetails,
 }: Props) {
   const [scenes, setScenes] = useState<SceneInfo[]>([]);
 
@@ -148,7 +157,15 @@ export function ScenesPanel({
         {scenes.map((s) => {
           const isActive = s.id === activeSceneId;
           return (
-            <li key={s.id}>
+            <li
+              key={s.id}
+              data-scene-row
+              style={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
               <button
                 type="button"
                 aria-label={s.name}
@@ -185,6 +202,34 @@ export function ScenesPanel({
                   {s.word_count}
                 </span>
               </button>
+              {onOpenDetails && (
+                <button
+                  type="button"
+                  data-scene-details
+                  aria-label={`Scene details: ${s.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDetails(s.id);
+                  }}
+                  style={{
+                    position: "absolute",
+                    right: 14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: 22,
+                    height: 22,
+                    display: "grid",
+                    placeItems: "center",
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--water-fg-muted)",
+                    cursor: "pointer",
+                    borderRadius: "var(--water-r-8)",
+                  }}
+                >
+                  <MoreHorizontal size={14} strokeWidth={1.5} />
+                </button>
+              )}
             </li>
           );
         })}

@@ -14,6 +14,17 @@ export interface SceneInfo {
   word_count: number;
 }
 
+/**
+ * Per-scene character metadata. Mirrors `commands::scene::SceneMetadata`
+ * on the Rust side. Used by the SceneMetadataSheet (M3 T21) to populate
+ * its checkbox + POV select on open. `pov_character_id` is `null` when
+ * no POV is set.
+ */
+export interface SceneMetadata {
+  characters_present: string[];
+  pov_character_id: string | null;
+}
+
 export interface SidecarInfo {
   base_url: string;
   status: "loading" | "ready" | "error";
@@ -125,6 +136,12 @@ export const ipc = {
   sceneList: (): Promise<SceneInfo[]> => invoke("scene_list"),
   sceneRename: (id: string, name: string): Promise<SceneInfo> =>
     invoke("scene_rename", { id, name }),
+  // Per-scene character metadata (M3 T21). Read-only — mutations go
+  // through `characterLinkToScene` / `characterUnlinkFromScene` /
+  // `characterSetPov` so the per-scene write lock + presence-FK rules
+  // (spec § 20) stay in the character commands' code path.
+  sceneReadMetadata: (id: string): Promise<SceneMetadata> =>
+    invoke("scene_read_metadata", { id }),
 
   // Character CRUD (M3 T12). `characterUpdateField` is called once per
   // answer in the Conversational Intake flow; the Rust side serializes
