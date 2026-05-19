@@ -236,15 +236,37 @@ async fn spawn_orchestrator_for_project(
     db: &Arc<Mutex<water_core::Db>>,
     project_root: PathBuf,
 ) -> Option<crate::orchestrator_service::OrchestratorHandle> {
-    let personas = {
+    // Personas + characters are both loaded under a single DB-lock acquisition
+    // so we don't race a writer between the two reads. The project lock is
+    // NOT held here (see callers in `create_project`/`open_project`) — they
+    // construct `OpenProject` only after this helper returns, so lock-ordering
+    // (KNOWN_FRAGILE #6: project before DB) is honored by virtue of not
+    // holding the project lock at all on this path.
+    let (personas, characters) = {
         let g = db.lock().await;
-        match water_core::voice::registry::PersonaRegistry::from_db(&g) {
+        let personas = match water_core::voice::registry::PersonaRegistry::from_db(&g) {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!(error = %e, "persona registry load failed; orchestrator disabled");
                 return None;
             }
-        }
+        };
+        // CharacterRegistry load failures are non-fatal: a corrupt or empty
+        // character table just yields no characters, and the orchestrator
+        // still runs (persona-track triggers fire as usual). M3 T7's
+        // `character_dissonance` correctly returns None when the registry
+        // is empty.
+        let characters = match water_core::character::registry::CharacterRegistry::from_db(&g) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "character registry load failed; using empty registry"
+                );
+                water_core::character::registry::CharacterRegistry::empty()
+            }
+        };
+        (personas, characters)
     };
     // The orchestrator holds a CLONE of AppState.router (Arc<Mutex<...>>),
     // so any `provider_test` reconfig published into that slot is observed
@@ -255,6 +277,7 @@ async fn spawn_orchestrator_for_project(
         app.clone(),
         shared,
         personas,
+        characters,
         project_root,
     );
     Some(handle)

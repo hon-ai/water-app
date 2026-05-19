@@ -44,7 +44,16 @@ pub async fn typing_telemetry(
             recent_word_delta: payload.recent_word_delta,
             structural_inflection: parse_inflection(&payload.structural_inflection),
         };
-        h.send(OrchestratorRequest::Telemetry(core_payload)).await;
+        // `last_block_text` is carried alongside the core `TypingTelemetry`
+        // (rather than embedded in it) because it's an `AnalysisSnapshot`
+        // concern that the trigger types don't need on every tick — only
+        // the orchestrator service consumes it to update its analysis
+        // snapshot. Renderer sends `Some` only on idle pulses (>=3 s).
+        h.send(OrchestratorRequest::Telemetry {
+            telemetry: core_payload,
+            last_block_text: payload.last_block_text,
+        })
+        .await;
     }
     Ok(())
 }

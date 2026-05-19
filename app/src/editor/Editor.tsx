@@ -132,12 +132,17 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     }
     const structuralInflection = pendingInflectionRef.current;
     pendingInflectionRef.current = "none";
+    // `last_block_text` is only populated on idle pulses (>=3 s). During
+    // typing bursts (5 Hz cap) we send `null` to keep the wire small;
+    // `character_dissonance` only needs the text once the writer pauses.
+    const lastBlockText = idleMs >= 3000 ? blockNode.textContent : null;
     void emitTypingTelemetry({
       idle_for_ms: idleMs,
       cursor_classification: cursorClassification,
       block_id: blockId,
       recent_word_delta: recentWordDelta,
       structural_inflection: structuralInflection,
+      last_block_text: lastBlockText,
     });
   };
 

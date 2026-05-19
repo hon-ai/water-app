@@ -14,6 +14,7 @@ describe("emitTypingTelemetry", () => {
       block_id: "^bk-0001",
       recent_word_delta: 12,
       structural_inflection: "none",
+      last_block_text: "The room felt cold.",
     });
     expect(invokeMock).toHaveBeenCalledWith("typing_telemetry", {
       payload: expect.objectContaining({ cursor_classification: "at_paragraph_end" }),
@@ -25,7 +26,7 @@ describe("emitTypingTelemetry", () => {
     await expect(
       emitTypingTelemetry({
         idle_for_ms: 0, cursor_classification: "mid_sentence", block_id: "^bk-0001",
-        recent_word_delta: 0, structural_inflection: "none",
+        recent_word_delta: 0, structural_inflection: "none", last_block_text: null,
       }),
     ).resolves.toBeUndefined();
   });
