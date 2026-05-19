@@ -89,6 +89,22 @@ pub enum SpeakerTrack {
     Either,
 }
 
+/// Sheet-write confirmation request raised by a trigger when it wants the
+/// renderer to surface a "save this trait?" affordance.
+///
+/// **T5 stub.** This task only introduces the type + the
+/// `TriggerCandidate.requires_confirmation: Option<ConfirmationRequest>`
+/// field so the M3 voice router tests compile. T9 fills in the producer
+/// (trait-extraction trigger), the renderer wiring, and the end-to-end
+/// tests.
+#[derive(Debug, Clone)]
+pub struct ConfirmationRequest {
+    pub task_id: &'static str,
+    pub character_id: Id,
+    pub field_label: String,
+    pub field_value: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct TriggerCandidate {
     pub trigger_id: &'static str,
@@ -96,6 +112,10 @@ pub struct TriggerCandidate {
     pub preferred_track: SpeakerTrack,
     pub reason: String,
     pub block_target_id: Option<String>,
+    /// Set by triggers that need the renderer to prompt the user for
+    /// confirmation before writing a value back to a character sheet.
+    /// `None` for the M3 T5 fleet; T9 wires up the producer.
+    pub requires_confirmation: Option<ConfirmationRequest>,
 }
 
 pub trait Trigger: Send + Sync {

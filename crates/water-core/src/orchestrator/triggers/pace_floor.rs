@@ -26,6 +26,7 @@ impl Trigger for PaceFloor {
                     ctx.telemetry.recent_word_delta
                 ),
                 block_target_id: None,
+                requires_confirmation: None,
             })
         } else {
             None

@@ -33,6 +33,7 @@ impl Trigger for ValenceSpike {
                 preferred_track: track,
                 reason: format!("valence_delta={delta:.2}"),
                 block_target_id: None,
+                requires_confirmation: None,
             })
         } else {
             None
