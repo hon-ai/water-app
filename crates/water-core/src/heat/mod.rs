@@ -25,7 +25,7 @@ pub mod paragraph;
 mod store;
 mod types;
 
-pub use compute::{compute_pacing, TypingEvent};
+pub use compute::{compute_entity_mentions, compute_pacing, Entity, TypingEvent};
 pub use paragraph::{hash_text, partition, Paragraph};
 pub use store::HeatStore;
 pub use types::{HeatMetricKind, HeatRow};
