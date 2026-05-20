@@ -50,6 +50,12 @@ fn main() {
             commands::pill::pill_pin,
             commands::pill::pill_dismiss,
             commands::pill::pinned_list,
+            commands::world::world_segment_list,
+            commands::world::world_segment_create,
+            commands::world::world_segment_update_template,
+            commands::world::world_segment_set_hidden,
+            commands::world::world_segment_delete,
+            commands::world::world_intake_schema,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
