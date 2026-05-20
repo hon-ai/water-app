@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ipc, type WorldSegment } from "../ipc/commands";
 import { WorldSegmentTile } from "./WorldSegmentTile";
+import { WorldSettingsMenu } from "./WorldSettingsMenu";
 
 /**
  * The World Bible index grid (M4 T20).
@@ -27,6 +28,12 @@ export function WorldIndex({
 }) {
   const [segments, setSegments] = useState<WorldSegment[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const rows = await ipc.worldSegmentList();
+    setSegments(rows);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +51,30 @@ export function WorldIndex({
 
   return (
     <div className="world-index">
-      <h2>World Bible</h2>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <h2>World Bible</h2>
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+          data-testid="world-settings-button"
+          aria-label="World settings"
+          style={{
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            fontSize: 18,
+            color: "var(--water-fg-muted)",
+          }}
+        >
+          ⋯
+        </button>
+      </div>
       <div className="world-index-grid">
         {segments
           .filter((s) => !s.hidden)
@@ -63,6 +93,15 @@ export function WorldIndex({
           + New segment
         </button>
       </div>
+      {showSettings && (
+        <WorldSettingsMenu
+          segments={segments}
+          onChanged={() => {
+            void refresh();
+          }}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }
