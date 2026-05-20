@@ -18,13 +18,24 @@ use std::time::Instant;
 /// Trigger IDs that should prefer a character speaker (POV → present LRU)
 /// before falling back to the persona track. Mirrors master spec § 6.2 +
 /// the M3 character-track trigger fleet.
-const CHAR_TRACK_TRIGGERS: &[&str] = &[
+pub const CHAR_TRACK_TRIGGERS: &[&str] = &[
     "block_anchored_drift",
     "topic_drift",
     "valence_spike",
     "idle_pause_with_present_character",
     "character_dissonance",
 ];
+
+/// Trigger IDs that always route to the **Cartographer** persona,
+/// regardless of POV / character presence. M4 Task 14: only
+/// `world_drift` for now; future world-track triggers (e.g. season
+/// drift, location dissonance) will join this list.
+///
+/// These triggers bypass the character-track POV-prefer logic in
+/// [`route_with_chars`] because their content is about the world,
+/// not any individual character. Must NOT overlap with
+/// [`CHAR_TRACK_TRIGGERS`] — see `world_track_triggers_does_not_collide_with_char_track`.
+pub const WORLD_TRACK_TRIGGERS: &[&str] = &["world_drift"];
 
 #[derive(Default)]
 pub struct CooldownState {
@@ -63,6 +74,22 @@ pub fn route(
     // M2 ships persona-only routing. SpeakerTrack::Character is always treated
     // as "fall back to persona" until M3 wires the CharacterRegistry.
     let _ = candidate.preferred_track;
+
+    // M4 Task 14: world-track triggers always route to Cartographer when
+    // it's registered and not on cooldown. If Cartographer is cooled
+    // down, fall through to the standard persona-rotation logic below
+    // (which will pick the next-best non-cooled-down persona via LRU)
+    // rather than skip the tick — preserves pre-Task-14 reachability.
+    if WORLD_TRACK_TRIGGERS.contains(&candidate.trigger_id.as_str()) {
+        if let Some(cart) = personas.list().iter().find(|s| s.id() == "cartographer") {
+            let on_cooldown = cooldowns.last_emit.get(cart.id()).is_some_and(|last| {
+                now.duration_since(*last).as_millis() < u128::from(cart.cooldown_ms())
+            });
+            if !on_cooldown {
+                return Some(cart.clone());
+            }
+        }
+    }
 
     let preferred_id = default_persona_for_trigger(&candidate.trigger_id);
 
@@ -327,6 +354,33 @@ mod tests {
             route_with_chars(&cand, &persona_reg, &char_reg, &scene, &cd, Instant::now()).unwrap();
         assert_eq!(s.kind(), SpeakerKind::Persona);
         assert_eq!(s.id(), "editor"); // M2 default persona for block_anchored_drift
+    }
+
+    // ------------------------------------------------------------------
+    // M4 T14: WORLD_TRACK_TRIGGERS — world_drift -> cartographer
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn world_drift_routes_to_cartographer() {
+        let reg = registry();
+        let s = route(
+            &cand("world_drift"),
+            &reg,
+            &CooldownState::default(),
+            Instant::now(),
+        )
+        .unwrap();
+        assert_eq!(s.id(), "cartographer");
+    }
+
+    #[test]
+    fn world_track_triggers_does_not_collide_with_char_track() {
+        for t in WORLD_TRACK_TRIGGERS {
+            assert!(
+                !CHAR_TRACK_TRIGGERS.contains(t),
+                "{t} appears in both WORLD_TRACK_TRIGGERS and CHAR_TRACK_TRIGGERS"
+            );
+        }
     }
 
     #[test]
