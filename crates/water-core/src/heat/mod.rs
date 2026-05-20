@@ -20,12 +20,17 @@
 //! by text_hash for cache-skip) and [`scene_typing_history`] (append-only
 //! ring for pacing). Both cascade on scene delete (v5 migration).
 
+pub mod budget;
 pub mod compute;
 pub mod llm;
 pub mod paragraph;
 mod store;
 mod types;
 
+pub use budget::{
+    estimate_tokens, BudgetExceeded, BudgetSide, BudgetSnapshot, LlmBudget,
+    DEFAULT_INPUT_CAP, DEFAULT_OUTPUT_CAP,
+};
 pub use compute::{compute_entity_mentions, compute_pacing, Entity, TypingEvent};
 pub use llm::{compute_coherence, compute_valence};
 pub use paragraph::{hash_text, partition, Paragraph};
