@@ -56,6 +56,9 @@ pub use world::{WorldSegmentRow, WorldStore};
 pub mod heat;
 pub use heat::{HeatMetricKind, HeatRow, HeatStore};
 
+pub mod canvas;
+pub use canvas::auto_flow;
+
 pub mod snapshot;
 pub use snapshot::{SnapshotRow, SnapshotStore, SnapshotTrigger};
 
