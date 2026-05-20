@@ -20,8 +20,12 @@
 //! by text_hash for cache-skip) and [`scene_typing_history`] (append-only
 //! ring for pacing). Both cascade on scene delete (v5 migration).
 
+pub mod compute;
+pub mod paragraph;
 mod store;
 mod types;
 
+pub use compute::{compute_pacing, TypingEvent};
+pub use paragraph::{hash_text, partition, Paragraph};
 pub use store::HeatStore;
 pub use types::{HeatMetricKind, HeatRow};
