@@ -156,6 +156,7 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
       <SceneAutosuggestChips
         sceneId={sceneId}
         alreadyLinkedIds={linkedIds}
+        currentLocationId={meta.location?.id ?? null}
         onLinked={() => void reload()}
       />
       <section style={{ marginBottom: 16 }}>

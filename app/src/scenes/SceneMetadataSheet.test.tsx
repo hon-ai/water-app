@@ -34,7 +34,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SceneMetadataSheet } from "./SceneMetadataSheet";
 import { ipc } from "../ipc/commands";
 import type { CharacterIndexEntry, SceneMetadata } from "../ipc/commands";
-import { publishAutosuggest } from "./sceneMetadataChannel";
+import { publishChips } from "./sceneMetadataChannel";
 
 const mockChars: CharacterIndexEntry[] = [
   {
@@ -183,9 +183,19 @@ describe("SceneMetadataSheet", () => {
     await screen.findByLabelText("Marcus");
     // Publish suggestions for both characters; Marcus is already linked
     // and must be filtered out, Talia should show.
-    publishAutosuggest("s1", [
-      { character_id: "c1", full_name: "Marcus", mention_count: 5 },
-      { character_id: "c2", full_name: "Talia", mention_count: 3 },
+    publishChips("s1", [
+      {
+        kind: "character",
+        characterId: "c1",
+        characterName: "Marcus",
+        mentionCount: 5,
+      },
+      {
+        kind: "character",
+        characterId: "c2",
+        characterName: "Talia",
+        mentionCount: 3,
+      },
     ]);
     await screen.findByText(/Talia \(×3\)/);
     expect(screen.queryByText(/Marcus \(×5\)/)).not.toBeInTheDocument();
@@ -197,8 +207,13 @@ describe("SceneMetadataSheet", () => {
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
     );
     await screen.findByLabelText("Marcus");
-    publishAutosuggest("s1", [
-      { character_id: "c2", full_name: "Talia", mention_count: 3 },
+    publishChips("s1", [
+      {
+        kind: "character",
+        characterId: "c2",
+        characterName: "Talia",
+        mentionCount: 3,
+      },
     ]);
     const dismissBtn = await screen.findByRole("button", {
       name: /Dismiss Talia/,
@@ -218,8 +233,13 @@ describe("SceneMetadataSheet", () => {
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
     );
     await screen.findByLabelText("Marcus");
-    publishAutosuggest("s1", [
-      { character_id: "c2", full_name: "Talia", mention_count: 3 },
+    publishChips("s1", [
+      {
+        kind: "character",
+        characterId: "c2",
+        characterName: "Talia",
+        mentionCount: 3,
+      },
     ]);
     const chipBtn = await screen.findByRole("button", {
       name: /Talia \(×3\)/,
@@ -236,6 +256,99 @@ describe("SceneMetadataSheet", () => {
     await waitFor(() => {
       expect(ipc.characterLinkToScene).toHaveBeenCalledWith("s1", "c2");
     });
+  });
+
+  it("clicking a world-entry chip calls sceneSetLocation and reloads", async () => {
+    mockIpcDefaults();
+    render(
+      <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
+    );
+    await screen.findByLabelText("Marcus");
+    publishChips("s1", [
+      {
+        kind: "world_entry",
+        entryId: "loc-1",
+        entryName: "The Pell Library",
+        segmentSlug: "locations",
+      },
+    ]);
+    // Primary chip is the only button whose name starts with the pin
+    // emoji; the dismiss sibling has an aria-label of "Dismiss …".
+    const chipBtn = await screen.findByRole("button", {
+      name: /^📍 The Pell Library$/,
+    });
+    fireEvent.click(chipBtn);
+    await waitFor(() => {
+      expect(ipc.sceneSetLocation).toHaveBeenCalledWith({
+        sceneId: "s1",
+        locationId: "loc-1",
+      });
+    });
+    expect(ipc.characterLinkToScene).not.toHaveBeenCalled();
+  });
+
+  it("hides a world chip whose entry is already the scene's location", async () => {
+    mockIpcDefaults();
+    (ipc.sceneReadMetadata as ReturnType<typeof vi.fn>).mockResolvedValue({
+      characters_present: ["c1"],
+      pov_character_id: "c1",
+      location: {
+        id: "loc-1",
+        name: "The Pell Library",
+        segment_slug: "locations",
+      },
+    } satisfies SceneMetadata);
+    render(
+      <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
+    );
+    await screen.findByLabelText("Marcus");
+    publishChips("s1", [
+      {
+        kind: "world_entry",
+        entryId: "loc-1",
+        entryName: "The Pell Library",
+        segmentSlug: "locations",
+      },
+      {
+        kind: "world_entry",
+        entryId: "loc-2",
+        entryName: "Aren Square",
+        segmentSlug: "locations",
+      },
+    ]);
+    // The currently-selected location should NOT show as a chip; the
+    // other location should. Match the chip primary button precisely
+    // (the option in the Location dropdown also matches a loose regex).
+    await screen.findByRole("button", { name: /^📍 Aren Square$/ });
+    expect(
+      screen.queryByRole("button", { name: /^📍 The Pell Library$/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders mixed character + world chips together", async () => {
+    mockIpcDefaults();
+    render(
+      <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
+    );
+    await screen.findByLabelText("Marcus");
+    publishChips("s1", [
+      {
+        kind: "character",
+        characterId: "c2",
+        characterName: "Talia",
+        mentionCount: 3,
+      },
+      {
+        kind: "world_entry",
+        entryId: "loc-1",
+        entryName: "The Pell Library",
+        segmentSlug: "locations",
+      },
+    ]);
+    await screen.findByText(/Talia \(×3\)/);
+    // Use the button-with-pin-emoji selector so the option element in
+    // the Location dropdown doesn't collide with the chip match.
+    await screen.findByRole("button", { name: /^📍 The Pell Library$/ });
   });
 
   it("renders the location dropdown populated from the locations segment", async () => {
@@ -333,8 +446,13 @@ describe("SceneMetadataSheet", () => {
     );
     await screen.findByLabelText("Marcus");
     // Publish for a different scene — the sheet must filter by sceneId.
-    publishAutosuggest("s-other", [
-      { character_id: "c2", full_name: "Talia", mention_count: 3 },
+    publishChips("s-other", [
+      {
+        kind: "character",
+        characterId: "c2",
+        characterName: "Talia",
+        mentionCount: 3,
+      },
     ]);
     // Give the channel + microtask queue a chance.
     await new Promise((r) => setTimeout(r, 10));
