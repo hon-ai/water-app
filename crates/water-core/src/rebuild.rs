@@ -47,6 +47,82 @@ fn repopulate(db: &mut Db, project_root: &Path) -> Result<RebuildStats> {
     )?;
     stats.projects = 1;
 
+    // 1b. M4: ensure built-in world segments exist for this project. Idempotent;
+    // safe to call on a freshly-recreated DB. Performed BEFORE the scene step so
+    // any user-added segments (scanned next) and the orphan-repair pass have a
+    // populated `world_segment` table to work against.
+    let world_store = crate::world::WorldStore::new(db, project_root.to_path_buf());
+    world_store.seed_builtins(&water.project_id)?;
+
+    // 1c. M4: scan `world/_segments/*.template.toml` for user-added segment
+    // template overrides. Each matching file is parsed as `WorldTemplateSchema`
+    // and applied via `update_segment_template`. Malformed files are logged and
+    // skipped so a single bad template can't brick rebuild.
+    let segments_dir = project_root.join("world").join("_segments");
+    if segments_dir.exists() {
+        let read_iter = std::fs::read_dir(&segments_dir).map_err(|e| {
+            crate::Error::Other(format!(
+                "rebuild: read_dir {}: {e}",
+                segments_dir.display()
+            ))
+        })?;
+        for entry in read_iter {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!(
+                        "rebuild: skipping bad dir entry in {}: {e}",
+                        segments_dir.display()
+                    );
+                    continue;
+                }
+            };
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("toml") {
+                continue;
+            }
+            // We look for `<slug>.template.toml`; derive slug from the leading
+            // component before `.template.toml`.
+            let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Some(slug) = file_name.strip_suffix(".template.toml") else {
+                continue;
+            };
+            if slug.is_empty() {
+                continue;
+            }
+            let text = match std::fs::read_to_string(&path) {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!(
+                        "rebuild: skipping unreadable template {}: {e}",
+                        path.display()
+                    );
+                    continue;
+                }
+            };
+            let template: crate::world::templates::WorldTemplateSchema =
+                match toml::from_str(&text) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::warn!(
+                            "rebuild: skipping malformed template {}: {e}",
+                            path.display()
+                        );
+                        continue;
+                    }
+                };
+            if let Some(seg) = world_store.find_segment_by_slug(&water.project_id, slug)? {
+                world_store.update_segment_template(&seg.id, &template)?;
+            }
+            // If no matching segment exists, the user-added segment wasn't
+            // created via create_user_segment yet; subsequent project work
+            // surfaces it. We deliberately don't auto-create from a template
+            // alone (no name/is_collection metadata to derive from).
+        }
+    }
+
     // 2. manuscript
     let manuscript_id = water.default_manuscript_id.clone().unwrap_or_default();
     db.conn().execute(
@@ -159,6 +235,12 @@ fn repopulate(db: &mut Db, project_root: &Path) -> Result<RebuildStats> {
     }
 
     // 6. scenes (last — references manuscript, chapter, character, world_entry)
+    //
+    // M4: scene.location_id is reattached in a separate pass below. We INSERT
+    // with location_id = NULL here so that scenes whose frontmatter references
+    // a world_entry that isn't (yet) in `world_entry` don't FK-violate. The
+    // orphan-repair pass that follows logs and clears such references and
+    // reattaches the valid ones.
     let scenes_dir = project_root.join("manuscript").join("scenes");
     if scenes_dir.exists() {
         let mut entries: Vec<PathBuf> = std::fs::read_dir(&scenes_dir)?
@@ -174,7 +256,7 @@ fn repopulate(db: &mut Db, project_root: &Path) -> Result<RebuildStats> {
                 "INSERT INTO scene (id, manuscript_id, chapter_id, ordering, name, pov_character_id,
                                     location_id, scene_goal, status, word_count, file_path,
                                     file_hash, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 (
                     fm.id.as_str(),
                     manuscript_id.as_str(),
@@ -182,7 +264,6 @@ fn repopulate(db: &mut Db, project_root: &Path) -> Result<RebuildStats> {
                     fm.order,
                     &fm.name,
                     fm.pov_character_id.as_ref().map(Id::as_str),
-                    fm.location_id.as_ref().map(Id::as_str),
                     &fm.scene_goal,
                     &fm.status,
                     fm.word_count,
@@ -192,6 +273,34 @@ fn repopulate(db: &mut Db, project_root: &Path) -> Result<RebuildStats> {
                     &fm.updated_at,
                 ),
             )?;
+            // M4: attempt to reattach scene.location_id. If the world_entry
+            // exists, set it; otherwise leave NULL and warn (orphan repair).
+            if let Some(loc_id) = fm.location_id.as_ref() {
+                let entry_exists: bool = db
+                    .conn()
+                    .query_row(
+                        "SELECT 1 FROM world_entry WHERE id = ?1",
+                        [loc_id.as_str()],
+                        |_r| Ok(()),
+                    )
+                    .map(|()| true)
+                    .or_else(|e| match e {
+                        rusqlite::Error::QueryReturnedNoRows => Ok(false),
+                        other => Err(other),
+                    })?;
+                if entry_exists {
+                    db.conn().execute(
+                        "UPDATE scene SET location_id = ?1 WHERE id = ?2",
+                        (loc_id.as_str(), fm.id.as_str()),
+                    )?;
+                } else {
+                    tracing::warn!(
+                        "rebuild: scene {} references missing world_entry {}; clearing location_id",
+                        fm.id.as_str(),
+                        loc_id.as_str()
+                    );
+                }
+            }
             // characters_present rows — characters now exist so a direct INSERT
             // succeeds; FK violations would indicate a malformed frontmatter
             // pointing at a character that simply isn't on disk.
@@ -203,6 +312,23 @@ fn repopulate(db: &mut Db, project_root: &Path) -> Result<RebuildStats> {
             }
             stats.scenes += 1;
         }
+    }
+
+    // 7. M4: belt-and-suspenders orphan repair for scene.location_id. The
+    // per-scene reattach above already clears stale refs originating from
+    // scene .md frontmatter; this catches any leftover orphans (e.g. inserted
+    // through other paths in the same DB lifetime, though after step 6 there
+    // shouldn't be any). The UPDATE is a no-op when scene refs are clean.
+    let cleared_rows = db.conn().execute(
+        "UPDATE scene SET location_id = NULL
+         WHERE location_id IS NOT NULL
+           AND location_id NOT IN (SELECT id FROM world_entry)",
+        [],
+    )?;
+    if cleared_rows > 0 {
+        tracing::warn!(
+            "rebuild: cleared {cleared_rows} orphan scene.location_id reference(s)"
+        );
     }
 
     Ok(stats)
@@ -385,5 +511,165 @@ mod tests {
             )
             .unwrap();
         assert_eq!(presence, 1);
+    }
+
+    /// Task 7: a fresh project must end up with the six canonical built-in
+    /// world segments after rebuild, even when no `world/` directory exists
+    /// on disk yet.
+    #[test]
+    fn rebuild_seeds_builtin_segments_on_fresh_project() {
+        use crate::world::WorldStore;
+        let dir = make_project();
+        let (db, _stats) = rebuild_from_truth(dir.path()).unwrap();
+        // The project_id is whatever rebuild discovered via WaterToml::read.
+        let pid: String = db
+            .conn()
+            .query_row("SELECT id FROM project LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        let pid: Id = pid.parse().unwrap();
+        let segs = WorldStore::new(&db, dir.path().to_path_buf())
+            .list_segments(&pid)
+            .unwrap();
+        assert_eq!(
+            segs.len(),
+            6,
+            "rebuild should seed exactly six built-in world segments; got {segs:?}"
+        );
+        let slugs: Vec<&str> = segs.iter().map(|s| s.slug.as_str()).collect();
+        // Slug set is whatever `built_in_templates()` ships; we just assert
+        // each known slug is present so the test fails loudly if seed_builtins
+        // ever stops being called from rebuild.
+        for required in [
+            "concept",
+            "locations",
+            "politics_and_social",
+            "culture",
+            "world",
+            "history",
+        ] {
+            assert!(
+                slugs.contains(&required),
+                "missing built-in slug {required}; got {slugs:?}"
+            );
+        }
+    }
+
+    /// Task 7: if a scene .md frontmatter references a `location_id` that
+    /// doesn't correspond to any `world_entry` on disk, rebuild must clear
+    /// the reference (not FK-violate) and warn.
+    #[test]
+    fn rebuild_nulls_orphan_scene_location_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_id = Id::new();
+        let manuscript_id = Id::new();
+        let scene_id = Id::new();
+        let orphan_loc_id = Id::new();
+
+        WaterToml {
+            schema_version: 1,
+            project_id: project_id.clone(),
+            name: "OrphanProj".into(),
+            default_manuscript_id: Some(manuscript_id.clone()),
+            created_at: "2026-05-19T09:00:00+00:00".into(),
+            updated_at: "2026-05-19T09:00:00+00:00".into(),
+        }
+        .write(dir.path())
+        .unwrap();
+
+        std::fs::create_dir_all(dir.path().join("manuscript").join("scenes")).unwrap();
+        let scene_path = dir
+            .path()
+            .join("manuscript")
+            .join("scenes")
+            .join(format!("{scene_id}.md"));
+        crate::scene_md::SceneFile {
+            frontmatter: SceneFrontmatter {
+                id: scene_id.clone(),
+                name: "Stranded".into(),
+                chapter_id: None,
+                order: 0,
+                pov_character_id: None,
+                characters_present: vec![],
+                // Points at a world_entry that does NOT exist on disk —
+                // the rebuild must not FK-violate, and must NULL it out.
+                location_id: Some(orphan_loc_id.clone()),
+                scene_goal: None,
+                status: "draft".into(),
+                created_at: "2026-05-19T09:00:00+00:00".into(),
+                updated_at: "2026-05-19T09:00:00+00:00".into(),
+                word_count: 1,
+            },
+            body: "Nowhere.\n".into(),
+        }
+        .write(&scene_path)
+        .unwrap();
+
+        // Rebuild must succeed and NOT FK-violate on the missing location_id.
+        let (db, stats) = rebuild_from_truth(dir.path()).unwrap();
+        assert_eq!(stats.scenes, 1);
+
+        let loc_after: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT location_id FROM scene WHERE id = ?1",
+                [scene_id.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            loc_after.is_none(),
+            "orphan location_id should be cleared; got {loc_after:?}"
+        );
+    }
+
+    /// Task 7: a `world/_segments/<slug>.template.toml` file with a valid
+    /// `WorldTemplateSchema` should be applied as the template override for
+    /// the matching built-in segment after rebuild.
+    #[test]
+    fn rebuild_applies_user_segment_template_override() {
+        use crate::world::WorldStore;
+        let dir = make_project();
+
+        // Drop a template override for the `locations` built-in.
+        let seg_dir = dir.path().join("world").join("_segments");
+        std::fs::create_dir_all(&seg_dir).unwrap();
+        let template_toml = r#"id = "locations"
+label = "Locations (custom)"
+
+[[fields]]
+id = "main.vibe"
+label = "Vibe"
+prompt_question = "What does it feel like?"
+optional_skip = false
+
+[fields.kind]
+type = "short_text"
+"#;
+        std::fs::write(seg_dir.join("locations.template.toml"), template_toml).unwrap();
+
+        let (db, _) = rebuild_from_truth(dir.path()).unwrap();
+        let pid: String = db
+            .conn()
+            .query_row("SELECT id FROM project LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        let pid: Id = pid.parse().unwrap();
+        {
+            let store = WorldStore::new(&db, dir.path().to_path_buf());
+            let seg = store
+                .find_segment_by_slug(&pid, "locations")
+                .unwrap()
+                .expect("locations segment should be seeded by rebuild");
+            assert!(
+                seg.has_template_override,
+                "locations should now carry a template override after rebuild"
+            );
+        }
+        // Drop the db handle before the next rebuild so Windows can release
+        // its file lock on project.db.
+        drop(db);
+
+        // A malformed sibling must NOT brick rebuild (logged + skipped).
+        std::fs::write(seg_dir.join("broken.template.toml"), "this isn't toml = [").unwrap();
+        let (_db2, _) = rebuild_from_truth(dir.path()).unwrap();
     }
 }
