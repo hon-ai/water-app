@@ -1,5 +1,6 @@
 use crate::state::AppState;
-use serde::Serialize;
+use rusqlite::OptionalExtension;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -13,14 +14,33 @@ pub struct SceneInfo {
     pub word_count: i64,
 }
 
-/// Renderer-facing snapshot of a scene's character metadata (M3 T21).
-/// Returned by `scene_read_metadata` to populate the SceneMetadataSheet
-/// without forcing the renderer to round-trip through scene_list (which
-/// doesn't carry presence + POV today).
+/// Renderer-facing snapshot of the scene's currently-set location (M4 T11).
+/// Sent as part of `SceneMetadata` so the SceneMetadataSheet can render the
+/// location pill (name + segment slug for hue/badge selection) without a
+/// separate round-trip to `world_entry_read`.
+///
+/// `segment_slug` is the parent `world_segment.slug` (e.g. `"locations"`).
+/// We include the slug rather than the segment id because the renderer
+/// keys its segment-specific styling (hue token, label) by slug.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SceneLocationPayload {
+    pub id: String,
+    pub name: String,
+    pub segment_slug: String,
+}
+
+/// Renderer-facing snapshot of a scene's character + location metadata
+/// (M3 T21 + M4 T11). Returned by `scene_read_metadata` to populate the
+/// SceneMetadataSheet without forcing the renderer to round-trip through
+/// `scene_list` (which doesn't carry presence + POV) or `world_entry_read`
+/// (which would require a second await on every sheet open).
+///
+/// `location` is `None` when `scene.location_id IS NULL`.
 #[derive(Serialize, Debug, Clone)]
 pub struct SceneMetadata {
     pub characters_present: Vec<String>,
     pub pov_character_id: Option<String>,
+    pub location: Option<SceneLocationPayload>,
 }
 
 async fn scene_read_metadata_core(
@@ -57,9 +77,36 @@ async fn scene_read_metadata_core(
         characters_present.push(row.map_err(|e| e.to_string())?);
     }
 
+    // Resolve `scene.location_id` to a `{id, name, segment_slug}` payload
+    // (M4 T11). LEFT JOIN through world_entry → world_segment so a single
+    // round-trip returns either the populated payload or `None` (which
+    // happens both when `location_id IS NULL` and — defensively — if the
+    // FK is dangling, though the `ON DELETE SET NULL` clause + rebuild
+    // orphan-reap should prevent that in practice).
+    drop(stmt);
+    let location: Option<SceneLocationPayload> = conn
+        .query_row(
+            "SELECT we.id, we.name, ws.slug
+             FROM scene s
+             JOIN world_entry we ON we.id = s.location_id
+             JOIN world_segment ws ON ws.id = we.segment_id
+             WHERE s.id = ?1",
+            [scene_id.as_str()],
+            |r| {
+                Ok(SceneLocationPayload {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    segment_slug: r.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
     Ok(SceneMetadata {
         characters_present,
         pov_character_id,
+        location,
     })
 }
 
@@ -121,9 +168,7 @@ pub async fn scene_read(state: State<'_, AppState>, id: String) -> Result<String
         let project = proj.as_ref().ok_or("no project open")?;
         (project.db.clone(), project.root.clone())
     };
-    let id: Id = id
-        .parse()
-        .map_err(|e: water_core::Error| e.to_string())?;
+    let id: Id = id.parse().map_err(|e: water_core::Error| e.to_string())?;
     let db_guard = db.lock().await;
     let store = SceneStore::new(&db_guard, root);
     let file: SceneFile = store.read(&id).map_err(|e| e.to_string())?;
@@ -145,9 +190,7 @@ pub async fn scene_write_body(
             project.scene_write_locks.clone(),
         )
     };
-    let id: Id = id
-        .parse()
-        .map_err(|e: water_core::Error| e.to_string())?;
+    let id: Id = id.parse().map_err(|e: water_core::Error| e.to_string())?;
     // Per-scene write lock: serializes `rename` + `write_body` so concurrent
     // flushes don't tear the scene file (KNOWN_FRAGILE #7). Acquired BEFORE
     // the DB lock so the lock ordering matches `scene_rename`.
@@ -220,9 +263,7 @@ pub async fn scene_rename(
             project.scene_write_locks.clone(),
         )
     };
-    let id: Id = id
-        .parse()
-        .map_err(|e: water_core::Error| e.to_string())?;
+    let id: Id = id.parse().map_err(|e: water_core::Error| e.to_string())?;
     // Per-scene write lock: serializes `rename` + `write_body` so concurrent
     // flushes don't tear the scene file (KNOWN_FRAGILE #7).
     // Acquired BEFORE the DB lock so the lock ordering matches `scene_write_body`.
@@ -237,6 +278,63 @@ pub async fn scene_rename(
         ordering: row.ordering,
         word_count: row.word_count,
     })
+}
+
+/// Set or clear `scene.location_id`. Pass `Some(world_entry_id)` to
+/// attach a location, or `None` to clear it. (M4 T11.)
+///
+/// FK integrity is enforced by the column's `REFERENCES world_entry(id)
+/// ON DELETE SET NULL` clause — a non-existent `location_id` will trip
+/// the FK and surface as a SQLite error here. The renderer is expected
+/// to pick the id from a `world_entry_list` result, so a missing FK
+/// indicates either a stale UI cache or a race with `world_entry_delete`.
+async fn scene_set_location_core(
+    db: Arc<Mutex<Db>>,
+    scene_id: String,
+    location_id: Option<String>,
+) -> Result<(), String> {
+    let scene_id: Id = scene_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    // Validate the location id at the command boundary so a malformed
+    // string doesn't reach SQLite as an arbitrary text value (the FK
+    // would silently accept it since SQLite doesn't type-check FK refs
+    // beyond existence).
+    let location_id: Option<Id> = match location_id {
+        Some(s) => Some(s.parse().map_err(|e: water_core::Error| e.to_string())?),
+        None => None,
+    };
+    let db_guard = db.lock().await;
+    let conn = db_guard.conn();
+    let result = match location_id.as_ref() {
+        Some(loc) => conn.execute(
+            "UPDATE scene SET location_id = ?1 WHERE id = ?2",
+            (loc.as_str(), scene_id.as_str()),
+        ),
+        None => conn.execute(
+            "UPDATE scene SET location_id = NULL WHERE id = ?1",
+            [scene_id.as_str()],
+        ),
+    };
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Tauri-command wrapper around `scene_set_location_core`. Mirrors the
+/// `scene_read_metadata` shape: lock the project guard, clone the db
+/// handle, drop the guard, call `_core` (so the project lock isn't held
+/// across the DB lock — KNOWN_FRAGILE #6 lock ordering).
+#[tauri::command]
+pub async fn scene_set_location(
+    state: State<'_, AppState>,
+    scene_id: String,
+    location_id: Option<String>,
+) -> Result<(), String> {
+    let db = {
+        let proj = state.project.lock().await;
+        let project = proj.as_ref().ok_or("no project open")?;
+        project.db.clone()
+    };
+    scene_set_location_core(db, scene_id, location_id).await
 }
 
 // ----------------------------------------------------------------------
@@ -290,6 +388,7 @@ mod tests {
             .unwrap();
         assert!(meta.characters_present.is_empty());
         assert!(meta.pov_character_id.is_none());
+        assert!(meta.location.is_none(), "fresh scene must have no location");
     }
 
     #[tokio::test]
@@ -344,5 +443,71 @@ mod tests {
             .unwrap();
         assert_eq!(meta.characters_present, vec![char_id.clone()]);
         assert_eq!(meta.pov_character_id.as_deref(), Some(char_id.as_str()));
+    }
+
+    /// M4 T11: round-trip the scene→location FK through both write +
+    /// read commands. Uses `WorldStore::seed_builtins` to pull in the
+    /// `locations` collection segment (the only built-in collection),
+    /// then creates a single entry, sets `scene.location_id` to it via
+    /// `scene_set_location_core`, and asserts the read-metadata payload
+    /// surfaces the `{id, name, segment_slug}` triple. Then clears it
+    /// (with `None`) and asserts the field goes back to `None`.
+    #[tokio::test]
+    async fn scene_set_location_round_trip() {
+        use water_core::WorldStore;
+
+        let (_dir, db, root, scene) = test_project_with_scene().await;
+
+        let (entry_id, expected_slug, expected_name) = {
+            let g = db.lock().await;
+            // Look up the project_id that `test_project_with_scene`
+            // inserted (we don't have it returned by the fixture).
+            let project_id_str: String = g
+                .conn()
+                .query_row(
+                    "SELECT m.project_id FROM scene s \
+                     JOIN manuscript m ON m.id = s.manuscript_id \
+                     WHERE s.id = ?1",
+                    [scene.id.as_str()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let project_id: Id = project_id_str.parse().unwrap();
+            let store = WorldStore::new(&g, root.clone());
+            store.seed_builtins(&project_id).unwrap();
+            let loc_seg = store
+                .find_segment_by_slug(&project_id, "locations")
+                .unwrap()
+                .expect("seed_builtins must create a `locations` segment");
+            let entry_id = store
+                .create_entry(&loc_seg.id, "The Old Lighthouse")
+                .unwrap();
+            (entry_id.to_string(), loc_seg.slug, "The Old Lighthouse")
+        };
+
+        // Attach.
+        scene_set_location_core(db.clone(), scene.id.to_string(), Some(entry_id.clone()))
+            .await
+            .unwrap();
+        let meta = scene_read_metadata_core(db.clone(), scene.id.to_string())
+            .await
+            .unwrap();
+        let loc = meta.location.expect("location must be set after attach");
+        assert_eq!(loc.id, entry_id);
+        assert_eq!(loc.name, expected_name);
+        assert_eq!(loc.segment_slug, expected_slug);
+
+        // Clear.
+        scene_set_location_core(db.clone(), scene.id.to_string(), None)
+            .await
+            .unwrap();
+        let meta = scene_read_metadata_core(db.clone(), scene.id.to_string())
+            .await
+            .unwrap();
+        assert!(
+            meta.location.is_none(),
+            "location must be None after clear; got {:?}",
+            meta.location
+        );
     }
 }

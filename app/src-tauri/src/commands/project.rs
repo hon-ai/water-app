@@ -34,8 +34,7 @@ pub async fn create_project(
         return Err(format!("directory already exists: {}", root.display()));
     }
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(root.join("manuscript").join("scenes"))
-        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(root.join("manuscript").join("scenes")).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(root.join("characters")).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(root.join("world")).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(root.join("snapshots")).map_err(|e| e.to_string())?;
@@ -60,7 +59,11 @@ pub async fn create_project(
         ProjectStore::new(&db_guard)
             .set_default_manuscript(&project.id, &manuscript.id)
             .map_err(|e| e.to_string())?;
-        (project.id.clone(), project.name.clone(), manuscript.id.clone())
+        (
+            project.id.clone(),
+            project.name.clone(),
+            manuscript.id.clone(),
+        )
     };
 
     WaterToml {
@@ -99,6 +102,7 @@ pub async fn create_project(
         supervisor,
         scene_write_locks: SceneWriteLocks::new(),
         character_write_locks: CharacterWriteLocks::new(),
+        world_write_locks: crate::state::WorldWriteLocks::new(),
         orchestrator,
     });
     Ok(info)
@@ -157,16 +161,17 @@ pub async fn open_project(
             .prepare("SELECT id, file_path FROM scene")
             .map_err(|e| e.to_string())?;
         let collected: Vec<(String, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|e| e.to_string())?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
         collected
     };
     for (id_s, path_s) in rows {
-        let scene_id: water_core::Id = id_s
-            .parse()
-            .map_err(|e: water_core::Error| e.to_string())?;
+        let scene_id: water_core::Id =
+            id_s.parse().map_err(|e: water_core::Error| e.to_string())?;
         scheduler
             .register(ActiveScene {
                 scene_id,
@@ -195,6 +200,7 @@ pub async fn open_project(
         supervisor,
         scene_write_locks: SceneWriteLocks::new(),
         character_write_locks: CharacterWriteLocks::new(),
+        world_write_locks: crate::state::WorldWriteLocks::new(),
         orchestrator,
     });
     Ok(info)

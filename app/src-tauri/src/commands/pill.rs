@@ -29,14 +29,10 @@ pub struct PinnedPill {
 }
 
 #[tauri::command]
-pub async fn pill_expand(
-    state: State<'_, AppState>,
-    parent_pill_id: String,
-) -> Result<(), String> {
+pub async fn pill_expand(state: State<'_, AppState>, parent_pill_id: String) -> Result<(), String> {
     let handle = {
         let proj = state.project.lock().await;
-        proj.as_ref()
-            .and_then(|p| p.orchestrator.as_ref().cloned())
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
     };
     if let Some(h) = handle {
         let pid = parse_id(&parent_pill_id)?;
@@ -58,8 +54,7 @@ pub async fn pill_regenerate(
 ) -> Result<(), String> {
     let handle = {
         let proj = state.project.lock().await;
-        proj.as_ref()
-            .and_then(|p| p.orchestrator.as_ref().cloned())
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
     };
     if let Some(h) = handle {
         let pid = parse_id(&parent_pill_id)?;
@@ -128,12 +123,10 @@ pub async fn pill_dismiss(
     };
     if let Some(db) = db_opt {
         let g = db.lock().await;
-        let _ = g
-            .conn()
-            .execute(
-                "DELETE FROM pinned_pill WHERE id = ?1",
-                rusqlite::params![pill_id],
-            );
+        let _ = g.conn().execute(
+            "DELETE FROM pinned_pill WHERE id = ?1",
+            rusqlite::params![pill_id],
+        );
     }
     #[derive(Serialize, Clone)]
     struct Dismiss {
@@ -154,9 +147,7 @@ pub async fn pill_dismiss(
 }
 
 #[tauri::command]
-pub async fn pinned_list(
-    state: State<'_, AppState>,
-) -> Result<Vec<PinnedPill>, String> {
+pub async fn pinned_list(state: State<'_, AppState>) -> Result<Vec<PinnedPill>, String> {
     let db = {
         let proj = state.project.lock().await;
         proj.as_ref().ok_or("no project open")?.db.clone()

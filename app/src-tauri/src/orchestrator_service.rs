@@ -78,9 +78,15 @@ pub enum OrchestratorRequest {
     /// orchestrator caches the body so each telemetry tick can build a
     /// prompt excerpt without re-reading from disk.
     SceneState(SceneSnapshot, ProjectSnapshot, String),
-    Expand { parent_pill_id: Id },
-    Regenerate { parent_pill_id: Id },
-    Dismiss { pill_id: Id },
+    Expand {
+        parent_pill_id: Id,
+    },
+    Regenerate {
+        parent_pill_id: Id,
+    },
+    Dismiss {
+        pill_id: Id,
+    },
     Shutdown,
 }
 
@@ -196,9 +202,8 @@ impl OrchestratorService {
         // fine because telemetry isn't latency-critical and back-pressure
         // naturally rate-limits the renderer.
         let (tx, mut rx) = mpsc::channel::<OrchestratorRequest>(64);
-        let prompts = Arc::new(
-            PromptLibrary::load_builtin().expect("built-in prompts must load at startup"),
-        );
+        let prompts =
+            Arc::new(PromptLibrary::load_builtin().expect("built-in prompts must load at startup"));
 
         // Replay log: opt-in via env var. Settings-DB opt-in is a no-op
         // stub here — wired when Settings UI lands in M7. We open the
@@ -284,10 +289,8 @@ impl OrchestratorService {
             }
             OrchestratorRequest::Dismiss { pill_id } => {
                 if let Some(p) = self.pills.iter_mut().find(|p| p.id == pill_id) {
-                    p.state = water_core::orchestrator::state::transition(
-                        p,
-                        &PillEvent::UserDismiss,
-                    );
+                    p.state =
+                        water_core::orchestrator::state::transition(p, &PillEvent::UserDismiss);
                 }
             }
             OrchestratorRequest::Shutdown => {}
@@ -570,12 +573,7 @@ impl OrchestratorService {
                 .cloned()
                 .unwrap_or_default()
                 .iter()
-                .map(|t| {
-                    t.split_whitespace()
-                        .take(8)
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
+                .map(|t| t.split_whitespace().take(8).collect::<Vec<_>>().join(" "))
                 .collect()
         };
 
@@ -886,8 +884,8 @@ mod stage2_confirmation_tests {
     //! lands.
     use super::*;
     use water_core::llm::{CannedProvider, ErrorProvider, LlmProvider, LlmRouter};
-    use water_core::replay_log::ReplayLog;
     use water_core::orchestrator::ConfirmationRequest;
+    use water_core::replay_log::ReplayLog;
 
     fn make_req() -> ConfirmationRequest {
         ConfirmationRequest {
@@ -905,8 +903,7 @@ mod stage2_confirmation_tests {
     async fn yes_response_returns_true_and_logs_confirmation_yes() {
         // "yes" (any case, after trim) is the only response that allows
         // dispatch to proceed.
-        let provider =
-            Arc::new(CannedProvider::with_response("yes\n")) as Arc<dyn LlmProvider>;
+        let provider = Arc::new(CannedProvider::with_response("yes\n")) as Arc<dyn LlmProvider>;
         let router = router_with(provider);
         let tmp = tempfile::TempDir::new().unwrap();
         let log = Arc::new(ReplayLog::open(tmp.path(), "t11-yes").unwrap());
@@ -951,8 +948,7 @@ mod stage2_confirmation_tests {
 
     #[tokio::test]
     async fn no_response_returns_false_and_logs_confirmation_no() {
-        let provider =
-            Arc::new(CannedProvider::with_response("no")) as Arc<dyn LlmProvider>;
+        let provider = Arc::new(CannedProvider::with_response("no")) as Arc<dyn LlmProvider>;
         let router = router_with(provider);
         let tmp = tempfile::TempDir::new().unwrap();
         let log = Arc::new(ReplayLog::open(tmp.path(), "t11-no").unwrap());
@@ -985,8 +981,8 @@ mod stage2_confirmation_tests {
         // Anything that doesn't start with "yes" after trim+lowercase
         // is treated as no. A model that hedges or refuses ("Hmm, maybe
         // not.") must drop.
-        let provider = Arc::new(CannedProvider::with_response("Hmm, maybe not."))
-            as Arc<dyn LlmProvider>;
+        let provider =
+            Arc::new(CannedProvider::with_response("Hmm, maybe not.")) as Arc<dyn LlmProvider>;
         let router = router_with(provider);
         let proceed =
             run_stage2_confirmation(&router, &make_req(), "character_dissonance", None).await;
@@ -1034,8 +1030,7 @@ mod stage2_confirmation_tests {
     async fn missing_replay_log_does_not_panic() {
         // Production default: WATER_REPLAY_LOG unset, replay_log = None.
         // Helper must still return the correct dispatch decision.
-        let yes_provider =
-            Arc::new(CannedProvider::with_response("yes")) as Arc<dyn LlmProvider>;
+        let yes_provider = Arc::new(CannedProvider::with_response("yes")) as Arc<dyn LlmProvider>;
         let proceed = run_stage2_confirmation(
             &router_with(yes_provider),
             &make_req(),
@@ -1056,4 +1051,3 @@ mod stage2_confirmation_tests {
         assert!(!drop);
     }
 }
-

@@ -50,10 +50,14 @@ const mockChars: CharacterIndexEntry[] = [
   },
 ];
 
-// Default scene: Marcus is present + POV; Talia is unlinked.
+// Default scene: Marcus is present + POV; Talia is unlinked. `location`
+// is `null` here — M4 T11 added the field as a required-but-nullable
+// property of `SceneMetadata`; this default fixture doesn't exercise
+// the location pill so `null` is fine.
 const mockMeta: SceneMetadata = {
   characters_present: ["c1"],
   pov_character_id: "c1",
+  location: null,
 };
 
 function mockIpcDefaults() {
@@ -191,7 +195,8 @@ describe("SceneMetadataSheet", () => {
     (ipc.sceneReadMetadata as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       characters_present: ["c1", "c2"],
       pov_character_id: "c1",
-    });
+      location: null,
+    } satisfies SceneMetadata);
     fireEvent.click(chipBtn);
     await waitFor(() => {
       expect(ipc.characterLinkToScene).toHaveBeenCalledWith("s1", "c2");

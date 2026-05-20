@@ -15,14 +15,30 @@ export interface SceneInfo {
 }
 
 /**
- * Per-scene character metadata. Mirrors `commands::scene::SceneMetadata`
- * on the Rust side. Used by the SceneMetadataSheet (M3 T21) to populate
- * its checkbox + POV select on open. `pov_character_id` is `null` when
- * no POV is set.
+ * Per-scene location pill payload. Mirrors
+ * `commands::scene::SceneLocationPayload` on the Rust side. Returned as
+ * part of `SceneMetadata.location` so the SceneMetadataSheet can render
+ * the location pill (name + segment slug for hue selection) without a
+ * second IPC round-trip to `world_entry_read`. `segment_slug` is the
+ * parent `world_segment.slug` (e.g. `"locations"`).
+ */
+export interface SceneLocationPayload {
+  id: string;
+  name: string;
+  segment_slug: string;
+}
+
+/**
+ * Per-scene character + location metadata. Mirrors
+ * `commands::scene::SceneMetadata` on the Rust side. Used by the
+ * SceneMetadataSheet (M3 T21, M4 T11) to populate its checkbox + POV
+ * select + location pill on open. `pov_character_id` is `null` when no
+ * POV is set; `location` is `null` when `scene.location_id IS NULL`.
  */
 export interface SceneMetadata {
   characters_present: string[];
   pov_character_id: string | null;
+  location: SceneLocationPayload | null;
 }
 
 export interface SidecarInfo {
@@ -246,6 +262,17 @@ export const ipc = {
   // (spec § 20) stay in the character commands' code path.
   sceneReadMetadata: (id: string): Promise<SceneMetadata> =>
     invoke("scene_read_metadata", { id }),
+  // Attach or clear the scene→location FK (M4 T11). Pass `locationId:
+  // null` to clear. The Rust command validates the location id at the
+  // boundary (ULID parse) so a malformed string never reaches SQLite.
+  sceneSetLocation: (req: {
+    sceneId: string;
+    locationId: string | null;
+  }): Promise<void> =>
+    invoke("scene_set_location", {
+      sceneId: req.sceneId,
+      locationId: req.locationId,
+    }),
 
   // Character CRUD (M3 T12). `characterUpdateField` is called once per
   // answer in the Conversational Intake flow; the Rust side serializes

@@ -268,8 +268,7 @@ async fn world_intake_schema_core(
         .parse()
         .map_err(|e: water_core::Error| e.to_string())?;
     let db_guard = db.lock().await;
-    water_core::world::templates::effective_template(&db_guard, &seg_id)
-        .map_err(|e| e.to_string())
+    water_core::world::templates::effective_template(&db_guard, &seg_id).map_err(|e| e.to_string())
 }
 
 // ----- Single-doc commands (Task 9) -----
@@ -744,7 +743,12 @@ mod tests {
     async fn world_segment_list_returns_six_builtins() {
         let (_dir, db, root, project_id) = test_project().await;
         let segs = world_segment_list_core(db, root, project_id).await.unwrap();
-        assert_eq!(segs.len(), 6, "expected 6 built-in segments, got {}", segs.len());
+        assert_eq!(
+            segs.len(),
+            6,
+            "expected 6 built-in segments, got {}",
+            segs.len()
+        );
         // Sanity-check that the canonical slugs are present.
         let slugs: Vec<&str> = segs.iter().map(|s| s.slug.as_str()).collect();
         assert!(slugs.contains(&"concept"));
@@ -777,8 +781,14 @@ mod tests {
 
         let segs = world_segment_list_core(db, root, project_id).await.unwrap();
         assert_eq!(segs.len(), 7);
-        let magic = segs.iter().find(|s| s.name == "Magic").expect("Magic segment should exist");
-        assert!(magic.has_template_override, "user-created segment must have template_json override");
+        let magic = segs
+            .iter()
+            .find(|s| s.name == "Magic")
+            .expect("Magic segment should exist");
+        assert!(
+            magic.has_template_override,
+            "user-created segment must have template_json override"
+        );
     }
 
     #[tokio::test]
@@ -791,7 +801,9 @@ mod tests {
             .iter()
             .find(|s| s.slug == "concept")
             .expect("concept segment must be seeded");
-        let schema = world_intake_schema_core(db, concept.id.clone()).await.unwrap();
+        let schema = world_intake_schema_core(db, concept.id.clone())
+            .await
+            .unwrap();
         assert_eq!(schema.id, "concept");
         assert!(
             schema.fields.iter().any(|f| f.id == "main.core_premise"),
@@ -806,8 +818,7 @@ mod tests {
     /// `(temp_dir, db, root, project_id, locations_segment_id)`. The two
     /// `Id` values are stringified so they pass straight into the _core
     /// helpers without further conversion.
-    async fn mk_with_loc(
-    ) -> (TempDir, Arc<Mutex<Db>>, PathBuf, String, String) {
+    async fn mk_with_loc() -> (TempDir, Arc<Mutex<Db>>, PathBuf, String, String) {
         let (dir, db, root, project_id) = test_project().await;
         let loc_id = {
             let g = db.lock().await;
@@ -888,7 +899,9 @@ mod tests {
         )
         .await
         .unwrap();
-        let reaped = world_entry_delete_if_empty_core(db, root, id).await.unwrap();
+        let reaped = world_entry_delete_if_empty_core(db, root, id)
+            .await
+            .unwrap();
         assert!(reaped);
     }
 

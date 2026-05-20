@@ -33,8 +33,7 @@ pub async fn typing_telemetry(
 
     let handle = {
         let proj = state.project.lock().await;
-        proj.as_ref()
-            .and_then(|p| p.orchestrator.as_ref().cloned())
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
     };
     if let Some(h) = handle {
         let core_payload = TypingTelemetry {
@@ -102,14 +101,10 @@ pub struct ScenePayload {
 /// save. The orchestrator caches the body text so subsequent telemetry
 /// ticks can build prompt excerpts without re-reading from disk.
 #[tauri::command]
-pub async fn scene_state(
-    state: State<'_, AppState>,
-    payload: ScenePayload,
-) -> Result<(), String> {
+pub async fn scene_state(state: State<'_, AppState>, payload: ScenePayload) -> Result<(), String> {
     let handle = {
         let proj = state.project.lock().await;
-        proj.as_ref()
-            .and_then(|p| p.orchestrator.as_ref().cloned())
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
     };
     let Some(h) = handle else { return Ok(()) };
 

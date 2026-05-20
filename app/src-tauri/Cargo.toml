@@ -26,3 +26,4 @@ thiserror.workspace = true
 chrono.workspace = true
 rusqlite.workspace = true
 which = "6"
+dashmap = "6"
