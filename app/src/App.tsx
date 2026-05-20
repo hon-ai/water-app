@@ -131,11 +131,29 @@ export default function App() {
             onOpen={handleOpenExisting}
           />
         ) : activeNav === "characters" ? (
-          <CharactersSurface />
+          <div
+            key="surface-characters"
+            style={{ flex: 1, display: "flex", animation: "water-surface-fade var(--water-dur-medium) var(--water-ease-out-soft) both" }}
+          >
+            <CharactersSurface />
+          </div>
         ) : activeNav === "world" ? (
-          <WorldsSurface projectId={projectRoot ?? ""} />
+          <div
+            key="surface-world"
+            style={{ flex: 1, display: "flex", animation: "water-surface-fade var(--water-dur-medium) var(--water-ease-out-soft) both" }}
+          >
+            <WorldsSurface projectId={projectRoot ?? ""} />
+          </div>
         ) : (
-          <>
+          <div
+            key="surface-scenes"
+            style={{
+              flex: 1,
+              display: "flex",
+              animation:
+                "water-surface-fade var(--water-dur-medium) var(--water-ease-out-soft) both",
+            }}
+          >
             <div style={{ position: "relative", display: "flex" }}>
               <ScenesPanel
                 reloadToken={scenesReloadKey}
@@ -236,7 +254,7 @@ export default function App() {
                 onClose={() => setDetailsSceneId(null)}
               />
             )}
-          </>
+          </div>
         )}
         <CreateProjectSheet
           open={createOpen}
