@@ -53,6 +53,17 @@ pub struct AnalysisSnapshot {
     /// renderer's `typing:telemetry` events when `idle_for_ms >= 3000`.
     /// Used by `character_dissonance` to gate against character fields.
     pub last_block_text: Option<String>,
+    /// M5: average pacing across the trailing 3 paragraphs from the
+    /// `HeatStore` cache. Populated by the orchestrator service after
+    /// each heat-compute pass. `pace_floor` prefers this over the
+    /// per-tick `pace` heuristic when available — same gate semantics,
+    /// but the signal is computed once over a longer window rather
+    /// than re-derived per telemetry event.
+    pub heat_pace_tail: Option<f32>,
+    /// M5: average coherence across the trailing 3 paragraphs from the
+    /// `HeatStore` cache. `scene_flow_dip` prefers this over the
+    /// per-tick `coherence` heuristic when available.
+    pub heat_coherence_tail: Option<f32>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
