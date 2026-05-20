@@ -60,12 +60,14 @@ async fn end_to_end_trigger_evaluation_picks_speaker_and_assembles_prompt() {
     };
     let project = ProjectSnapshot::default();
     let characters = CharacterRegistry::empty();
+    let world_registry = water_core::world::WorldRegistry::default();
     let ctx = TriggerContext {
         telemetry: &telem,
         analysis: &analysis,
         scene: &scene,
         project: &project,
         characters: &characters,
+        world_registry: &world_registry,
         prompts: &prompts,
     };
 

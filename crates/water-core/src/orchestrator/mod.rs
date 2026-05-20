@@ -85,6 +85,10 @@ pub struct TriggerContext<'a> {
     pub scene: &'a SceneSnapshot,
     pub project: &'a ProjectSnapshot,
     pub characters: &'a crate::character::registry::CharacterRegistry,
+    /// World Bible snapshot built once per dispatch in
+    /// `orchestrator_service.rs` (M4 Task 13). Empty default is
+    /// acceptable for tests that don't exercise world-track logic.
+    pub world_registry: &'a crate::world::WorldRegistry,
     pub prompts: &'a crate::prompts::loader::PromptLibrary,
 }
 
@@ -169,6 +173,15 @@ pub mod test_util {
         static LIB: OnceLock<PromptLibrary> = OnceLock::new();
         LIB.get_or_init(|| PromptLibrary::load_builtin().expect("built-in prompts must load"))
     }
+
+    /// Return a borrow of a `'static` empty `WorldRegistry` for tests that
+    /// don't need world-track data. Mirrors `test_prompts` so existing
+    /// `TriggerContext { ... }` literals can pass `world_registry: test_world_registry()`
+    /// without per-test setup.
+    pub fn test_world_registry() -> &'static crate::world::WorldRegistry {
+        static REG: OnceLock<crate::world::WorldRegistry> = OnceLock::new();
+        REG.get_or_init(crate::world::WorldRegistry::default)
+    }
 }
 
 #[cfg(test)]
@@ -201,6 +214,50 @@ mod tests {
             parsed.requires_confirmation.as_ref().unwrap().kind,
             "pill_dissonance_check"
         );
+    }
+
+    #[test]
+    fn trigger_context_carries_world_registry() {
+        // M4 Task 13: TriggerContext gains a `world_registry` field.
+        // Seed the 6 built-in segments and verify the context exposes them.
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::Db::open_in_memory().unwrap();
+        let p = crate::ProjectStore::new(&db).insert("P").unwrap();
+        crate::world::WorldStore::new(&db, dir.path().to_path_buf())
+            .seed_builtins(&p.id)
+            .unwrap();
+        let world_reg =
+            crate::world::WorldRegistry::from_db(&db, &p.id, dir.path().to_path_buf()).unwrap();
+
+        let telem = TypingTelemetry {
+            idle_for_ms: 0,
+            cursor_classification: CursorClassification::AtParagraphEnd,
+            block_id: "b".into(),
+            recent_word_delta: 0,
+            structural_inflection: StructuralInflection::None,
+        };
+        let analysis = AnalysisSnapshot::default();
+        let scene = SceneSnapshot {
+            id: crate::Id::new(),
+            pov_character_id: None,
+            location_id: None,
+            characters_present: vec![],
+            word_count: 0,
+            seconds_since_last_pill: 0,
+        };
+        let project = ProjectSnapshot::default();
+        let characters = crate::character::registry::CharacterRegistry::empty();
+        let prompts = test_util::test_prompts();
+        let ctx = TriggerContext {
+            telemetry: &telem,
+            analysis: &analysis,
+            scene: &scene,
+            project: &project,
+            characters: &characters,
+            world_registry: &world_reg,
+            prompts,
+        };
+        assert_eq!(ctx.world_registry.segments().count(), 6);
     }
 
     #[test]

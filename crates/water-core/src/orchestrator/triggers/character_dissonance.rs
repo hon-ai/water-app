@@ -171,6 +171,7 @@ mod tests {
             scene,
             project,
             characters: registry,
+            world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
         }
     }

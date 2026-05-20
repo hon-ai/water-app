@@ -83,7 +83,8 @@ pub async fn create_project(
 
     let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
-    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db, root.clone()).await;
+    let orchestrator =
+        spawn_orchestrator_for_project(&app, &state, &db, &project_id, root.clone()).await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -181,7 +182,8 @@ pub async fn open_project(
     }
 
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
-    let orchestrator = spawn_orchestrator_for_project(&app, &state, &db, root.clone()).await;
+    let orchestrator =
+        spawn_orchestrator_for_project(&app, &state, &db, &water.project_id, root.clone()).await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -244,15 +246,16 @@ async fn spawn_orchestrator_for_project(
     app: &AppHandle,
     state: &State<'_, AppState>,
     db: &Arc<Mutex<water_core::Db>>,
+    project_id: &water_core::Id,
     project_root: PathBuf,
 ) -> Option<crate::orchestrator_service::OrchestratorHandle> {
-    // Personas + characters are both loaded under a single DB-lock acquisition
-    // so we don't race a writer between the two reads. The project lock is
-    // NOT held here (see callers in `create_project`/`open_project`) — they
-    // construct `OpenProject` only after this helper returns, so lock-ordering
-    // (KNOWN_FRAGILE #6: project before DB) is honored by virtue of not
-    // holding the project lock at all on this path.
-    let (personas, characters) = {
+    // Personas + characters + world are all loaded under a single DB-lock
+    // acquisition so we don't race a writer between the reads. The project
+    // lock is NOT held here (see callers in `create_project`/`open_project`)
+    // — they construct `OpenProject` only after this helper returns, so
+    // lock-ordering (KNOWN_FRAGILE #6: project before DB) is honored by
+    // virtue of not holding the project lock at all on this path.
+    let (personas, characters, world_registry) = {
         let g = db.lock().await;
         let personas = match water_core::voice::registry::PersonaRegistry::from_db(&g) {
             Ok(r) => r,
@@ -276,7 +279,23 @@ async fn spawn_orchestrator_for_project(
                 water_core::character::registry::CharacterRegistry::empty()
             }
         };
-        (personas, characters)
+        // WorldRegistry load failures are non-fatal for the same reason:
+        // an empty registry means no world-track context, but persona +
+        // character routing still works. M4 Task 13 wired the snapshot
+        // through `TriggerContext`; Task 17's `world_drift` trigger
+        // returns None on empty.
+        let world_registry =
+            match water_core::world::WorldRegistry::from_db(&g, project_id, project_root.clone()) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "world registry load failed; using empty registry"
+                    );
+                    water_core::world::WorldRegistry::default()
+                }
+            };
+        (personas, characters, world_registry)
     };
     // The orchestrator holds a CLONE of AppState.router (Arc<Mutex<...>>),
     // so any `provider_test` reconfig published into that slot is observed
@@ -288,6 +307,7 @@ async fn spawn_orchestrator_for_project(
         shared,
         personas,
         characters,
+        world_registry,
         project_root,
     );
     Some(handle)
