@@ -37,3 +37,12 @@ dialog::backdrop {
   0%, 100% { opacity: 0.35; transform: scale(0.92); }
   50%      { opacity: 0.95; transform: scale(1.04); }
 }
+
+/* Generic form-input focus state inside any <dialog> (Sheet primitive
+   children). The inline styles can't reach :focus, so we layer this on. */
+dialog input:focus,
+dialog textarea:focus {
+  border-color: color-mix(in srgb, var(--water-hue-flow) 60%, transparent) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--water-hue-flow) 18%, transparent) !important;
+}
