@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ipc,
   type HeatMetricKind,
@@ -6,6 +6,14 @@ import {
 } from "../ipc/commands";
 import { onWaterEvent } from "../ipc/events";
 import { HeatmapMetricPicker } from "./HeatmapMetricPicker";
+import { phraseFor } from "./phrasebank";
+
+const INTRO_SEEN_KEY = "water:heatmap-intro-seen";
+
+interface HoverState {
+  columnIx: number;
+  clientX: number;
+}
 
 interface Props {
   sceneId: string;
@@ -34,6 +42,83 @@ export function HeatmapStrip({ sceneId }: Props) {
     Partial<Record<HeatMetricKind, boolean>>
   >({});
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [hover, setHover] = useState<HoverState | null>(null);
+  const [introSeen, setIntroSeen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(INTRO_SEEN_KEY) === "true";
+    } catch {
+      return true;
+    }
+  });
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const scrubbingRef = useRef(false);
+
+  function dismissIntro() {
+    try {
+      localStorage.setItem(INTRO_SEEN_KEY, "true");
+    } catch {
+      /* swallow — intro will re-appear next session, no harm */
+    }
+    setIntroSeen(true);
+  }
+
+  /**
+   * Map a clientX to a paragraph index using the strip's grid-track
+   * geometry. Returns null when the strip hasn't rendered or the
+   * cursor is outside the column area (i.e., over the right-edge
+   * chip).
+   */
+  const columnAtX = useCallback(
+    (clientX: number, columnCount: number): number | null => {
+      const el = stripRef.current;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      // The chip is on the right; columns occupy the left portion.
+      // Use the inner grid container's bounding rect for precision.
+      const grid = el.querySelector<HTMLDivElement>("[data-testid='heatmap-grid']");
+      if (!grid) return null;
+      const gr = grid.getBoundingClientRect();
+      if (clientX < gr.left || clientX >= gr.right) return null;
+      const colWidth = gr.width / columnCount;
+      const ix = Math.floor((clientX - gr.left) / colWidth);
+      if (ix < 0) return 0;
+      if (ix >= columnCount) return columnCount - 1;
+      // Suppress unused-rect warning in case the linter ever complains.
+      void rect;
+      return ix;
+    },
+    [],
+  );
+
+  /**
+   * Scroll the editor body so the targeted paragraph is in view.
+   * Strategy: find the editor canvas via the data-pill-id-less
+   * container and scrollToParagraph by offset proportion. The
+   * editor renders blocks with `[data-bid]` attributes (one per
+   * block); if the body has at least `columnCount` blocks we scroll
+   * the `ix`-th one into view. Falls back to proportional scroll.
+   */
+  function scrollToParagraph(ix: number, columnCount: number) {
+    // First try: nth block with [data-bid]
+    const blocks = document.querySelectorAll<HTMLElement>(
+      ".water-editor-canvas [data-bid], [data-bid]",
+    );
+    if (blocks.length > 0 && ix < blocks.length) {
+      blocks[ix]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      return;
+    }
+    // Fallback: proportional scroll of the editor's main container.
+    const main = document.querySelector<HTMLElement>("main");
+    if (!main) return;
+    const frac = ix / Math.max(columnCount - 1, 1);
+    main.scrollTo({
+      top: frac * (main.scrollHeight - main.clientHeight),
+      behavior: "smooth",
+    });
+  }
 
   const refetch = useCallback(async () => {
     try {
@@ -111,11 +196,49 @@ export function HeatmapStrip({ sceneId }: Props) {
   const primaryKind: HeatMetricKind = activeKinds[0] ?? "pacing";
   const primaryLabel = METRIC_LABEL[primaryKind];
 
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const ix = columnAtX(e.clientX, columnCount);
+    if (ix === null) {
+      setHover(null);
+      return;
+    }
+    setHover({ columnIx: ix, clientX: e.clientX });
+    if (scrubbingRef.current) {
+      scrollToParagraph(ix, columnCount);
+    }
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const ix = columnAtX(e.clientX, columnCount);
+    if (ix === null) return;
+    scrubbingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    scrollToParagraph(ix, columnCount);
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    scrubbingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* swallow — already released */
+    }
+  };
+
+  const onPointerLeave = () => {
+    setHover(null);
+  };
+
   return (
     <div
+      ref={stripRef}
       aria-label="Heatmap"
       role="img"
       data-testid="heatmap-strip"
+      onPointerMove={onPointerMove}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerLeave}
       style={{
         position: "relative",
         height: 24,
@@ -125,17 +248,22 @@ export function HeatmapStrip({ sceneId }: Props) {
         gap: 0,
         background: "var(--water-bg-canvas)",
         borderRadius: "var(--water-r-8)",
-        overflow: "hidden",
+        overflow: "visible",
+        cursor: hover ? "ew-resize" : "default",
         animation:
           "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
+        touchAction: "none",
       }}
     >
       {/* Per-column wrapper — each column stacks one cell per active metric. */}
       <div
+        data-testid="heatmap-grid"
         style={{
           flex: 1,
           display: "grid",
           gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
+          overflow: "hidden",
+          borderRadius: "var(--water-r-8) 0 0 var(--water-r-8)",
         }}
       >
         {Array.from({ length: columnCount }).map((_, ix) => (
@@ -210,6 +338,161 @@ export function HeatmapStrip({ sceneId }: Props) {
           }
           onClose={() => setPickerOpen(false)}
         />
+      </button>
+      {hover && activeKinds.length > 0 && (
+        <HoverTooltip
+          metrics={metrics}
+          activeKinds={activeKinds}
+          columnIx={hover.columnIx}
+          clientX={hover.clientX}
+          stripEl={stripRef.current}
+        />
+      )}
+      {!introSeen && <IntroOverlay onDismiss={dismissIntro} />}
+    </div>
+  );
+}
+
+/**
+ * Floating tooltip beneath the strip showing the metric name + phrase
+ * for the hovered paragraph. Phrase comes from the deterministic
+ * phrasebank.
+ */
+function HoverTooltip({
+  metrics,
+  activeKinds,
+  columnIx,
+  clientX,
+  stripEl,
+}: {
+  metrics: HeatReadResponse["metrics"];
+  activeKinds: HeatMetricKind[];
+  columnIx: number;
+  clientX: number;
+  stripEl: HTMLDivElement | null;
+}) {
+  if (!stripEl) return null;
+  const rect = stripEl.getBoundingClientRect();
+  const left = Math.max(rect.left, Math.min(rect.right - 200, clientX - 80));
+  const top = rect.bottom + 6;
+  const lines = activeKinds
+    .map((kind) => {
+      const row = metrics[kind]?.[columnIx];
+      if (!row) return null;
+      const phrase = phraseFor(kind, row.value, columnIx);
+      const label = METRIC_LABEL[kind];
+      return { kind, phrase, label };
+    })
+    .filter(
+      (x): x is { kind: HeatMetricKind; phrase: string; label: string } =>
+        x !== null,
+    );
+  if (lines.length === 0) return null;
+  return (
+    <div
+      data-testid="heatmap-tooltip"
+      style={{
+        position: "fixed",
+        left,
+        top,
+        zIndex: 41,
+        padding: "6px 10px",
+        background: "var(--water-bg-raised)",
+        color: "var(--water-fg-default)",
+        fontFamily: "var(--water-font-sans)",
+        fontSize: 11,
+        lineHeight: 1.45,
+        borderRadius: "var(--water-r-8)",
+        boxShadow: "var(--water-elev-2)",
+        pointerEvents: "none",
+        animation:
+          "water-pill-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
+      }}
+    >
+      {lines.map(({ kind, phrase, label }) => (
+        <div
+          key={kind}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: `var(${metricHue(kind)})`,
+            }}
+          />
+          <span
+            style={{
+              color: "var(--water-fg-muted)",
+              textTransform: "lowercase",
+              letterSpacing: 0.3,
+            }}
+          >
+            {label}
+          </span>
+          <span style={{ color: "var(--water-fg-default)" }}>{phrase}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * First-launch tooltip that points at the strip and tells the writer
+ * what it does. Persists dismissal via localStorage.
+ */
+function IntroOverlay({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div
+      data-testid="heatmap-intro"
+      role="dialog"
+      aria-label="Heatmap introduction"
+      style={{
+        position: "absolute",
+        top: "calc(100% + 12px)",
+        left: 0,
+        minWidth: 260,
+        maxWidth: 320,
+        padding: "10px 12px",
+        background: "var(--water-bg-raised)",
+        color: "var(--water-fg-default)",
+        fontFamily: "var(--water-font-sans)",
+        fontSize: 12,
+        lineHeight: 1.5,
+        borderRadius: "var(--water-r-16)",
+        boxShadow: "var(--water-elev-2)",
+        zIndex: 42,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        animation:
+          "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
+      }}
+    >
+      <div style={{ flex: 1 }}>
+        this is the heat. drag to find a spot.
+      </div>
+      <button
+        type="button"
+        aria-label="Dismiss"
+        onClick={onDismiss}
+        style={{
+          border: "none",
+          background: "transparent",
+          color: "var(--water-fg-muted)",
+          cursor: "pointer",
+          padding: "0 4px",
+          fontSize: 14,
+          lineHeight: 1,
+        }}
+      >
+        ×
       </button>
     </div>
   );

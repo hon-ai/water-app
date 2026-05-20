@@ -1,0 +1,151 @@
+# Heatmap phrase bank — soft, observational copy for the hover
+# tooltip. Each metric has phrases bucketed by intensity. The
+# renderer picks one stably per (paragraph, metric) by hashing the
+# paragraph_ix so the same hover doesn't churn through phrases.
+#
+# Style notes: lowercase, no punctuation, two-three words. The
+# tooltip should read like a noticing, not a label. Avoid metaphors
+# that point at writing craft ("pacing is good", "this works") —
+# the heatmap names the shape, not the quality.
+
+[pacing.low]
+phrases = [
+    "holding",
+    "resting",
+    "slow burn",
+    "unhurried",
+    "patient",
+    "still",
+    "settled",
+    "lingering",
+]
+
+[pacing.mid]
+phrases = [
+    "even pacing",
+    "measured",
+    "sustained",
+    "moving",
+    "steady",
+    "set forth",
+    "in step",
+]
+
+[pacing.high]
+phrases = [
+    "running",
+    "quick",
+    "dense",
+    "rushing",
+    "racing",
+    "tight pulse",
+    "in spate",
+]
+
+[valence.cold]
+phrases = [
+    "cold",
+    "withdrawn",
+    "guarded",
+    "wintering",
+    "thinning out",
+    "drained",
+    "remote",
+]
+
+[valence.neutral]
+phrases = [
+    "even",
+    "neutral",
+    "observational",
+    "level",
+    "muted",
+    "noticing",
+]
+
+[valence.warm]
+phrases = [
+    "warm",
+    "tender",
+    "alive",
+    "brightening",
+    "open",
+    "soft",
+    "hopeful",
+]
+
+[coherence.low]
+phrases = [
+    "topic break",
+    "side step",
+    "drifting",
+    "sudden jump",
+    "new beat",
+    "cut",
+]
+
+[coherence.mid]
+phrases = [
+    "shifting",
+    "in motion",
+    "transitional",
+    "turning",
+    "reorienting",
+]
+
+[coherence.high]
+phrases = [
+    "tightly woven",
+    "continuous",
+    "threaded",
+    "connected",
+    "of a piece",
+    "carried over",
+]
+
+[presence.low]
+phrases = [
+    "alone",
+    "single voice",
+    "solo",
+    "uninhabited",
+    "spare cast",
+]
+
+[presence.mid]
+phrases = [
+    "small cast",
+    "two or three",
+    "few present",
+    "company",
+]
+
+[presence.high]
+phrases = [
+    "crowded",
+    "many voices",
+    "thick cast",
+    "full room",
+]
+
+[world_refs.low]
+phrases = [
+    "spare setting",
+    "world quiet",
+    "unanchored",
+]
+
+[world_refs.mid]
+phrases = [
+    "noting places",
+    "world brushed",
+    "named ground",
+]
+
+[world_refs.high]
+phrases = [
+    "deeply rooted",
+    "rich setting",
+    "world dense",
+    "many places named",
+]
