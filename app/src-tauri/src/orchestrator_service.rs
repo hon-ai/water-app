@@ -53,6 +53,59 @@ use water_core::voice::speaker::SpeakerArc;
 use water_core::world::WorldRegistry;
 use water_core::Id;
 
+/// Average of the last `n` values in a slice. Returns `None` for
+/// empty input. Used to flatten the heat metric tracks into the
+/// trigger-facing `heat_*_tail` fields.
+fn tail_average(scores: &[f32], n: usize) -> Option<f32> {
+    if scores.is_empty() {
+        return None;
+    }
+    let take = n.min(scores.len());
+    let sum: f32 = scores.iter().rev().take(take).sum();
+    Some(sum / take as f32)
+}
+
+/// Best-effort read of the scene's typing-history rows. SQLite errors
+/// (e.g., table-not-found on legacy DBs) are swallowed and an empty
+/// vec is returned — local-metric compute falls back to the empty
+/// case gracefully.
+fn read_typing_history(
+    db: &Arc<Mutex<water_core::Db>>,
+    scene_id: &Id,
+) -> Vec<water_core::heat::TypingEvent> {
+    // Acquire the lock synchronously; this fn is called from inside
+    // the orchestrator's `handle` loop, which is already on a tokio
+    // task, so `blocking_lock` is safe here.
+    let g = match db.try_lock() {
+        Ok(g) => g,
+        Err(_) => {
+            // Contention: skip this tick. The next SceneState arrival
+            // will retry.
+            return Vec::new();
+        }
+    };
+    let conn = g.conn();
+    let stmt = conn.prepare(
+        "SELECT ts_ms, word_delta FROM scene_typing_history
+         WHERE scene_id = ?1 ORDER BY ts_ms ASC",
+    );
+    let mut stmt = match stmt {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map([scene_id.as_str()], |r| {
+        Ok(water_core::heat::TypingEvent {
+            ts_ms: r.get::<_, i64>(0)?,
+            #[allow(clippy::cast_possible_truncation)]
+            word_delta: r.get::<_, i64>(1)? as i32,
+        })
+    });
+    match rows {
+        Ok(rs) => rs.filter_map(std::result::Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Minimum milliseconds between consecutive pill emissions, across all
 /// speakers and triggers. Tuned during the M4 smoke walk: with 5
 /// speakers and idle pulses every 3s, the unrestricted dispatch rate
@@ -144,6 +197,18 @@ pub struct OrchestratorService {
     /// rate limit: at least `MIN_PILL_INTERVAL_MS` between any two
     /// successful pill dispatches, regardless of which speaker.
     last_pill_emit_at: Option<std::time::Instant>,
+    /// M5: per-project DB handle used by the heat-compute path to read
+    /// scene_typing_history + write heat_metric rows after each
+    /// SceneState arrival. Wrapped in `Arc<Mutex<…>>` so the heat
+    /// compute can grab it briefly without blocking the orchestrator
+    /// loop's other handlers.
+    db: Arc<Mutex<water_core::Db>>,
+    /// M5: per-session token budget for LLM-backed heat metrics
+    /// (valence + coherence). Bites after sustained heavy editing;
+    /// see `heat::LlmBudget`. Reset on project close (orchestrator
+    /// service drops with the project; the budget drops with it).
+    #[allow(dead_code)]
+    heat_budget: Arc<water_core::heat::LlmBudget>,
     /// parent_pill_id (string form) -> list of prior bouquet variant texts.
     /// Shared via `Arc` so expand-spawn tasks can append accepted variants
     /// without re-entering the service mutex.
@@ -219,6 +284,7 @@ impl OrchestratorService {
         characters: CharacterRegistry,
         world_registry: WorldRegistry,
         project_root: PathBuf,
+        db: Arc<Mutex<water_core::Db>>,
     ) -> OrchestratorHandle {
         // Channel depth 64 was picked to comfortably absorb a burst of
         // typing-telemetry ticks (renderer fires ~one per keystroke). If
@@ -262,6 +328,8 @@ impl OrchestratorService {
             pills: Vec::new(),
             cooldowns: CooldownState::default(),
             last_pill_emit_at: None,
+            db,
+            heat_budget: Arc::new(water_core::heat::LlmBudget::default()),
             bouquet_history: Arc::new(Mutex::new(HashMap::new())),
             scene: None,
             project: ProjectSnapshot::default(),
@@ -303,9 +371,17 @@ impl OrchestratorService {
                 // bouncing between scenes doesn't reset the anti-loop
                 // history mid-thought. Revisit if cross-scene priors
                 // cause undesirable suppression.
+                let scene_id = s.id.clone();
+                let characters_present = s.characters_present.clone();
                 self.scene = Some(s);
                 self.project = p;
-                self.scene_text = text;
+                self.scene_text = text.clone();
+                // M5: drive heat recompute. Local metrics only for v1
+                // (pacing / presence / world_refs). Valence + coherence
+                // are LLM-backed and require the budget-gated path
+                // (TODO follow-up). Emits `heat:updated` so the
+                // renderer's HeatmapStrip refetches.
+                self.recompute_heat_local(scene_id, characters_present, text);
             }
             OrchestratorRequest::Expand { parent_pill_id } => {
                 self.on_expand(parent_pill_id, false).await;
@@ -321,6 +397,131 @@ impl OrchestratorService {
             }
             OrchestratorRequest::Shutdown => {}
         }
+    }
+
+    /// M5: recompute the three local-only heat metrics (Pacing,
+    /// Presence, WorldRefs) after a SceneState arrival, write them to
+    /// `HeatStore`, update the trigger-facing `analysis.heat_*_tail`
+    /// fields, and emit `heat:updated` so the renderer refetches.
+    ///
+    /// LLM-backed metrics (Valence + Coherence) are NOT computed here
+    /// in M5 v1 — they require the per-paragraph budget-gated dispatch
+    /// path that lands in the M5 follow-up. The renderer's strip
+    /// renders empty tracks for those metrics until that work lands.
+    fn recompute_heat_local(
+        &mut self,
+        scene_id: water_core::Id,
+        characters_present: Vec<water_core::Id>,
+        body: String,
+    ) {
+        use water_core::heat::{
+            compute_entity_mentions, compute_pacing, partition, Entity, HeatMetricKind,
+            HeatStore,
+        };
+
+        let paragraphs = partition(&body);
+        if paragraphs.is_empty() {
+            return;
+        }
+        let paragraph_count = paragraphs.len() as u32;
+
+        // Build the character + world entity lists once.
+        let character_entities: Vec<Entity> = characters_present
+            .iter()
+            .filter_map(|cid| {
+                self.characters.list().iter().find(|row| &row.id == cid).map(|row| {
+                    let aliases = row
+                        .data
+                        .get("main")
+                        .and_then(|m| m.get("aliases"))
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let mut names = vec![row.name.clone()];
+                    names.extend(aliases);
+                    Entity { names }
+                })
+            })
+            .collect();
+        let world_entities: Vec<Entity> = self
+            .world_registry
+            .entries_by_segment_slug("locations")
+            .into_iter()
+            .map(|snap| {
+                let mut names = vec![snap.name.clone()];
+                names.extend(snap.aliases.clone());
+                Entity { names }
+            })
+            .collect();
+
+        // Pull typing history (best-effort).
+        let history = read_typing_history(&self.db, &scene_id);
+
+        // Compute local metrics.
+        let pacing_scores = compute_pacing(&history, paragraph_count);
+        let presence_scores =
+            compute_entity_mentions(&paragraphs, &character_entities, true);
+        let world_refs_scores =
+            compute_entity_mentions(&paragraphs, &world_entities, false);
+
+        // Write batches + update trigger-facing tails. Hold the db
+        // lock briefly per kind so the orchestrator's other handlers
+        // don't starve.
+        let writes: [(HeatMetricKind, &[f32]); 3] = [
+            (HeatMetricKind::Pacing, pacing_scores.as_slice()),
+            (HeatMetricKind::Presence, presence_scores.as_slice()),
+            (HeatMetricKind::WorldRefs, world_refs_scores.as_slice()),
+        ];
+        let db = self.db.clone();
+        let app = self.app.clone();
+        // Pre-bake the rows per kind so the spawned task doesn't need
+        // to re-derive paragraph hashes.
+        let rows_per_kind: Vec<(HeatMetricKind, Vec<(u32, f32, String)>)> = writes
+            .iter()
+            .map(|(kind, scores)| {
+                let rows: Vec<(u32, f32, String)> = scores
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(ix, val)| {
+                        let p = paragraphs.get(ix)?;
+                        Some((ix as u32, *val, p.text_hash.clone()))
+                    })
+                    .collect();
+                (*kind, rows)
+            })
+            .collect();
+        let scene_id_for_task = scene_id.clone();
+        tokio::spawn(async move {
+            let g = db.lock().await;
+            let store = HeatStore::new(&g);
+            for (kind, rows) in &rows_per_kind {
+                if rows.is_empty() {
+                    continue;
+                }
+                let borrowed: Vec<(u32, f32, &str)> = rows
+                    .iter()
+                    .map(|(ix, v, h)| (*ix, *v, h.as_str()))
+                    .collect();
+                let _ = store.write_batch(&scene_id_for_task, *kind, &borrowed);
+            }
+            drop(g);
+            let _ = emit(
+                &app,
+                "heat:updated",
+                serde_json::json!({ "scene_id": scene_id_for_task.as_str() }),
+            );
+        });
+
+        // Update trigger-facing tails synchronously off the freshly-
+        // computed local metrics. Tail = average of last 3 paragraphs.
+        // Coherence isn't computed yet — leave its tail at None.
+        self.analysis.heat_pace_tail = tail_average(&pacing_scores, 3);
+        // heat_coherence_tail intentionally left None until LLM-side
+        // compute lands.
     }
 
     async fn on_telemetry(&mut self, t: TypingTelemetry, last_block_text: Option<String>) {
