@@ -241,6 +241,18 @@ export type WorldEntryIndexEntry = {
   preview: string;
 };
 
+/**
+ * Response from `pill_pin`. Mirrors `commands::pill::PinPillResponse` on
+ * the Rust side. `stub_entry_id` is non-null only for the Chorus +
+ * `no_universe_yet` path (M4 T29), which seeds a new `locations`
+ * `world_entry` with the pill's snippet so the writer can elaborate
+ * without leaving the surface.
+ */
+export interface PinPillResponse {
+  pin_id: string;
+  stub_entry_id: string | null;
+}
+
 export const ipc = {
   createProject: (parentDir: string, name: string): Promise<OpenProjectInfo> =>
     invoke("create_project", { parentDir, name }),
@@ -479,12 +491,21 @@ export const ipc = {
         world_entry_count: payload.worldEntryCount,
       },
     }),
+  /**
+   * Pin a pill. Returns the row id (currently the pill's own id) plus
+   * an optional `stub_entry_id` — populated only when the pin path
+   * created a new `world_entry` (Chorus + `no_universe_yet`). The
+   * renderer (Bouquet) routes to the new entry sheet when
+   * `stub_entry_id` is non-null. Mirrors `commands::pill::PinPillResponse`
+   * on the Rust side.
+   */
   pillPin: (
     pill: import("../pill/types").Pill,
     sceneId: string,
     blockId: string,
     snippet: string,
-  ): Promise<void> => invoke("pill_pin", { pill, sceneId, blockId, snippet }),
+  ): Promise<PinPillResponse> =>
+    invoke("pill_pin", { pill, sceneId, blockId, snippet }),
   pillDismiss: (pill_id: string): Promise<void> =>
     invoke("pill_dismiss", { pillId: pill_id }),
   pinnedList: (): Promise<import("../pill/types").Pill[]> =>
