@@ -121,6 +121,76 @@ export interface AutosuggestResult {
   mention_count: number;
 }
 
+/**
+ * One row in the World Bible segment index. Mirrors
+ * `commands::world::WorldSegmentPayload` on the Rust side. `is_collection`
+ * distinguishes the single-doc segments (e.g. Concept, Culture) from the
+ * collection segment (Locations) which carries multiple entries.
+ *
+ * `has_template_override` is `true` iff this segment has a user-edited
+ * `template_json` row — used by the UI to badge segments whose intake
+ * schema diverges from the built-in default.
+ */
+export interface WorldSegment {
+  id: string;
+  slug: string;
+  name: string;
+  ordering: number;
+  is_collection: boolean;
+  hue_token: string;
+  hidden: boolean;
+  has_template_override: boolean;
+}
+
+/**
+ * Variant shape of `WorldTemplateField.kind`. Mirrors
+ * `water_core::world::templates::WorldTemplateFieldKind`, which derives
+ * `#[serde(tag = "type", rename_all = "snake_case")]`. The `choice`
+ * variant carries an `options` array; the others do not.
+ *
+ * Note: M4 templates and M3 character intake fields share this exact
+ * discriminator shape (`short_text` / `long_text` / `string_list` /
+ * `choice`), so the renderer's field-input components can be reused. The
+ * containing field types differ — see `WorldTemplateField` below vs.
+ * `IntakeField`.
+ */
+export type WorldTemplateFieldKind =
+  | { type: "short_text" }
+  | { type: "long_text" }
+  | { type: "string_list" }
+  | { type: "choice"; options: string[] };
+
+/**
+ * One question in a world segment template. Mirrors
+ * `water_core::world::templates::WorldTemplateField`. M4 templates are
+ * runtime-loaded from `world_segment.template_json` (or a built-in
+ * default), so every field below is owned/String on the Rust side.
+ *
+ * Field-id convention: `main.<key>` for scalars/long-text, `lists.<key>`
+ * for `string_list` kinds — matches the on-disk `[main]` / `[lists]` TOML
+ * sections.
+ */
+export interface WorldTemplateField {
+  id: string;
+  label: string;
+  prompt_question: string;
+  kind: WorldTemplateFieldKind;
+  optional_skip: boolean;
+}
+
+/**
+ * One world segment template (a full intake schema). Mirrors
+ * `water_core::world::templates::WorldTemplateSchema`. Note this differs
+ * from M3's `IntakeSchemaSection` shape (M3 emits `{section, fields}`,
+ * M4 emits `{id, label, fields}`) — see the module docs in
+ * `crates/water-core/src/world/templates.rs` for the rationale.
+ */
+export interface WorldTemplateSchema {
+  id: string;
+  label: string;
+  fields: WorldTemplateField[];
+}
+
 export const ipc = {
   createProject: (parentDir: string, name: string): Promise<OpenProjectInfo> =>
     invoke("create_project", { parentDir, name }),
@@ -190,6 +260,46 @@ export const ipc = {
     bodyText: string,
   ): Promise<AutosuggestResult[]> =>
     invoke("character_autosuggest_for_scene", { sceneId, bodyText }),
+
+  // World/Setting Bible segment CRUD (M4 T8). All segment-id and
+  // project-id values are opaque ULID strings on the wire (the Rust side
+  // parses them via `Id::parse`). The renderer treats them as opaque.
+  //
+  // `worldSegmentCreate` returns the new segment's stringified id.
+  // `worldSegmentDelete` refuses to delete the six built-in slugs
+  // (`concept`, `locations`, `politics_and_social`, `culture`, `world`,
+  // `history`) — use `worldSegmentSetHidden` to hide a built-in instead.
+  worldSegmentList: (): Promise<WorldSegment[]> => invoke("world_segment_list"),
+  worldSegmentCreate: (req: {
+    name: string;
+    isCollection: boolean;
+    template: WorldTemplateSchema;
+  }): Promise<string> =>
+    invoke("world_segment_create", {
+      req: {
+        name: req.name,
+        is_collection: req.isCollection,
+        template: req.template,
+      },
+    }),
+  worldSegmentUpdateTemplate: (req: {
+    segmentId: string;
+    template: WorldTemplateSchema;
+  }): Promise<void> =>
+    invoke("world_segment_update_template", {
+      req: { segment_id: req.segmentId, template: req.template },
+    }),
+  worldSegmentSetHidden: (req: {
+    segmentId: string;
+    hidden: boolean;
+  }): Promise<void> =>
+    invoke("world_segment_set_hidden", {
+      req: { segment_id: req.segmentId, hidden: req.hidden },
+    }),
+  worldSegmentDelete: (segmentId: string): Promise<void> =>
+    invoke("world_segment_delete", { segmentId }),
+  worldIntakeSchema: (segmentId: string): Promise<WorldTemplateSchema> =>
+    invoke("world_intake_schema", { segmentId }),
 
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),
