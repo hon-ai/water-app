@@ -42,6 +42,8 @@ export function HeatmapStrip({ sceneId }: Props) {
     Partial<Record<HeatMetricKind, boolean>>
   >({});
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null);
+  const chipRef = useRef<HTMLButtonElement | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
   const [introSeen, setIntroSeen] = useState<boolean>(() => {
     try {
@@ -249,7 +251,7 @@ export function HeatmapStrip({ sceneId }: Props) {
         background: "var(--water-bg-canvas)",
         borderRadius: "var(--water-r-8)",
         overflow: "visible",
-        cursor: hover ? "ew-resize" : "default",
+        cursor: scrubbingRef.current ? "grabbing" : hover ? "grab" : "default",
         animation:
           "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
         touchAction: "none",
@@ -302,9 +304,18 @@ export function HeatmapStrip({ sceneId }: Props) {
         }}
       >
         <button
+          ref={chipRef}
           type="button"
           data-testid="heatmap-chip"
-          onClick={() => setPickerOpen((v) => !v)}
+          onClick={() => {
+            setPickerOpen((v) => {
+              const next = !v;
+              if (next && chipRef.current) {
+                setPickerAnchor(chipRef.current.getBoundingClientRect());
+              }
+              return next;
+            });
+          }}
           aria-label="Heatmap metrics"
           aria-haspopup="menu"
           aria-expanded={pickerOpen ? "true" : "false"}
@@ -343,6 +354,7 @@ export function HeatmapStrip({ sceneId }: Props) {
         <HeatmapMetricPicker
           open={pickerOpen}
           enabled={enabled}
+          anchor={pickerAnchor}
           onToggle={(kind, next) =>
             setEnabled((prev) => ({ ...prev, [kind]: next }))
           }

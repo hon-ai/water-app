@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { ipc, type HeatMetricKind } from "../ipc/commands";
 
 interface Props {
@@ -6,6 +7,13 @@ interface Props {
   enabled: Partial<Record<HeatMetricKind, boolean>>;
   onToggle: (kind: HeatMetricKind, enabled: boolean) => void;
   onClose: () => void;
+  /**
+   * The chip button's bounding rect at the moment the picker opened.
+   * Used to position the picker beneath the chip. Passing the rect (vs.
+   * a ref) lets the parent compute it once on open — the picker stays
+   * pinned where it appeared even if the strip later re-renders.
+   */
+  anchor: DOMRect | null;
 }
 
 /**
@@ -23,6 +31,7 @@ export function HeatmapMetricPicker({
   enabled,
   onToggle,
   onClose,
+  anchor,
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -43,27 +52,34 @@ export function HeatmapMetricPicker({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !anchor) return null;
 
-  return (
+  // Portal into document.body so the picker escapes every editor /
+  // canvas / scroll-area stacking context. Position fixed against the
+  // chip's bounding rect at open time. Right-aligned to the chip's
+  // right edge.
+  const PICKER_WIDTH = 300;
+  const top = anchor.bottom + 6;
+  const left = Math.max(8, anchor.right - PICKER_WIDTH);
+
+  return createPortal(
     <div
       ref={ref}
       role="menu"
       data-testid="heatmap-metric-picker"
       style={{
-        position: "absolute",
-        top: "calc(100% + 6px)",
-        right: 0,
-        minWidth: 280,
+        position: "fixed",
+        top,
+        left,
+        width: PICKER_WIDTH,
         padding: 8,
-        // Fully opaque so the title behind the strip doesn't bleed
-        // through. bg-paper is the canvas color; raised was bleeding
-        // because color-mix layers in some downstream tokens are
-        // partially transparent at this composition depth.
+        // Fully opaque so the editor body behind the strip doesn't
+        // bleed through. Portal escapes any stacking context the
+        // editor canvas may have set up.
         background: "var(--water-bg-paper)",
         borderRadius: "var(--water-r-16)",
         boxShadow: "var(--water-elev-2)",
-        zIndex: 1000,
+        zIndex: 10000,
         textAlign: "left",
         animation:
           "water-pill-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
@@ -184,7 +200,8 @@ export function HeatmapMetricPicker({
           </label>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
