@@ -2,6 +2,7 @@ import { useState } from "react";
 import { WorldIndex } from "./WorldIndex";
 import { WorldSegmentView } from "./WorldSegmentView";
 import { WorldEntrySheet } from "./WorldEntrySheet";
+import { WorldEntryIntakeSheet } from "./WorldEntryIntakeSheet";
 
 /**
  * Worlds surface router (M4 T20, spec § 10).
@@ -86,9 +87,16 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
         </div>
       )}
       {view.kind === "entry-intake" && (
-        <div data-testid="intake-placeholder">
-          intake: {view.draftEntryId}
-        </div>
+        <WorldEntryIntakeSheet
+          segmentId={view.segmentId}
+          draftEntryId={view.draftEntryId}
+          onComplete={(entryId) =>
+            setView({ kind: "entry", segmentId: view.segmentId, entryId })
+          }
+          onClose={() =>
+            setView({ kind: "segment", segmentId: view.segmentId })
+          }
+        />
       )}
       {view.kind === "new-segment" && (
         <div data-testid="new-segment-placeholder">new segment modal</div>
