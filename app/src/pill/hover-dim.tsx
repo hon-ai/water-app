@@ -1,9 +1,8 @@
-import type { CSSProperties, ReactElement } from "react";
+import type { CSSProperties } from "react";
 
 interface Props {
   active: boolean;
   anchorRect: DOMRect | null;
-  sourceRect: DOMRect | null;
   hueToken: string;
 }
 
@@ -14,14 +13,17 @@ interface Props {
  * 1. A fixed-position dim backdrop that fades up to 8% opacity when `active`,
  *    softening the main canvas so the hovered pill + its anchored block
  *    visually pop.
- * 2. An SVG glow line connecting the pill capsule's midpoint to the anchored
- *    block's midpoint, drawn only when both `anchorRect` and `sourceRect`
- *    are provided.
+ * 2. A subtle hue-tinted highlight box drawn over the anchored block (when
+ *    `anchorRect` is provided), so the writer can see which paragraph the
+ *    pill is reacting to without a connecting line drawn across the canvas.
+ *    The old SVG line was visually noisy and could occlude the pill itself
+ *    when the geometry overlapped — a positional highlight on the source
+ *    block reads as ambient rather than infrastructural.
  *
  * Both elements are `pointer-events: none` so they never steal hover/click
  * from the underlying capsule or editor.
  */
-export function HoverDim({ active, anchorRect, sourceRect, hueToken }: Props) {
+export function HoverDim({ active, anchorRect, hueToken }: Props) {
   const backdropStyle: CSSProperties = {
     position: "fixed",
     inset: 0,
@@ -32,42 +34,29 @@ export function HoverDim({ active, anchorRect, sourceRect, hueToken }: Props) {
     zIndex: 30,
   };
 
-  let line: ReactElement | null = null;
-  if (active && anchorRect && sourceRect) {
-    const x1 = sourceRect.left + sourceRect.width / 2;
-    const y1 = sourceRect.top + sourceRect.height / 2;
-    const x2 = anchorRect.left + anchorRect.width / 2;
-    const y2 = anchorRect.top + anchorRect.height / 2;
-    line = (
-      <svg
-        data-testid="water-hover-line"
-        style={{
+  const highlightStyle: CSSProperties | null =
+    active && anchorRect
+      ? {
           position: "fixed",
-          inset: 0,
-          width: "100vw",
-          height: "100vh",
+          left: anchorRect.left - 4,
+          top: anchorRect.top - 2,
+          width: anchorRect.width + 8,
+          height: anchorRect.height + 4,
+          background: `color-mix(in oklch, var(${hueToken}) 14%, transparent)`,
+          borderRadius: "var(--water-r-8)",
           pointerEvents: "none",
           zIndex: 31,
-        }}
-      >
-        <line
-          x1={x1}
-          y1={y1}
-          x2={x2}
-          y2={y2}
-          stroke={`var(${hueToken})`}
-          strokeWidth="1"
-          strokeOpacity="0.6"
-          style={{ filter: `drop-shadow(0 0 6px var(${hueToken}))` }}
-        />
-      </svg>
-    );
-  }
+          transition:
+            "opacity var(--water-dur-tiny) var(--water-ease-out-soft)",
+        }
+      : null;
 
   return (
     <>
       <div data-testid="water-hover-dim" style={backdropStyle} />
-      {line}
+      {highlightStyle && (
+        <div data-testid="water-hover-highlight" style={highlightStyle} />
+      )}
     </>
   );
 }
