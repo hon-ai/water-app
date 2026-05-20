@@ -67,6 +67,9 @@ fn main() {
             commands::world::world_entry_delete_if_empty,
             commands::world::world_entry_delete,
             commands::world::world_autosuggest,
+            commands::heat::heat_read,
+            commands::heat::heat_set_metric_enabled,
+            commands::heat::heat_read_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

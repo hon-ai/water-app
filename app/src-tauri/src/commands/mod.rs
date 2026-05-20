@@ -1,6 +1,7 @@
 pub mod character;
 pub mod diagnostics;
 pub mod events;
+pub mod heat;
 pub mod pill;
 pub mod project;
 pub mod provider;
