@@ -105,7 +105,7 @@ export function CharacterIntakeSheet({
           onClose={onClose}
         />
       ) : (
-        <div role="status">Loading&hellip;</div>
+        <div role="status" className="water-loading">Loading</div>
       )}
     </Sheet>
   );

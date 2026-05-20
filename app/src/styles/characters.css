@@ -1,0 +1,190 @@
+/* =====================================================================
+   Characters surface — index grid, card, sheet.
+   ===================================================================== */
+
+.water-character-index {
+  flex: 1;
+  background: var(--water-bg-paper);
+  overflow: auto;
+  padding: 32px 32px 64px 32px;
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.water-character-index header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.water-character-index header h1 {
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-display);
+  line-height: var(--water-lh-display);
+  font-weight: 500;
+  letter-spacing: -0.3px;
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
+  color: var(--water-fg-default);
+}
+
+.water-character-index header input[type="search"] {
+  flex: 1;
+  max-width: 260px;
+  min-width: 160px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 25%, transparent);
+  border-radius: var(--water-r-8);
+  background: var(--water-bg-canvas);
+  color: var(--water-fg-default);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  outline: none;
+  transition: border-color var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+.water-character-index header input[type="search"]:focus {
+  border-color: color-mix(in srgb, var(--water-hue-flow) 55%, transparent);
+}
+
+.water-character-index header label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--water-fs-meta);
+  color: var(--water-fg-muted);
+  font-family: var(--water-font-sans);
+}
+
+.water-character-index header select {
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 25%, transparent);
+  border-radius: var(--water-r-8);
+  background: var(--water-bg-canvas);
+  color: var(--water-fg-default);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  cursor: pointer;
+}
+
+.water-character-index header button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--water-r-8);
+  background: color-mix(in srgb, var(--water-hue-flow) 22%, transparent);
+  color: var(--water-fg-default);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+.water-character-index header button:hover {
+  background: color-mix(in srgb, var(--water-hue-flow) 36%, transparent);
+}
+
+.water-character-index > [role="status"] {
+  padding: 32px;
+  color: var(--water-fg-muted);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  text-align: center;
+  font-style: italic;
+}
+
+.water-character-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.water-character-grid li {
+  display: contents;
+}
+
+.water-character-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px 14px 22px;
+  min-height: 116px;
+  background:
+    radial-gradient(at top right, color-mix(in oklch, var(--card-hue, var(--water-hue-character-1)) 16%, transparent), transparent 70%),
+    var(--water-bg-canvas);
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 12%, transparent);
+  border-radius: var(--water-r-16);
+  color: var(--water-fg-default);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--water-font-sans);
+  transition:
+    transform var(--water-dur-tiny) var(--water-ease-out-soft),
+    border-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    box-shadow var(--water-dur-tiny) var(--water-ease-out-soft);
+  /* The hue ribbon on the left edge needs the card to expose its own
+     hue as a CSS variable. The component sets data-hue-token; we mirror
+     it via the attribute selector below. */
+}
+
+.water-character-card[data-hue-token] {
+  --card-hue: var(--water-hue-character-1);
+}
+.water-character-card[data-hue-token="--water-hue-character-1"] { --card-hue: var(--water-hue-character-1); }
+.water-character-card[data-hue-token="--water-hue-character-2"] { --card-hue: var(--water-hue-character-2); }
+.water-character-card[data-hue-token="--water-hue-character-3"] { --card-hue: var(--water-hue-character-3); }
+.water-character-card[data-hue-token="--water-hue-character-4"] { --card-hue: var(--water-hue-character-4); }
+.water-character-card[data-hue-token="--water-hue-character-5"] { --card-hue: var(--water-hue-character-5); }
+.water-character-card[data-hue-token="--water-hue-character-6"] { --card-hue: var(--water-hue-character-6); }
+
+.water-character-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--card-hue) 45%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--card-hue) 28%, transparent);
+}
+
+.water-character-card__hue {
+  position: absolute;
+  left: 8px;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--card-hue);
+  box-shadow: 0 0 12px color-mix(in oklch, var(--card-hue) 55%, transparent);
+}
+
+.water-character-card__name {
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-title);
+  line-height: var(--water-lh-title);
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+
+.water-character-card__name em {
+  font-style: italic;
+  color: var(--water-fg-faint);
+  font-weight: 400;
+}
+
+.water-character-card__role {
+  font-size: var(--water-fs-meta);
+  color: var(--water-fg-muted);
+  text-transform: lowercase;
+}
+
+.water-character-card__completion {
+  font-size: var(--water-fs-meta);
+  color: var(--water-fg-faint);
+  margin-top: auto;
+}

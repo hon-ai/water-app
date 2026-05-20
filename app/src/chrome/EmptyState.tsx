@@ -6,13 +6,36 @@ interface Props {
 }
 
 export function EmptyState({ onCreate, onOpen }: Props) {
-  const btn: React.CSSProperties = {
-    padding: "10px 18px",
+  const primaryBtn: React.CSSProperties = {
+    padding: "10px 20px",
     border: "none",
     borderRadius: "var(--water-r-16)",
     fontFamily: "var(--water-font-sans)",
     fontSize: "var(--water-fs-ui)",
+    fontWeight: 500,
     cursor: "pointer",
+    background:
+      "color-mix(in srgb, var(--water-hue-flow) 50%, transparent)",
+    color: "var(--water-fg-default)",
+    boxShadow:
+      "0 0 24px color-mix(in srgb, var(--water-hue-flow) 35%, transparent)",
+    transition:
+      "background-color var(--water-dur-tiny) var(--water-ease-out-soft), box-shadow var(--water-dur-tiny) var(--water-ease-out-soft)",
+  };
+  const secondaryBtn: React.CSSProperties = {
+    padding: "10px 20px",
+    border: "none",
+    borderRadius: "var(--water-r-16)",
+    fontFamily: "var(--water-font-sans)",
+    fontSize: "var(--water-fs-ui)",
+    fontWeight: 500,
+    cursor: "pointer",
+    background: "transparent",
+    color: "var(--water-fg-default)",
+    boxShadow:
+      "inset 0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
+    transition:
+      "background-color var(--water-dur-tiny) var(--water-ease-out-soft)",
   };
 
   return (
@@ -23,19 +46,43 @@ export function EmptyState({ onCreate, onOpen }: Props) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
+      {/* Ambient hue wash behind the content — soft, off-center. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(circle at 30% 40%, color-mix(in srgb, var(--water-hue-flow) 14%, transparent), transparent 60%)",
+          pointerEvents: "none",
+        }}
+      />
       <div
         style={{
+          position: "relative",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 16,
-          maxWidth: 420,
+          gap: 18,
+          maxWidth: 440,
           textAlign: "center",
+          padding: "0 24px",
+          animation:
+            "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
         }}
       >
-        <div aria-hidden style={{ color: "var(--water-hue-flow)" }}>
+        <div
+          aria-hidden
+          style={{
+            color: "var(--water-hue-flow)",
+            filter:
+              "drop-shadow(0 0 18px color-mix(in srgb, var(--water-hue-flow) 55%, transparent))",
+          }}
+        >
           <Droplet size={56} strokeWidth={1.25} />
         </div>
         <h1
@@ -45,6 +92,7 @@ export function EmptyState({ onCreate, onOpen }: Props) {
             fontSize: "var(--water-fs-display)",
             lineHeight: "var(--water-lh-display)",
             fontWeight: 500,
+            letterSpacing: -0.4,
             color: "var(--water-fg-default)",
           }}
         >
@@ -56,33 +104,17 @@ export function EmptyState({ onCreate, onOpen }: Props) {
             color: "var(--water-fg-muted)",
             fontFamily: "var(--water-font-sans)",
             fontSize: "var(--water-fs-body)",
-            lineHeight: "var(--water-lh-body)",
+            lineHeight: 1.55,
           }}
         >
-          Begin a project, or open one you've already started.
+          A writing surface that listens. Begin a project, or open one you've
+          already started.
         </p>
-        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-          <button
-            type="button"
-            onClick={onCreate}
-            style={{
-              ...btn,
-              background: "color-mix(in srgb, var(--water-hue-flow) 50%, transparent)",
-              color: "var(--water-fg-default)",
-            }}
-          >
+        <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+          <button type="button" onClick={onCreate} style={primaryBtn}>
             Create new project
           </button>
-          <button
-            type="button"
-            onClick={onOpen}
-            style={{
-              ...btn,
-              background: "transparent",
-              color: "var(--water-fg-default)",
-              boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
-            }}
-          >
+          <button type="button" onClick={onOpen} style={secondaryBtn}>
             Open existing
           </button>
         </div>

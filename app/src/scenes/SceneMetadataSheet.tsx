@@ -116,7 +116,7 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
   if (!meta) {
     return (
       <Sheet open={open} onClose={onClose} title="Scene details">
-        <div role="status">Loading…</div>
+        <div role="status" className="water-loading">Loading</div>
       </Sheet>
     );
   }

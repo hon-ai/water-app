@@ -39,7 +39,7 @@ export function WorldSegmentView({
     };
   }, [segmentId]);
 
-  if (!segment) return <div>Loading…</div>;
+  if (!segment) return <div className="water-loading">Loading</div>;
   if (segment.is_collection) {
     return (
       <WorldCollectionGrid

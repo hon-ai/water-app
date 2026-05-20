@@ -1,0 +1,39 @@
+/* =====================================================================
+   Sheet primitive — right-edge slide-in.
+   Also: a tiny loading-pulse atom for "Loading…" spots across surfaces.
+   ===================================================================== */
+
+/* <dialog> backdrop. The default UA backdrop is usually invisible or
+   very light; we want a subtle dim so the canvas behind reads as
+   muted, not gone. The Sheet primitive itself handles its
+   translateX transform on the dialog element. */
+dialog::backdrop {
+  background: color-mix(in srgb, var(--water-fg-default) 14%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+/* Loading-pulse atom: replaces bare "Loading…" text on surfaces that
+   are still fetching data. Used inline via the .water-loading class. */
+.water-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--water-fg-muted);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+}
+
+.water-loading::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--water-hue-flow) 60%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--water-hue-flow) 50%, transparent);
+  animation: water-loading-pulse 1.4s var(--water-ease-out-soft) infinite;
+}
+
+@keyframes water-loading-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.92); }
+  50%      { opacity: 0.95; transform: scale(1.04); }
+}
