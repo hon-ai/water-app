@@ -4,7 +4,10 @@ import { Editor } from "../editor/Editor";
 import { PillLayer } from "../pill/PillLayer";
 import { PinnedColumn } from "../pill/PinnedColumn";
 import { useElementWidth } from "../pill/useElementWidth";
-import { publishAutosuggest } from "../scenes/sceneMetadataChannel";
+import {
+  publishChips,
+  type ChipSuggestion,
+} from "../scenes/sceneMetadataChannel";
 
 interface Props {
   sceneId: string;
@@ -143,15 +146,43 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
               worldEntryCount: 0,
             })
             .catch(() => {});
-          // Autosuggest fan-out. Awaited so we can guard `publishAutosuggest`
-          // behind `cancelled`, but the await is inside its own try/catch
-          // to keep failure from poisoning the save flow above.
+          // Autosuggest fan-out. Two scanners run in parallel:
+          //   1. character — name-match against linked + known characters
+          //   2. world — name+alias-match against `locations`-segment entries
+          // Failures in either scanner are swallowed and the other still
+          // ships. `cancelled` guards against a scene switch landing
+          // between save and publish.
           try {
-            const suggestions = await ipc.characterAutosuggestForScene(
-              sceneId,
-              body,
-            );
-            if (!cancelled) publishAutosuggest(sceneId, suggestions);
+            const [charHits, worldHits] = await Promise.allSettled([
+              ipc.characterAutosuggestForScene(sceneId, body),
+              ipc.worldAutosuggest({ sceneId, paragraph: body }),
+            ]);
+            if (cancelled) return;
+            const merged: ChipSuggestion[] = [];
+            if (charHits.status === "fulfilled") {
+              for (const h of charHits.value) {
+                merged.push({
+                  kind: "character",
+                  characterId: h.character_id,
+                  characterName: h.full_name,
+                  mentionCount: h.mention_count,
+                });
+              }
+            }
+            if (worldHits.status === "fulfilled") {
+              for (const h of worldHits.value) {
+                merged.push({
+                  kind: "world_entry",
+                  entryId: h.id,
+                  entryName: h.name,
+                  // `world_autosuggest_core` already filters to
+                  // `locations`-segment hits, so the renderer can rely
+                  // on this label.
+                  segmentSlug: "locations",
+                });
+              }
+            }
+            publishChips(sceneId, merged);
           } catch {
             /* swallow — autosuggest is best-effort */
           }
