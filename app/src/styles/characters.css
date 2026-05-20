@@ -275,3 +275,106 @@
   color: var(--water-fg-muted);
   margin: 0 0 14px 0;
 }
+
+/* =====================================================================
+   InlineField — click-to-edit cell used in CharacterSheet + WorldEntrySheet
+   ===================================================================== */
+
+.water-inline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: var(--water-r-8);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    border-color var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+.water-inline-field:hover,
+.water-inline-field:focus-visible {
+  background: color-mix(in srgb, var(--water-fg-faint) 6%, transparent);
+  border-color: color-mix(in srgb, var(--water-fg-faint) 18%, transparent);
+}
+
+.water-inline-field[data-editing="true"] {
+  cursor: text;
+  background: var(--water-bg-canvas);
+  border-color: color-mix(in srgb, var(--water-hue-flow) 50%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--water-hue-flow) 14%, transparent);
+}
+
+.water-inline-field label {
+  font-family: var(--water-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--water-fg-muted);
+  cursor: pointer;
+}
+
+.water-inline-field > div {
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-body);
+  line-height: 1.55;
+  color: var(--water-fg-default);
+  white-space: pre-wrap;
+}
+
+.water-inline-field > div[data-empty="true"] {
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  color: var(--water-fg-faint);
+  font-style: italic;
+}
+
+.water-inline-field input,
+.water-inline-field textarea,
+.water-inline-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 0 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--water-fg-default);
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-body);
+  line-height: 1.55;
+  outline: none;
+}
+
+.water-inline-field textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.water-inline-field select {
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  cursor: pointer;
+}
+
+[data-testid="status-chip"] {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: var(--water-r-8);
+  background: color-mix(in srgb, var(--water-hue-flow) 16%, transparent);
+  color: var(--water-fg-muted);
+  font-family: var(--water-font-sans);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  align-self: flex-start;
+}
+
+[data-testid="status-chip"][role="alert"] {
+  background: color-mix(in srgb, var(--water-hue-drift) 22%, transparent);
+  color: var(--water-fg-default);
+}
