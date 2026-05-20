@@ -21,11 +21,13 @@
 //! ring for pacing). Both cascade on scene delete (v5 migration).
 
 pub mod compute;
+pub mod llm;
 pub mod paragraph;
 mod store;
 mod types;
 
 pub use compute::{compute_entity_mentions, compute_pacing, Entity, TypingEvent};
+pub use llm::compute_valence;
 pub use paragraph::{hash_text, partition, Paragraph};
 pub use store::HeatStore;
 pub use types::{HeatMetricKind, HeatRow};
