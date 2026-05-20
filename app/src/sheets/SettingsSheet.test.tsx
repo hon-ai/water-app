@@ -134,12 +134,21 @@ describe("SettingsSheet event subscription", () => {
     });
     render(wrap(<SettingsSheet open={true} onClose={() => {}} />));
     await waitFor(() => expect(handlers["provider:status"]).toBeDefined());
-    // Initial render: openai is not ok, so "ok" text is absent.
-    expect(screen.queryByText("ok")).not.toBeInTheDocument();
+    // Initial render: openai is not ok, so the action button reads
+    // "Test" (the post-polish UI uses a hue-glow dot for status and
+    // re-labels the button to "Re-test" once a provider is active).
+    expect(screen.getByRole("button", { name: "Test" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Re-test" }),
+    ).not.toBeInTheDocument();
     await act(async () => {
       handlers["provider:status"]!({ provider_id: "openai", ok: true, error: null });
     });
-    await waitFor(() => expect(screen.getByText("ok")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Re-test" }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("invokes unsub even when the sheet closes before onWaterEvent resolves", async () => {
