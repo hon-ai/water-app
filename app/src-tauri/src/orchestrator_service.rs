@@ -53,6 +53,14 @@ use water_core::voice::speaker::SpeakerArc;
 use water_core::world::WorldRegistry;
 use water_core::Id;
 
+/// Minimum milliseconds between consecutive pill emissions, across all
+/// speakers and triggers. Tuned during the M4 smoke walk: with 5
+/// speakers and idle pulses every 3s, the unrestricted dispatch rate
+/// produced visibly cycling pills (FIFO-evicting each other before the
+/// writer could read them). 15s leaves room for each pill to be read
+/// while still feeling responsive on long writing sessions.
+const MIN_PILL_INTERVAL_MS: u64 = 15_000;
+
 /// Shared slot holding the optional `LlmRouter`. Mirrors
 /// `AppState.router` so the service sees provider reconfiguration without
 /// being torn down and rebuilt.
@@ -128,6 +136,14 @@ pub struct OrchestratorService {
     prompts: Arc<PromptLibrary>,
     pills: Vec<Pill>,
     cooldowns: CooldownState,
+    /// Global pill-emission interval gate. Independent of per-speaker
+    /// cooldowns (which range 45-90s each). With 5 speakers and idle
+    /// pulses every 3s, the writer could otherwise see a new pill from
+    /// a different speaker every tick — 5 pills in 15s — which the
+    /// M4 smoke walk surfaced as too fast to read. This is a coarse
+    /// rate limit: at least `MIN_PILL_INTERVAL_MS` between any two
+    /// successful pill dispatches, regardless of which speaker.
+    last_pill_emit_at: Option<std::time::Instant>,
     /// parent_pill_id (string form) -> list of prior bouquet variant texts.
     /// Shared via `Arc` so expand-spawn tasks can append accepted variants
     /// without re-entering the service mutex.
@@ -245,6 +261,7 @@ impl OrchestratorService {
             prompts,
             pills: Vec::new(),
             cooldowns: CooldownState::default(),
+            last_pill_emit_at: None,
             bouquet_history: Arc::new(Mutex::new(HashMap::new())),
             scene: None,
             project: ProjectSnapshot::default(),
@@ -324,6 +341,19 @@ impl OrchestratorService {
         let Some(scene) = self.scene.clone() else {
             return;
         };
+
+        // Gate 3: global pill-emission interval. Even if a trigger fires
+        // and Stage 2 confirms, don't dispatch faster than
+        // `MIN_PILL_INTERVAL_MS` so the writer has time to read each
+        // pill. This is independent of per-speaker cooldowns (which
+        // are 45-90s each) — without it, the writer can see a new pill
+        // from a different speaker every idle pulse (~3s), which the
+        // M4 smoke walk surfaced as too fast to read.
+        if let Some(last) = self.last_pill_emit_at {
+            if last.elapsed().as_millis() < u128::from(MIN_PILL_INTERVAL_MS) {
+                return;
+            }
+        }
 
         // Highest-priority candidate among the 10 built-in triggers.
         let Some(cand) = pick_best_trigger(
@@ -435,6 +465,7 @@ impl OrchestratorService {
         let pill_id_str = pill.id.as_str().to_string();
         self.pills.push(pill);
         self.cooldowns.note_emit(&speaker_id);
+        self.last_pill_emit_at = Some(std::time::Instant::now());
 
         // Eviction: pick_evictee operates on `OnScreen` pills only. The
         // service currently never transitions service-side pills out of
