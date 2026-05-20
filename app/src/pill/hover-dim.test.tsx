@@ -19,12 +19,7 @@ const fakeRect = (overrides: Partial<DOMRect> = {}): DOMRect =>
 describe("HoverDim", () => {
   it("renders a backdrop with opacity 0 by default", () => {
     render(
-      <HoverDim
-        active={false}
-        anchorRect={null}
-        sourceRect={null}
-        hueToken="--water-hue-muse"
-      />,
+      <HoverDim active={false} anchorRect={null} hueToken="--water-hue-muse" />,
     );
     const backdrop = screen.getByTestId("water-hover-dim");
     expect(backdrop.style.opacity).toBe("0");
@@ -33,28 +28,41 @@ describe("HoverDim", () => {
   it("sets opacity > 0 when active", () => {
     const r = fakeRect();
     render(
-      <HoverDim
-        active={true}
-        anchorRect={r}
-        sourceRect={r}
-        hueToken="--water-hue-muse"
-      />,
+      <HoverDim active={true} anchorRect={r} hueToken="--water-hue-muse" />,
     );
     const backdrop = screen.getByTestId("water-hover-dim");
     expect(parseFloat(backdrop.style.opacity)).toBeGreaterThan(0);
   });
 
-  it("renders an SVG line when active with both rects", () => {
+  it("renders an anchor highlight rect when active with anchorRect", () => {
     const a = fakeRect();
-    const s = fakeRect({ top: 50, left: 800, right: 900, x: 800, y: 50, height: 30, bottom: 80 });
     render(
-      <HoverDim
-        active={true}
-        anchorRect={a}
-        sourceRect={s}
-        hueToken="--water-hue-muse"
-      />,
+      <HoverDim active={true} anchorRect={a} hueToken="--water-hue-muse" />,
     );
-    expect(screen.getByTestId("water-hover-line")).toBeInTheDocument();
+    const highlight = screen.getByTestId("water-hover-highlight");
+    expect(highlight).toBeInTheDocument();
+    // Positioned over the anchored block with small padding.
+    expect(highlight.style.position).toBe("fixed");
+    expect(parseFloat(highlight.style.left)).toBeCloseTo(a.left - 4);
+    expect(parseFloat(highlight.style.top)).toBeCloseTo(a.top - 2);
+  });
+
+  it("does not render the highlight when anchorRect is null", () => {
+    render(
+      <HoverDim active={true} anchorRect={null} hueToken="--water-hue-muse" />,
+    );
+    expect(
+      screen.queryByTestId("water-hover-highlight"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not render the highlight when not active", () => {
+    const a = fakeRect();
+    render(
+      <HoverDim active={false} anchorRect={a} hueToken="--water-hue-muse" />,
+    );
+    expect(
+      screen.queryByTestId("water-hover-highlight"),
+    ).not.toBeInTheDocument();
   });
 });

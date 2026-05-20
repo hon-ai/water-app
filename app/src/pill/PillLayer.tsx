@@ -196,22 +196,13 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
 
   const hoveredPill = pills.find((p) => p.pill_id === hoveredId) ?? null;
   let anchorRect: DOMRect | null = null;
-  let sourceRect: DOMRect | null = null;
-  if (hoveredPill) {
-    const sourceEl = layerRef.current?.querySelector(
-      `[data-pill-id="${hoveredPill.pill_id}"]`,
+  if (hoveredPill && hoveredPill.block_target_id) {
+    const blockEl = document.querySelector(
+      `[data-bid="${hoveredPill.block_target_id}"]`,
     );
-    sourceRect = sourceEl
-      ? (sourceEl as HTMLElement).getBoundingClientRect()
+    anchorRect = blockEl
+      ? (blockEl as HTMLElement).getBoundingClientRect()
       : null;
-    if (hoveredPill.block_target_id) {
-      const blockEl = document.querySelector(
-        `[data-bid="${hoveredPill.block_target_id}"]`,
-      );
-      anchorRect = blockEl
-        ? (blockEl as HTMLElement).getBoundingClientRect()
-        : null;
-    }
   }
 
   const closeRabbitHole = (rootId: string) => {
@@ -242,7 +233,6 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
       <HoverDim
         active={hoveredPill !== null}
         anchorRect={anchorRect}
-        sourceRect={sourceRect}
         hueToken={hoveredPill?.hue_token ?? "--water-hue-muse"}
       />
       <div

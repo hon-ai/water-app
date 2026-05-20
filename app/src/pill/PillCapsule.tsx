@@ -7,28 +7,75 @@ interface Props {
 }
 
 /**
+ * Known persona speaker slugs (lowercase). Anything else is treated as
+ * a character id and displayed verbatim with title-casing rules below.
+ * The set lives in this file so the chip-label formatter is purely local;
+ * if more personas are added later, just append the slug here.
+ */
+const PERSONA_SLUGS: ReadonlySet<string> = new Set([
+  "cartographer",
+  "echo",
+  "architect",
+  "editor",
+  "chorus",
+]);
+
+function formatSpeakerLabel(speakerId: string): string | null {
+  if (!speakerId) return null;
+  // Persona slugs are short, alphanumeric, and known to us: title-case.
+  if (PERSONA_SLUGS.has(speakerId)) {
+    return speakerId.charAt(0).toUpperCase() + speakerId.slice(1);
+  }
+  // ULID-shaped ids (26 uppercase alphanumeric chars) are character
+  // speakers; we don't have a name registry in the capsule, so omit the
+  // chip rather than show a noisy id. (Future: thread the display name
+  // through the pill event so character voices get a chip too.)
+  if (/^[0-9A-Z]{26}$/.test(speakerId)) {
+    return null;
+  }
+  return speakerId;
+}
+
+/**
  * A single pastel-glow pill capsule.
  *
  * Visuals come from CSS custom properties driven by the speaker's hue token.
  * The `data-pill-id` and `data-block-target-id` attributes are read by T20
  * hover-anchor logic; the optional `onClick` is wired by T21's expand-to-
  * bouquet flow.
+ *
+ * Sizing is tuned to feel like a marginal note rather than a chat bubble:
+ * meta-size text, narrow max-width, subdued padding. The speaker chip at
+ * the top conveys author (Cartographer / Echo / etc.) at a glance — the
+ * hue alone was not enough to distinguish personas during the M4 smoke walk.
  */
 export function PillCapsule({ pill, onClick }: Props) {
+  const speakerLabel = formatSpeakerLabel(pill.speaker_id);
   const style: CSSProperties = {
     position: "relative",
-    padding: "8px 14px",
+    padding: "6px 10px",
     borderRadius: "var(--water-r-16)",
-    background: `color-mix(in oklch, var(${pill.hue_token}) 35%, var(--water-bg-paper))`,
-    boxShadow: `0 0 24px color-mix(in oklch, var(${pill.hue_token}) 60%, transparent)`,
+    background: `color-mix(in oklch, var(${pill.hue_token}) 30%, var(--water-bg-paper))`,
+    boxShadow: `0 0 18px color-mix(in oklch, var(${pill.hue_token}) 50%, transparent)`,
     color: "var(--water-fg-default)",
     fontFamily: "var(--water-font-sans)",
-    fontSize: "var(--water-fs-body)",
-    lineHeight: "var(--water-lh-body)",
-    maxWidth: 220,
+    fontSize: "var(--water-fs-meta)",
+    lineHeight: 1.4,
+    maxWidth: 200,
     cursor: onClick ? "pointer" : "default",
     pointerEvents: "auto",
-    animation: "water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
+    animation:
+      "water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
+  };
+  const chipStyle: CSSProperties = {
+    display: "inline-block",
+    fontSize: 10,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: `color-mix(in oklch, var(${pill.hue_token}) 80%, var(--water-fg-default))`,
+    marginBottom: 2,
+    opacity: 0.85,
   };
   return (
     <div
@@ -38,6 +85,11 @@ export function PillCapsule({ pill, onClick }: Props) {
       onClick={onClick}
       style={style}
     >
+      {speakerLabel && (
+        <div data-testid="pill-speaker-label" style={chipStyle}>
+          {speakerLabel}
+        </div>
+      )}
       {pill.text}
     </div>
   );
