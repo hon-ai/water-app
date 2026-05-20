@@ -5,6 +5,7 @@ import {
   ipc,
   type CharacterIndexEntry,
   type SceneMetadata,
+  type WorldEntryIndexEntry,
 } from "../ipc/commands";
 
 interface Props {
@@ -29,6 +30,12 @@ interface Props {
 export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
   const [allChars, setAllChars] = useState<CharacterIndexEntry[]>([]);
   const [meta, setMeta] = useState<SceneMetadata | null>(null);
+  // `null` here means "no `locations` segment exists in this project" —
+  // the selector hides entirely. An empty array means "segment exists but
+  // has no entries" — the selector still renders with just the
+  // "— none —" option.
+  const [locationOptions, setLocationOptions] =
+    useState<WorldEntryIndexEntry[] | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -67,6 +74,44 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
       cancelled = true;
     };
   }, [open, sceneId]);
+
+  // Load the `locations` segment + its entries once per open. The sheet
+  // shows whatever entries exist at open time; a stub created via Chorus
+  // pin (T29+) lands the next time the sheet is reopened.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const segs = await ipc.worldSegmentList();
+        const loc = segs.find((s) => s.slug === "locations");
+        if (!loc) {
+          if (!cancelled) setLocationOptions(null);
+          return;
+        }
+        const entries = await ipc.worldEntryList(loc.id);
+        if (cancelled) return;
+        setLocationOptions(entries);
+      } catch {
+        if (!cancelled) setLocationOptions(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sceneId]);
+
+  const setLocation = useCallback(
+    async (locationId: string | null) => {
+      try {
+        await ipc.sceneSetLocation({ sceneId, locationId });
+        await reload();
+      } catch {
+        /* swallow */
+      }
+    },
+    [sceneId, reload],
+  );
 
   if (!meta) {
     return (
@@ -152,7 +197,7 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
           ))}
         </ul>
       </section>
-      <section>
+      <section style={{ marginBottom: 16 }}>
         <h3
           style={{
             margin: "0 0 8px 0",
@@ -189,6 +234,45 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
           ))}
         </select>
       </section>
+      {locationOptions !== null && (
+        <section>
+          <h3
+            style={{
+              margin: "0 0 8px 0",
+              fontFamily: "var(--water-font-sans)",
+              fontSize: "var(--water-fs-ui)",
+              fontWeight: 500,
+              color: "var(--water-fg-muted)",
+            }}
+          >
+            Location
+          </h3>
+          <select
+            aria-label="Location"
+            value={meta.location?.id ?? ""}
+            onChange={(e) =>
+              void setLocation(e.target.value === "" ? null : e.target.value)
+            }
+            style={{
+              fontFamily: "var(--water-font-sans)",
+              fontSize: "var(--water-fs-ui)",
+              padding: "4px 8px",
+              borderRadius: "var(--water-r-8)",
+              border:
+                "1px solid color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
+              background: "var(--water-bg-paper)",
+              color: "var(--water-fg-default)",
+            }}
+          >
+            <option value="">— none —</option>
+            {locationOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.name || "(unnamed)"}
+              </option>
+            ))}
+          </select>
+        </section>
+      )}
     </Sheet>
   );
 }

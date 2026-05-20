@@ -24,6 +24,9 @@ vi.mock("../ipc/commands", () => ({
     characterLinkToScene: vi.fn(),
     characterUnlinkFromScene: vi.fn(),
     characterSetPov: vi.fn(),
+    worldSegmentList: vi.fn(),
+    worldEntryList: vi.fn(),
+    sceneSetLocation: vi.fn(),
   },
 }));
 
@@ -66,6 +69,9 @@ function mockIpcDefaults() {
   (ipc.characterLinkToScene as ReturnType<typeof vi.fn>).mockReset();
   (ipc.characterUnlinkFromScene as ReturnType<typeof vi.fn>).mockReset();
   (ipc.characterSetPov as ReturnType<typeof vi.fn>).mockReset();
+  (ipc.worldSegmentList as ReturnType<typeof vi.fn>).mockReset();
+  (ipc.worldEntryList as ReturnType<typeof vi.fn>).mockReset();
+  (ipc.sceneSetLocation as ReturnType<typeof vi.fn>).mockReset();
   (ipc.characterList as ReturnType<typeof vi.fn>).mockResolvedValue(mockChars);
   (ipc.sceneReadMetadata as ReturnType<typeof vi.fn>).mockResolvedValue(
     mockMeta,
@@ -79,6 +85,35 @@ function mockIpcDefaults() {
   (ipc.characterSetPov as ReturnType<typeof vi.fn>).mockResolvedValue(
     undefined,
   );
+  // Default world fixtures: a single `locations` segment with two entries.
+  // Tests that need a "no locations segment" or empty-entry case override.
+  (ipc.worldSegmentList as ReturnType<typeof vi.fn>).mockResolvedValue([
+    {
+      id: "seg-loc",
+      slug: "locations",
+      name: "Locations",
+      ordering: 1,
+      is_collection: true,
+      hue_token: "--water-hue-world-1",
+      hidden: false,
+      has_template_override: false,
+    },
+    {
+      id: "seg-concept",
+      slug: "concept",
+      name: "Concept",
+      ordering: 0,
+      is_collection: false,
+      hue_token: "--water-hue-world-2",
+      hidden: false,
+      has_template_override: false,
+    },
+  ]);
+  (ipc.worldEntryList as ReturnType<typeof vi.fn>).mockResolvedValue([
+    { id: "loc-1", segment_id: "seg-loc", name: "The Pell Library", preview: "" },
+    { id: "loc-2", segment_id: "seg-loc", name: "Aren Square", preview: "" },
+  ]);
+  (ipc.sceneSetLocation as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 }
 
 describe("SceneMetadataSheet", () => {
@@ -201,6 +236,94 @@ describe("SceneMetadataSheet", () => {
     await waitFor(() => {
       expect(ipc.characterLinkToScene).toHaveBeenCalledWith("s1", "c2");
     });
+  });
+
+  it("renders the location dropdown populated from the locations segment", async () => {
+    mockIpcDefaults();
+    render(
+      <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
+    );
+    const select = (await screen.findByLabelText(
+      "Location",
+    )) as HTMLSelectElement;
+    const options = Array.from(select.querySelectorAll("option")).map(
+      (o) => o.textContent,
+    );
+    expect(options).toContain("— none —");
+    expect(options).toContain("The Pell Library");
+    expect(options).toContain("Aren Square");
+    // The dropdown must source from the `locations` segment, not any
+    // single-doc segment — `worldEntryList` must be called with seg-loc.
+    expect(ipc.worldEntryList).toHaveBeenCalledWith("seg-loc");
+    expect(ipc.worldEntryList).not.toHaveBeenCalledWith("seg-concept");
+  });
+
+  it("selecting a location calls sceneSetLocation and reloads", async () => {
+    mockIpcDefaults();
+    render(
+      <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
+    );
+    const select = (await screen.findByLabelText(
+      "Location",
+    )) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "loc-1" } });
+    await waitFor(() => {
+      expect(ipc.sceneSetLocation).toHaveBeenCalledWith({
+        sceneId: "s1",
+        locationId: "loc-1",
+      });
+    });
+    // After the set, the sheet reloads metadata.
+    await waitFor(() => {
+      expect(ipc.sceneReadMetadata).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("clearing the selection calls sceneSetLocation with null", async () => {
+    mockIpcDefaults();
+    (ipc.sceneReadMetadata as ReturnType<typeof vi.fn>).mockResolvedValue({
+      characters_present: ["c1"],
+      pov_character_id: "c1",
+      location: { id: "loc-1", name: "The Pell Library", segment_slug: "locations" },
+    } satisfies SceneMetadata);
+    render(
+      <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
+    );
+    const select = (await screen.findByLabelText(
+      "Location",
+    )) as HTMLSelectElement;
+    // Confirm it loaded with loc-1 selected.
+    expect(select.value).toBe("loc-1");
+    fireEvent.change(select, { target: { value: "" } });
+    await waitFor(() => {
+      expect(ipc.sceneSetLocation).toHaveBeenCalledWith({
+        sceneId: "s1",
+        locationId: null,
+      });
+    });
+  });
+
+  it("hides the location selector when there is no locations segment", async () => {
+    mockIpcDefaults();
+    (ipc.worldSegmentList as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "seg-concept",
+        slug: "concept",
+        name: "Concept",
+        ordering: 0,
+        is_collection: false,
+        hue_token: "--water-hue-world-2",
+        hidden: false,
+        has_template_override: false,
+      },
+    ]);
+    render(
+      <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
+    );
+    await screen.findByLabelText("Marcus");
+    expect(screen.queryByLabelText("Location")).not.toBeInTheDocument();
+    // We never asked for entries because there's no locations segment to ask about.
+    expect(ipc.worldEntryList).not.toHaveBeenCalled();
   });
 
   it("ignores autosuggest publishes for a different sceneId", async () => {
