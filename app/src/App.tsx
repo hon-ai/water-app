@@ -170,11 +170,62 @@ export default function App() {
                   background: "var(--water-bg-paper)",
                   display: "grid",
                   placeItems: "center",
-                  color: "var(--water-fg-muted)",
                   fontFamily: "var(--water-font-sans)",
+                  padding: 24,
                 }}
               >
-                Select a scene, or create a new one.
+                <div
+                  style={{
+                    maxWidth: 360,
+                    textAlign: "center",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                    color: "var(--water-fg-muted)",
+                    animation:
+                      "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: "50%",
+                      margin: "0 auto",
+                      background:
+                        "color-mix(in srgb, var(--water-hue-flow) 22%, transparent)",
+                      boxShadow:
+                        "0 0 32px color-mix(in srgb, var(--water-hue-flow) 35%, transparent)",
+                    }}
+                    aria-hidden
+                  />
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: "var(--water-fs-title)",
+                      fontWeight: 500,
+                      color: "var(--water-fg-default)",
+                      letterSpacing: -0.2,
+                    }}
+                  >
+                    Begin a scene
+                  </h2>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "var(--water-fs-ui)",
+                      lineHeight: 1.5,
+                      color: "var(--water-fg-muted)",
+                    }}
+                  >
+                    Pick one from the left panel, or use{" "}
+                    <strong style={{ color: "var(--water-fg-default)" }}>
+                      New scene
+                    </strong>{" "}
+                    to start a fresh one. Water listens as you write and
+                    surfaces small noticings in the margin.
+                  </p>
+                </div>
               </main>
             )}
             {detailsSceneId !== null && (
