@@ -40,7 +40,7 @@ export function WorldCollectionGrid({
     };
   }, [segment.id]);
 
-  if (!loaded) return <div>Loading…</div>;
+  if (!loaded) return <div className="water-loading">Loading</div>;
 
   return (
     <div className="world-collection-grid">

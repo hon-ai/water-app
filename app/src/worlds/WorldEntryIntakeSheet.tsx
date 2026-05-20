@@ -105,7 +105,7 @@ export function WorldEntryIntakeSheet({
   if (!loaded || !schema) {
     return (
       <Sheet open={true} onClose={handleClose} title="New entry">
-        <div role="status">Loading&hellip;</div>
+        <div role="status" className="water-loading">Loading</div>
       </Sheet>
     );
   }

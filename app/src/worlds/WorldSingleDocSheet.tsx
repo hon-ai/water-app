@@ -62,7 +62,7 @@ export function WorldSingleDocSheet({ segment }: { segment: WorldSegment }) {
     };
   }, [segment.id]);
 
-  if (!loaded || !schema) return <div>Loading…</div>;
+  if (!loaded || !schema) return <div className="water-loading">Loading</div>;
 
   return (
     <div className="world-single-doc-sheet">

@@ -73,7 +73,7 @@ export function WorldEntrySheet({
     };
   }, [segmentId, entryId]);
 
-  if (!segment || !schema || !file) return <div>Loading&hellip;</div>;
+  if (!segment || !schema || !file) return <div className="water-loading">Loading</div>;
 
   const displayName = file.name.trim() === "" ? "(unnamed)" : file.name;
 

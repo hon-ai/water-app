@@ -84,7 +84,7 @@ export function CharacterSheet({
       <div role="alert">Failed to load: {error}</div>
     );
   if (!schema || !file)
-    return <div role="status">Loading…</div>;
+    return <div role="status" className="water-loading">Loading</div>;
 
   const values = flattenCharacterToDottedPaths(file);
   const completion = computeCompletion(schema, values);
