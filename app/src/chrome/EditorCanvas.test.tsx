@@ -41,6 +41,13 @@ vi.mock("../pill/PinnedColumn", () => ({
   PinnedColumn: () => null,
 }));
 
+// HeatmapStrip subscribes to heat:updated via @tauri-apps/api/event
+// (not mocked here). Stub it out — coverage lives in
+// app/src/heat/HeatmapStrip.test.tsx (when it lands in Phase E follow-up).
+vi.mock("../heat/HeatmapStrip", () => ({
+  HeatmapStrip: () => null,
+}));
+
 import { EditorCanvas } from "./EditorCanvas";
 
 describe("EditorCanvas", () => {

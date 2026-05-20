@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type SceneInfo } from "../ipc/commands";
 import { Editor } from "../editor/Editor";
 import { PillLayer } from "../pill/PillLayer";
+import { HeatmapStrip } from "../heat/HeatmapStrip";
 import { PinnedColumn } from "../pill/PinnedColumn";
 import { useElementWidth } from "../pill/useElementWidth";
 import {
@@ -309,6 +310,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           gap: 4,
         }}
       >
+        <HeatmapStrip sceneId={sceneId} />
         <input
           aria-label="Scene title"
           value={title}
