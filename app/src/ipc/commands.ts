@@ -284,6 +284,23 @@ export interface HeatMetricEnabledMap {
 }
 
 /**
+ * M6: one scene's row on the macro spatial canvas. Mirrors
+ * `commands::canvas::SceneCanvasRow`. `canvas_x` / `canvas_y` are
+ * `null` for unplaced scenes — the renderer's auto-flow layout
+ * (see `crates/water-core/src/canvas/layout.rs::auto_flow`) is
+ * applied client-side to fill in those slots.
+ */
+export interface SceneCanvasRow {
+  id: string;
+  name: string;
+  manuscript_ordering: number;
+  canvas_x: number | null;
+  canvas_y: number | null;
+  canvas_group: string | null;
+  word_count: number;
+}
+
+/**
  * Response from `pill_pin`. Mirrors `commands::pill::PinPillResponse` on
  * the Rust side. `stub_entry_id` is non-null only for the Chorus +
  * `no_universe_yet` path (M4 T29), which seeds a new `locations`
@@ -515,6 +532,36 @@ export const ipc = {
    */
   heatReadSettings: (): Promise<HeatMetricEnabledMap> =>
     invoke("heat_read_settings"),
+
+  /**
+   * M6 Canvas. List every scene in the open project with its
+   * canvas position + group (NULL = unplaced; the renderer auto-
+   * flows those locally).
+   */
+  sceneCanvasList: (): Promise<SceneCanvasRow[]> =>
+    invoke("scene_canvas_list"),
+  /**
+   * Persist a drag target's new position. Pass `null` for both
+   * coords to clear (the scene falls back to auto-flow on next
+   * paint).
+   */
+  sceneCanvasSetPosition: (
+    sceneId: string,
+    x: number | null,
+    y: number | null,
+  ): Promise<void> =>
+    invoke("scene_canvas_set_position", { sceneId, x, y }),
+  sceneCanvasSetGroup: (
+    sceneId: string,
+    group: string | null,
+  ): Promise<void> => invoke("scene_canvas_set_group", { sceneId, group }),
+  /**
+   * Right-click "reset to manuscript order" action. Clears every
+   * scene's canvas_x/canvas_y in the open project; the renderer
+   * re-applies auto-flow.
+   */
+  sceneCanvasResetAll: (): Promise<void> =>
+    invoke("scene_canvas_reset_all"),
 
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),
