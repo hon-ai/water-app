@@ -58,6 +58,10 @@
   --water-hue-character-4: #e8d4c5;  /* soft sand */
   --water-hue-character-5: #c5e8d4;  /* soft mint */
   --water-hue-character-6: #d4c5e8;  /* soft lilac */
+  /* Generic character hue for surfaces that need to indicate
+     "character" without a specific assigned hue (M5 heatmap presence
+     track, future shared affordances). */
+  --water-hue-character-default: var(--water-hue-character-1);
 
   /* Radii — aggressive Notion/Apple-fluid */
   --water-r-8:   8px;
