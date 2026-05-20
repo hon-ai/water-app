@@ -3,9 +3,9 @@ import {
   ipc,
   type HeatMetricKind,
   type HeatReadResponse,
-  type HeatRow,
 } from "../ipc/commands";
 import { onWaterEvent } from "../ipc/events";
+import { HeatmapMetricPicker } from "./HeatmapMetricPicker";
 
 interface Props {
   sceneId: string;
@@ -33,6 +33,7 @@ export function HeatmapStrip({ sceneId }: Props) {
   const [enabled, setEnabled] = useState<
     Partial<Record<HeatMetricKind, boolean>>
   >({});
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const refetch = useCallback(async () => {
     try {
@@ -163,15 +164,22 @@ export function HeatmapStrip({ sceneId }: Props) {
           </div>
         ))}
       </div>
-      {/* Right-edge chip — metric name + caret (picker opens in Task 14). */}
-      <div
+      {/* Right-edge chip — opens the metric picker. */}
+      <button
+        type="button"
         data-testid="heatmap-chip"
+        onClick={() => setPickerOpen((v) => !v)}
+        aria-label="Heatmap metrics"
+        aria-haspopup="menu"
+        aria-expanded={pickerOpen ? "true" : "false"}
         style={{
+          position: "relative",
           flexShrink: 0,
           padding: "0 10px",
           display: "flex",
           alignItems: "center",
           gap: 4,
+          border: "none",
           background: "var(--water-bg-raised)",
           color: "var(--water-fg-muted)",
           fontFamily: "var(--water-font-sans)",
@@ -180,11 +188,29 @@ export function HeatmapStrip({ sceneId }: Props) {
           textTransform: "lowercase",
           letterSpacing: 0.3,
           boxShadow: "var(--water-elev-1)",
+          cursor: "pointer",
+          transition:
+            "color var(--water-dur-tiny) var(--water-ease-out-soft)",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "var(--water-fg-default)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = "var(--water-fg-muted)";
         }}
       >
         {primaryLabel}
         {activeKinds.length > 1 ? ` +${activeKinds.length - 1}` : ""}
-      </div>
+        <span aria-hidden style={{ fontSize: 9, marginLeft: 2 }}>▾</span>
+        <HeatmapMetricPicker
+          open={pickerOpen}
+          enabled={enabled}
+          onToggle={(kind, next) =>
+            setEnabled((prev) => ({ ...prev, [kind]: next }))
+          }
+          onClose={() => setPickerOpen(false)}
+        />
+      </button>
     </div>
   );
 }
