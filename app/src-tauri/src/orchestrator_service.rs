@@ -50,6 +50,7 @@ use water_core::replay_log::{ReplayEntry, ReplayLog};
 use water_core::voice::registry::PersonaRegistry;
 use water_core::voice::router::{route_with_chars, CooldownState};
 use water_core::voice::speaker::SpeakerArc;
+use water_core::world::WorldRegistry;
 use water_core::Id;
 
 /// Shared slot holding the optional `LlmRouter`. Mirrors
@@ -118,6 +119,12 @@ pub struct OrchestratorService {
     /// POV-prefer routing and by `pick_best_trigger` for the
     /// `character_dissonance` gate.
     characters: CharacterRegistry,
+    /// World-bible snapshot loaded once at `start` from the project DB
+    /// (M4 Task 13). Threaded into every `TriggerContext` so world-track
+    /// triggers (Task 17: `world_drift`) can read segments + entries
+    /// without round-tripping to disk. Like `characters`, re-loading on
+    /// world upsert is an M4+ concern; this is an open-time snapshot.
+    world_registry: WorldRegistry,
     prompts: Arc<PromptLibrary>,
     pills: Vec<Pill>,
     cooldowns: CooldownState,
@@ -194,6 +201,7 @@ impl OrchestratorService {
         router: SharedRouter,
         personas: PersonaRegistry,
         characters: CharacterRegistry,
+        world_registry: WorldRegistry,
         project_root: PathBuf,
     ) -> OrchestratorHandle {
         // Channel depth 64 was picked to comfortably absorb a burst of
@@ -233,6 +241,7 @@ impl OrchestratorService {
             router,
             personas,
             characters,
+            world_registry,
             prompts,
             pills: Vec::new(),
             cooldowns: CooldownState::default(),
@@ -323,6 +332,7 @@ impl OrchestratorService {
             &scene,
             &self.project,
             &self.characters,
+            &self.world_registry,
             &self.prompts,
         ) else {
             return;
@@ -762,6 +772,7 @@ fn pick_best_trigger(
     scene: &SceneSnapshot,
     project: &ProjectSnapshot,
     characters: &CharacterRegistry,
+    world_registry: &WorldRegistry,
     prompts: &PromptLibrary,
 ) -> Option<TriggerCandidate> {
     let ctx = TriggerContext {
@@ -770,6 +781,7 @@ fn pick_best_trigger(
         scene,
         project,
         characters,
+        world_registry,
         prompts,
     };
     let triggers = builtin_triggers();

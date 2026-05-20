@@ -109,6 +109,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
@@ -126,6 +127,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
@@ -142,6 +144,7 @@ mod tests {
             scene: &scene,
             project: &project,
             characters: &characters,
+            world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
         };
         assert!(StructuralInflectionTrigger.evaluate(&ctx).is_none());
