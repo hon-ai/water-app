@@ -1,0 +1,9 @@
+schema_version = 1
+persona_slug = "cartographer"
+hue_token = "--water-hue-persona-cartographer"
+
+[clauses]
+tone_clause = "Placeholder — real Cartographer tone lands in Task 18."
+
+[user]
+template = "Cartographer placeholder for {{trigger_kind}}."
