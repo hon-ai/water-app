@@ -24,6 +24,7 @@ const V1_INIT: &str = include_str!("../sql/v1_init.sql");
 const V2_PILL_ENGINE: &str = include_str!("../sql/v2_pill_engine.sql");
 const V3_CHARACTER_HUE: &str = include_str!("../sql/v3_character_hue.sql");
 const V4_WORLD_BIBLE: &str = include_str!("../sql/v4_world_bible.sql");
+const V5_HEATMAP: &str = include_str!("../sql/v5_heatmap.sql");
 
 #[must_use]
 pub fn all() -> Migrations<'static> {
@@ -32,6 +33,7 @@ pub fn all() -> Migrations<'static> {
         M::up(V2_PILL_ENGINE),
         M::up(V3_CHARACTER_HUE),
         M::up(V4_WORLD_BIBLE),
+        M::up(V5_HEATMAP),
     ])
 }
 
@@ -107,9 +109,9 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 1);
         drop(conn);
 
-        // Db::open now sees a v1 DB and ratchets to latest (v4).
+        // Db::open now sees a v1 DB and ratchets to latest (v5).
         let db = Db::open(&path).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 4);
+        assert_eq!(current_version(db.conn()).unwrap(), 5);
     }
 
     #[test]
@@ -199,16 +201,16 @@ mod tests {
         // Db::open already ratcheted to latest; another run_pending must be a no-op.
         run_pending(&mut db).unwrap();
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 4);
+        assert_eq!(current_version(db.conn()).unwrap(), 5);
     }
 
     #[test]
-    fn migration_ratchets_to_v4() {
+    fn migration_ratchets_to_v5() {
         let (_tmp, mut db) = fresh_v1_db();
         // fresh_v1_db actually returns a DB already ratcheted to latest via
-        // Db::open; another run_pending is a no-op that still leaves us at v4.
+        // Db::open; another run_pending is a no-op that still leaves us at v5.
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 4);
+        assert_eq!(current_version(db.conn()).unwrap(), 5);
     }
 
     #[test]
@@ -346,15 +348,9 @@ mod tests {
         assert!(has_col, "pinned_pill missing origin_trigger column");
     }
 
-    #[test]
-    fn v4_schema_version_is_four() {
-        let db = Db::open_in_memory().unwrap();
-        let version: u32 = db
-            .conn()
-            .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(version, 4);
-    }
+    // The historical `v4_schema_version_is_four` check was retired when v5
+    // landed; `v5_schema_version_is_five` below replaces it as the
+    // latest-version assertion.
 
     #[test]
     fn v4_creates_world_entry_by_segment_index() {
@@ -368,6 +364,124 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1, "world_entry_by_segment index missing");
+    }
+
+    #[test]
+    fn v5_creates_heat_metric_table() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(heat_metric)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in [
+            "scene_id",
+            "paragraph_ix",
+            "metric",
+            "value",
+            "text_hash",
+            "updated_at",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "heat_metric missing column {required}; got {cols:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn v5_creates_scene_typing_history_table() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(scene_typing_history)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in ["scene_id", "ts_ms", "word_delta"] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "scene_typing_history missing column {required}; got {cols:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn v5_creates_heat_metric_index() {
+        let db = Db::open_in_memory().unwrap();
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='heat_metric_by_scene'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "heat_metric_by_scene index missing");
+    }
+
+    #[test]
+    fn v5_schema_version_is_five() {
+        let db = Db::open_in_memory().unwrap();
+        let version: u32 = db
+            .conn()
+            .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 5);
+    }
+
+    #[test]
+    fn v5_heat_metric_cascades_on_scene_delete() {
+        // Seed: project → manuscript → scene → heat_metric row. Delete the
+        // scene and assert the heat_metric row is gone too (ON DELETE CASCADE
+        // must be wired so Heatmap state never outlives its scene).
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO project (id, name, created_at, updated_at)
+                 VALUES ('p1', 'P', '0', '0')",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO manuscript (id, project_id, name, ordering, created_at, updated_at)
+                 VALUES ('m1', 'p1', 'M', 0, '0', '0')",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO scene (id, manuscript_id, ordering, name, file_path, created_at, updated_at)
+                 VALUES ('s1', 'm1', 0, 's', 'manuscript/scenes/s1.md', '0', '0')",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO heat_metric
+                 (scene_id, paragraph_ix, metric, value, text_hash, updated_at)
+                 VALUES ('s1', 0, 'pacing', 0.5, 'h', '0')",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute("DELETE FROM scene WHERE id = 's1'", [])
+            .unwrap();
+        let remaining: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM heat_metric WHERE scene_id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, 0, "heat_metric row should cascade-delete with its scene");
     }
 
     #[test]
