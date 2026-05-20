@@ -62,11 +62,23 @@ export function HeatmapMetricPicker({
   const top = anchor.bottom + 6;
   const left = Math.max(8, anchor.right - PICKER_WIDTH);
 
+  // React portals preserve event bubbling through the React tree, so
+  // pointer events fired inside the picker still bubble UP to the
+  // parent strip — whose onPointerDown captures the pointer and
+  // eats the checkbox click. Stop propagation at the picker root.
+  const stopProp = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  };
+
   return createPortal(
     <div
       ref={ref}
       role="menu"
       data-testid="heatmap-metric-picker"
+      onPointerDown={stopProp}
+      onPointerMove={stopProp}
+      onPointerUp={stopProp}
+      onClick={stopProp}
       style={{
         position: "fixed",
         top,
