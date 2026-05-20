@@ -67,10 +67,9 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
         left: 14,
         minWidth: 220,
         padding: 6,
-        background: "var(--water-bg-paper)",
+        background: "var(--water-bg-raised)",
         borderRadius: "var(--water-r-16)",
-        boxShadow:
-          "0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 25%, transparent), 0 8px 24px color-mix(in srgb, var(--water-fg-default) 14%, transparent)",
+        boxShadow: "var(--water-elev-2)",
         zIndex: "var(--water-z-tooltip)" as unknown as number,
         animation:
           "water-pill-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",

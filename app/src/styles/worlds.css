@@ -41,13 +41,14 @@
   min-height: 132px;
   background:
     radial-gradient(at top right, color-mix(in oklch, var(--tile-hue, var(--water-hue-flow)) 18%, transparent), transparent 70%),
-    var(--water-bg-canvas);
-  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 12%, transparent);
+    var(--water-bg-raised);
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent);
   border-radius: var(--water-r-16);
   color: var(--water-fg-default);
   text-align: left;
   cursor: pointer;
   font-family: var(--water-font-sans);
+  box-shadow: var(--water-elev-1);
   transition:
     transform var(--water-dur-tiny) var(--water-ease-out-soft),
     border-color var(--water-dur-tiny) var(--water-ease-out-soft),
@@ -55,9 +56,11 @@
 }
 
 .world-segment-tile:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--tile-hue, var(--water-hue-flow)) 45%, transparent);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--tile-hue, var(--water-hue-flow)) 30%, transparent);
+  box-shadow:
+    var(--water-elev-2),
+    0 0 22px color-mix(in oklch, var(--tile-hue, var(--water-hue-flow)) 25%, transparent);
 }
 
 .world-segment-tile-name {
@@ -187,13 +190,14 @@
   gap: 8px;
   padding: 16px 18px;
   min-height: 110px;
-  background: var(--water-bg-canvas);
-  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 12%, transparent);
+  background: var(--water-bg-raised);
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent);
   border-radius: var(--water-r-16);
   color: var(--water-fg-default);
   text-align: left;
   cursor: pointer;
   font-family: var(--water-font-sans);
+  box-shadow: var(--water-elev-1);
   transition:
     transform var(--water-dur-tiny) var(--water-ease-out-soft),
     border-color var(--water-dur-tiny) var(--water-ease-out-soft),
@@ -201,9 +205,11 @@
 }
 
 .world-entry-card:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--water-hue-cartographer) 45%, transparent);
-  box-shadow: 0 0 16px color-mix(in oklch, var(--water-hue-cartographer) 24%, transparent);
+  box-shadow:
+    var(--water-elev-2),
+    0 0 16px color-mix(in oklch, var(--water-hue-cartographer) 20%, transparent);
 }
 
 .world-entry-card-name {
@@ -346,10 +352,10 @@
   position: relative;
   margin-top: 24px;
   padding: 18px 22px;
-  background: var(--water-bg-canvas);
-  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 14%, transparent);
+  background: var(--water-bg-raised);
   border-radius: var(--water-r-16);
   max-width: 540px;
+  box-shadow: var(--water-elev-2);
 }
 
 .world-settings-menu h3 {
