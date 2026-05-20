@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronLeft, MoreHorizontal, Plus } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
 import { ipc, type SceneInfo } from "../ipc/commands";
 
 interface Props {
@@ -62,12 +62,53 @@ export function ScenesPanel({
     }
   };
 
+  // When collapsed we still render a thin 28px handle so the writer can
+  // re-expand from the same surface — earlier 0-width versions trapped
+  // writers with no expand affordance visible (M4 smoke-walk finding).
+  if (collapsed) {
+    return (
+      <aside
+        aria-label="scenes (collapsed)"
+        data-collapsed="true"
+        style={{
+          width: 28,
+          flexShrink: 0,
+          background: "var(--water-bg-canvas)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          paddingTop: 14,
+          transition: `width var(--water-dur-medium) var(--water-ease-out-soft)`,
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Expand scenes"
+          onClick={onToggleCollapsed}
+          style={{
+            width: 24,
+            height: 28,
+            display: "grid",
+            placeItems: "center",
+            border: "none",
+            background: "transparent",
+            color: "var(--water-fg-muted)",
+            cursor: "pointer",
+            borderRadius: "var(--water-r-8)",
+          }}
+        >
+          <ChevronRight size={14} strokeWidth={1.5} />
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside
       aria-label="scenes"
-      data-collapsed={collapsed ? "true" : "false"}
+      data-collapsed="false"
       style={{
-        width: collapsed ? 0 : "var(--water-scenes-w)",
+        width: "var(--water-scenes-w)",
         flexShrink: 0,
         overflow: "hidden",
         transition: `width var(--water-dur-medium) var(--water-ease-out-soft)`,
@@ -134,23 +175,35 @@ export function ScenesPanel({
         type="button"
         onClick={handleCreate}
         style={{
-          margin: "0 12px 8px 12px",
-          padding: "6px 10px",
+          margin: "0 12px 10px 12px",
+          padding: "8px 12px",
           display: "flex",
           alignItems: "center",
-          gap: 6,
+          gap: 8,
           border: "none",
-          background: "transparent",
-          color: "var(--water-fg-muted)",
+          background:
+            "color-mix(in srgb, var(--water-hue-flow) 18%, transparent)",
+          color: "var(--water-fg-default)",
           fontFamily: "var(--water-font-sans)",
           fontSize: "var(--water-fs-ui)",
+          fontWeight: 500,
           cursor: "pointer",
           borderRadius: "var(--water-r-8)",
           textAlign: "left",
+          transition:
+            "background-color var(--water-dur-tiny) var(--water-ease-out-soft)",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background =
+            "color-mix(in srgb, var(--water-hue-flow) 30%, transparent)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background =
+            "color-mix(in srgb, var(--water-hue-flow) 18%, transparent)";
         }}
       >
-        <Plus size={14} strokeWidth={1.5} />
-        new scene
+        <Plus size={14} strokeWidth={1.75} />
+        New scene
       </button>
 
       <ul style={{ listStyle: "none", padding: 0, margin: 0, overflowY: "auto", flex: 1 }}>
