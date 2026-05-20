@@ -3,6 +3,7 @@ import { WorldIndex } from "./WorldIndex";
 import { WorldSegmentView } from "./WorldSegmentView";
 import { WorldEntrySheet } from "./WorldEntrySheet";
 import { WorldEntryIntakeSheet } from "./WorldEntryIntakeSheet";
+import { SegmentTemplateEditor } from "./SegmentTemplateEditor";
 
 /**
  * Worlds surface router (M4 T20, spec § 10).
@@ -118,7 +119,11 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
         />
       )}
       {view.kind === "new-segment" && (
-        <div data-testid="new-segment-placeholder">new segment modal</div>
+        <SegmentTemplateEditor
+          mode="create"
+          onSave={(newId) => setView({ kind: "segment", segmentId: newId })}
+          onClose={() => setView({ kind: "index" })}
+        />
       )}
     </div>
   );
