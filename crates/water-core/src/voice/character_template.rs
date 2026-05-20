@@ -4,7 +4,15 @@
 //! template at `prompts/speakers/character/template.toml`. Missing fields
 //! cause their entire sentence to be omitted (missing-field policy per
 //! M3 spec § 10).
+//!
+//! M4 Task 25: the renderer signature now takes a
+//! [`crate::world::WorldRegistry`] and a [`crate::voice::SceneContext`]
+//! in preparation for `{{world.location_*}}` token injection (Task 26).
+//! The arguments are accepted but not yet consumed; Task 26 wires the
+//! token substitutions and updates the bundled template.
 
+use crate::voice::SceneContext;
+use crate::world::WorldRegistry;
 use serde::Deserialize;
 
 const TEMPLATE_TOML: &str = include_str!("../../../../prompts/speakers/character/template.toml");
@@ -49,8 +57,18 @@ impl CharacterTemplate {
 
     /// Render the template with the given LSM v2.1 sheet data. Missing
     /// fields cause their entire sentence to be omitted.
+    ///
+    /// `world_registry` and `scene_context` (M4 Task 25) are reserved
+    /// for the `{{world.location_*}}` token injection landing in Task
+    /// 26; the signature accepts them now so `CharacterSpeaker::from_row`
+    /// can thread the per-dispatch scene context through.
     #[must_use]
-    pub fn render(&self, sheet: &serde_json::Value) -> String {
+    pub fn render(
+        &self,
+        sheet: &serde_json::Value,
+        _world_registry: &WorldRegistry,
+        _scene_context: &SceneContext,
+    ) -> String {
         let main = sheet.get("main").unwrap_or(&serde_json::Value::Null);
         let bonus = sheet
             .get("bonus_traits")
@@ -149,6 +167,8 @@ fn render_with_omission(template: &str, subs: &[(&str, String)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::voice::SceneContext;
+    use crate::world::WorldRegistry;
     use serde_json::json;
 
     #[test]
@@ -171,7 +191,7 @@ mod tests {
                 "values": ["loyalty", "showing up when it matters"],
             },
         });
-        let rendered = t.render(&sheet);
+        let rendered = t.render(&sheet, &WorldRegistry::default(), &SceneContext::empty());
         assert!(rendered.contains("Marcus Vale"));
         assert!(rendered.contains("protagonist of this story"));
         assert!(rendered.contains("spare, weather-worn"));
@@ -197,7 +217,7 @@ mod tests {
                 // speech_patterns, fears, values absent
             },
         });
-        let rendered = t.render(&sheet);
+        let rendered = t.render(&sheet, &WorldRegistry::default(), &SceneContext::empty());
         assert!(rendered.contains("Ada"));
         assert!(rendered.contains("clipped"));
         assert!(!rendered.contains("{{"), "no unresolved placeholders");
@@ -227,7 +247,7 @@ mod tests {
             "main": { "full_name": "X", "role_in_story": "weirdo", "want": "w", "need": "n", "lie_they_believe": "l" },
             "bonus_traits": { "voice": "v" },
         });
-        let rendered = t.render(&sheet);
+        let rendered = t.render(&sheet, &WorldRegistry::default(), &SceneContext::empty());
         assert!(rendered.contains('X'), "name still appears elsewhere");
         assert!(!rendered.contains("weirdo"));
     }

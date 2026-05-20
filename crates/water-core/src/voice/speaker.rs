@@ -144,10 +144,23 @@ impl CharacterSpeaker {
     /// Construct from a `CharacterRegistryRow`. Renders the LSM v2.1 sheet
     /// data through the built-in character voice template at
     /// `prompts/speakers/character/template.toml`.
+    ///
+    /// `world_registry` and `scene_context` (M4 Task 25) supply the
+    /// `{{world.location_*}}` tokens that the template injects into the
+    /// rendered prompt. For paths that don't have scene info yet — the
+    /// `CharacterRegistry::from_db` registry-build path, or test
+    /// fixtures that don't exercise world rendering — pass
+    /// `&WorldRegistry::default()` and [`crate::voice::SceneContext::empty`];
+    /// the location-context lines then drop via the existing line-based
+    /// omission rule.
     #[must_use]
-    pub fn from_row(row: &crate::character::registry::CharacterRegistryRow) -> Self {
+    pub fn from_row(
+        row: &crate::character::registry::CharacterRegistryRow,
+        world_registry: &crate::world::WorldRegistry,
+        scene_context: &crate::voice::SceneContext,
+    ) -> Self {
         let template = crate::voice::character_template::CharacterTemplate::load_builtin();
-        let prompt_fragment = template.render(&row.data);
+        let prompt_fragment = template.render(&row.data, world_registry, scene_context);
         Self {
             id: row.id.as_str().to_string(),
             display_name: row.name.clone(),
@@ -220,5 +233,34 @@ hue_token = "--water-hue-muse"
 voice_profile = "y"
 "#;
         assert!(PersonaSpeaker::from_toml_str(bad).is_err());
+    }
+
+    /// M4 Task 25: `CharacterSpeaker::from_row` gained `&WorldRegistry`
+    /// and `&SceneContext`. This is a compile-time and smoke test: a
+    /// minimal fixture call must succeed (no panic) with the new
+    /// four-argument signature. The render-path test lives in
+    /// `character_template.rs`.
+    #[test]
+    fn from_row_accepts_world_registry_and_scene_context_without_panic() {
+        use crate::character::registry::CharacterRegistryRow;
+        use crate::voice::SceneContext;
+        use crate::world::WorldRegistry;
+
+        let row = CharacterRegistryRow {
+            id: crate::Id::new(),
+            name: "X".to_string(),
+            hue_token: "--water-hue-character-1".to_string(),
+            data: serde_json::json!({
+                "main": { "full_name": "X" },
+                "bonus_traits": { "voice": "v" }
+            }),
+        };
+        let world = WorldRegistry::default();
+        let scene = SceneContext::empty();
+
+        let speaker = CharacterSpeaker::from_row(&row, &world, &scene);
+        assert_eq!(speaker.id(), row.id.as_str());
+        assert_eq!(speaker.kind(), SpeakerKind::Character);
+        assert!(speaker.prompt_fragment().contains('X'));
     }
 }
