@@ -134,18 +134,59 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           if (cancelled) return;
           setSavedAt(Date.now());
           setBodyDirty(false);
-          ipc
-            .sceneState({
-              sceneId,
-              povCharacterId: null,
-              locationId: null,
-              charactersPresent: [],
-              wordCount: info.word_count,
-              bodyText: body,
-              characterCount: 0,
-              worldEntryCount: 0,
-            })
-            .catch(() => {});
+          // Push real scene + project state to the orchestrator so the
+          // trigger evaluators can gate on the writer's current world.
+          // Each lookup is wrapped in `allSettled` so one failure (e.g.
+          // a missing IPC on an older backend) doesn't poison the others.
+          //
+          // M4 fix: prior to this, the autosave path pushed null/0
+          // hardcoded values from M2 — the orchestrator never learned
+          // about scene.location_id, characters_present, or whether the
+          // project actually had any characters/world entries. Result:
+          // every trigger that gated on those fields (world_drift,
+          // character_dissonance, the no_universe_yet inverse) was
+          // dark.
+          void (async () => {
+            const [metaR, charsR, segsR] = await Promise.allSettled([
+              ipc.sceneReadMetadata(sceneId),
+              ipc.characterList(),
+              ipc.worldSegmentList(),
+            ]);
+            if (cancelled) return;
+            const meta =
+              metaR.status === "fulfilled" ? metaR.value : null;
+            const characterCount =
+              charsR.status === "fulfilled" ? charsR.value.length : 0;
+            let worldEntryCount = 0;
+            if (segsR.status === "fulfilled") {
+              const collectionSegs = segsR.value.filter(
+                (s) => s.is_collection,
+              );
+              const perSeg = await Promise.allSettled(
+                collectionSegs.map((s) =>
+                  ipc.worldEntryList(s.id).then((es) => es.length),
+                ),
+              );
+              if (cancelled) return;
+              worldEntryCount = perSeg.reduce(
+                (acc, r) =>
+                  acc + (r.status === "fulfilled" ? r.value : 0),
+                0,
+              );
+            }
+            ipc
+              .sceneState({
+                sceneId,
+                povCharacterId: meta?.pov_character_id ?? null,
+                locationId: meta?.location?.id ?? null,
+                charactersPresent: meta?.characters_present ?? [],
+                wordCount: info.word_count,
+                bodyText: body,
+                characterCount,
+                worldEntryCount,
+              })
+              .catch(() => {});
+          })();
           // Autosuggest fan-out. Two scanners run in parallel:
           //   1. character — name-match against linked + known characters
           //   2. world — name+alias-match against `locations`-segment entries
