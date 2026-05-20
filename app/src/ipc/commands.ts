@@ -251,6 +251,12 @@ export type WorldEntryIndexEntry = {
 export interface PinPillResponse {
   pin_id: string;
   stub_entry_id: string | null;
+  /**
+   * Set whenever `stub_entry_id` is set — the segment id of the newly-
+   * created `locations` stub. The renderer routes to the new entry
+   * sheet (addressed by (segmentId, entryId)) using this pair.
+   */
+  stub_segment_id: string | null;
 }
 
 export const ipc = {

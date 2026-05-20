@@ -2,7 +2,11 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 
 const { pillRegenerateMock, pillPinMock, pillDismissMock } = vi.hoisted(() => ({
   pillRegenerateMock: vi.fn().mockResolvedValue(undefined),
-  pillPinMock: vi.fn().mockResolvedValue(undefined),
+  pillPinMock: vi.fn().mockResolvedValue({
+    pin_id: "p1",
+    stub_entry_id: null,
+    stub_segment_id: null,
+  }),
   pillDismissMock: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -147,6 +151,72 @@ describe("Bouquet", () => {
     );
     fireEvent.click(screen.getByLabelText("Pin pill"));
     expect(pillPinMock).toHaveBeenCalledWith(fullPill, "s-real", "b-missing", "");
+  });
+
+  it("dispatches water:nav-world-entry when the pin returns a stub", async () => {
+    const fullPill = {
+      pill_id: "p1",
+      speaker_id: "chorus",
+      hue_token: "--water-hue-persona-chorus",
+      text: "—",
+      block_target_id: null,
+      trigger_id: "no_universe_yet",
+    };
+    pillPinMock.mockResolvedValueOnce({
+      pin_id: "p1",
+      stub_entry_id: "stub-entry-1",
+      stub_segment_id: "seg-loc",
+    });
+
+    const handler = vi.fn();
+    window.addEventListener("water:nav-world-entry", handler);
+    try {
+      render(
+        <Bouquet
+          parentId="p1"
+          hueToken="--water-hue-persona-chorus"
+          items={sampleItems}
+          onClose={() => {}}
+          pillForPinning={fullPill}
+          sceneId="s1"
+          blockId=""
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Pin pill"));
+      // The dispatch happens after `await ipc.pillPin`; spin the
+      // microtask queue.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(handler).toHaveBeenCalledTimes(1);
+      const evt = handler.mock.calls[0]?.[0] as CustomEvent;
+      expect(evt.detail).toEqual({
+        segmentId: "seg-loc",
+        entryId: "stub-entry-1",
+      });
+    } finally {
+      window.removeEventListener("water:nav-world-entry", handler);
+    }
+  });
+
+  it("does not dispatch water:nav-world-entry when the pin has no stub", async () => {
+    const handler = vi.fn();
+    window.addEventListener("water:nav-world-entry", handler);
+    try {
+      render(
+        <Bouquet
+          parentId="p1"
+          hueToken="--water-hue-muse"
+          items={sampleItems}
+          onClose={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText("Pin pill"));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(handler).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("water:nav-world-entry", handler);
+    }
   });
 
   it("clicking X calls ipc.pillDismiss and onClose", () => {

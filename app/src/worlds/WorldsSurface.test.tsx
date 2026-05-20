@@ -8,6 +8,10 @@ vi.mock("../ipc/commands", () => ({
     worldSegmentList: vi.fn(),
     worldEntryList: vi.fn(),
     worldSingleDocRead: vi.fn(),
+    worldEntryRead: vi.fn(),
+    worldIntakeSchema: vi.fn(),
+    worldEntryUpdateField: vi.fn(),
+    worldEntryUpdateAliases: vi.fn(),
   },
 }));
 
@@ -80,6 +84,47 @@ describe("WorldsSurface", () => {
     await waitFor(() =>
       expect(screen.getByTestId("segment-tile-concept")).toBeInTheDocument(),
     );
+  });
+
+  it("routes to the entry view on water:nav-world-entry custom event", async () => {
+    (ipc.worldEntryRead as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "entry-1",
+      segment_id: "seg-2",
+      schema_version: "locations@1",
+      name: "",
+      aliases: [],
+      main: { sensory_detail: "dust" },
+    });
+    (ipc.worldIntakeSchema as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "locations",
+      label: "Location",
+      fields: [
+        {
+          id: "main.name",
+          label: "Name",
+          prompt_question: "What's this place called?",
+          kind: { type: "short_text" },
+          optional_skip: false,
+        },
+      ],
+    });
+    render(<WorldsSurface projectId="p1" />);
+    await waitFor(() => screen.getByTestId("segment-tile-locations"));
+    window.dispatchEvent(
+      new CustomEvent("water:nav-world-entry", {
+        detail: { segmentId: "seg-2", entryId: "entry-1" },
+      }),
+    );
+    // After the route change the index tiles are gone and the entry
+    // surface fetches via `worldEntryRead`. Assert via the IPC fetch
+    // for the targeted entry id, which proves the route reached the
+    // entry view without depending on the sheet's specific UI surface.
+    await waitFor(() => {
+      expect(ipc.worldEntryRead).toHaveBeenCalledWith("entry-1");
+    });
+    expect(
+      screen.queryByTestId("segment-tile-concept"),
+    ).not.toBeInTheDocument();
   });
 
   it("hidden segments are filtered out", async () => {
