@@ -448,11 +448,22 @@ function HoverTooltip({
  * what it does. Persists dismissal via localStorage.
  */
 function IntroOverlay({ onDismiss }: { onDismiss: () => void }) {
+  // Stop pointer/click propagation so the parent strip's drag-scrub
+  // handlers don't swallow the dismiss click. Without this,
+  // pointerdown on the × bubbles to the strip, the strip calls
+  // setPointerCapture on itself, and the click never lands.
+  const stopProp = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  };
   return (
     <div
       data-testid="heatmap-intro"
       role="dialog"
       aria-label="Heatmap introduction"
+      onPointerDown={stopProp}
+      onPointerMove={stopProp}
+      onPointerUp={stopProp}
+      onClick={stopProp}
       style={{
         position: "absolute",
         top: "calc(100% + 12px)",
@@ -471,6 +482,7 @@ function IntroOverlay({ onDismiss }: { onDismiss: () => void }) {
         display: "flex",
         alignItems: "flex-start",
         gap: 8,
+        cursor: "default",
         animation:
           "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
       }}
@@ -481,15 +493,29 @@ function IntroOverlay({ onDismiss }: { onDismiss: () => void }) {
       <button
         type="button"
         aria-label="Dismiss"
-        onClick={onDismiss}
+        onPointerDown={stopProp}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismiss();
+        }}
         style={{
           border: "none",
           background: "transparent",
           color: "var(--water-fg-muted)",
           cursor: "pointer",
-          padding: "0 4px",
-          fontSize: 14,
+          padding: "2px 8px",
+          fontSize: 16,
           lineHeight: 1,
+          borderRadius: "var(--water-r-8)",
+          transition:
+            "background-color var(--water-dur-tiny) var(--water-ease-out-soft)",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background =
+            "color-mix(in srgb, var(--water-fg-faint) 14%, transparent)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
         }}
       >
         ×
