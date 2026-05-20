@@ -268,14 +268,36 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
       <div
         style={{
           position: "absolute",
-          top: 12,
-          right: 16,
+          top: 14,
+          right: 18,
           fontSize: "var(--water-fs-meta)",
           color: "var(--water-fg-faint)",
           pointerEvents: "none",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          opacity: savedAt ? 0.85 : 0,
+          transition:
+            "opacity var(--water-dur-medium) var(--water-ease-out-soft)",
         }}
       >
-        {savedAt ? `saved · ${new Date(savedAt).toLocaleTimeString()}` : ""}
+        {savedAt && (
+          <>
+            <span
+              aria-hidden
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background:
+                  "color-mix(in srgb, var(--water-hue-flow) 70%, transparent)",
+                boxShadow:
+                  "0 0 8px color-mix(in srgb, var(--water-hue-flow) 60%, transparent)",
+              }}
+            />
+            saved · {new Date(savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </>
+        )}
       </div>
       <div
         style={{
@@ -284,7 +306,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           padding: "72px 24px 96px 24px",
           display: "flex",
           flexDirection: "column",
-          gap: 16,
+          gap: 4,
         }}
       >
         <input
@@ -308,6 +330,17 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
             fontSize: "var(--water-fs-display)",
             lineHeight: "var(--water-lh-display)",
             padding: 0,
+            letterSpacing: -0.4,
+          }}
+        />
+        <div
+          aria-hidden
+          style={{
+            height: 1,
+            width: 48,
+            margin: "8px 0 24px 0",
+            background:
+              "color-mix(in srgb, var(--water-fg-faint) 35%, transparent)",
           }}
         />
         <Editor

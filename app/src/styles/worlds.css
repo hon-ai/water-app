@@ -1,0 +1,132 @@
+/* =====================================================================
+   Worlds surface — tile grid, segment view, entry sheet.
+   ===================================================================== */
+
+.worlds-surface {
+  flex: 1;
+  background: var(--water-bg-paper);
+  overflow: auto;
+  padding: 32px 32px 64px 32px;
+}
+
+.world-index {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.world-index h2 {
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-display);
+  font-weight: 500;
+  letter-spacing: -0.3px;
+  margin: 0 0 8px 0;
+  color: var(--water-fg-default);
+}
+
+.world-index-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  margin-top: 28px;
+}
+
+.world-segment-tile {
+  /* --tile-hue is set inline by WorldSegmentTile based on the segment's
+     hue_token, so the tile blends pastel-glow into the canvas. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px 14px 18px;
+  min-height: 132px;
+  background:
+    radial-gradient(at top right, color-mix(in oklch, var(--tile-hue, var(--water-hue-flow)) 18%, transparent), transparent 70%),
+    var(--water-bg-canvas);
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 12%, transparent);
+  border-radius: var(--water-r-16);
+  color: var(--water-fg-default);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--water-font-sans);
+  transition:
+    transform var(--water-dur-tiny) var(--water-ease-out-soft),
+    border-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    box-shadow var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+.world-segment-tile:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--tile-hue, var(--water-hue-flow)) 45%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--tile-hue, var(--water-hue-flow)) 30%, transparent);
+}
+
+.world-segment-tile-name {
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-title);
+  line-height: var(--water-lh-title);
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+
+.world-segment-tile-preview {
+  font-size: var(--water-fs-meta);
+  line-height: 1.55;
+  color: var(--water-fg-muted);
+  flex: 1;
+}
+
+.world-segment-tile-icon {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 14px;
+  color: color-mix(in srgb, var(--tile-hue, var(--water-hue-flow)) 75%, var(--water-fg-faint));
+  opacity: 0.6;
+}
+
+.world-index-new-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 132px;
+  background: transparent;
+  border: 1.5px dashed color-mix(in srgb, var(--water-fg-faint) 30%, transparent);
+  border-radius: var(--water-r-16);
+  color: var(--water-fg-muted);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  cursor: pointer;
+  transition:
+    border-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    color var(--water-dur-tiny) var(--water-ease-out-soft),
+    background-color var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+.world-index-new-segment:hover {
+  border-color: color-mix(in srgb, var(--water-hue-flow) 55%, transparent);
+  color: var(--water-fg-default);
+  background: color-mix(in srgb, var(--water-hue-flow) 6%, transparent);
+}
+
+/* World entry sheet (collection-entry editor) */
+
+.world-entry-sheet {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.world-entry-sheet h2 {
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-display);
+  font-weight: 500;
+  letter-spacing: -0.3px;
+  margin: 0 0 8px 0;
+  color: var(--water-fg-default);
+}
+
+.world-entry-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 28px;
+}
