@@ -728,3 +728,46 @@ fn loc_setup() -> (
             "expected NotFound, got {err:?}"
         );
     }
+
+    #[test]
+    fn create_entry_seeded_rolls_back_on_invalid_seed_field_id() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+
+        let result = store.create_entry_seeded(
+            &seg.id,
+            "Atrium",
+            "no_dot", // invalid — apply_dotted_mutation rejects
+            "value",
+        );
+        assert!(result.is_err(), "expected error from invalid seed_field_id");
+
+        // No orphan row should remain.
+        let entries = store.list_entries(&seg.id).unwrap();
+        assert!(
+            entries.is_empty(),
+            "expected zero entries after rollback; got {entries:?}"
+        );
+    }
+
+    #[test]
+    fn delete_entry_if_empty_reaps_entry_with_only_empty_string_fields() {
+        let (dir, db, _p, seg) = loc_setup();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+
+        // Seed a field with an empty string so [main] becomes
+        // {"type": ""} — exercises is_value_empty's recursive
+        // object-with-empty-string-values branch.
+        let id = store
+            .create_entry_seeded(&seg.id, "", "main.type", "")
+            .unwrap();
+
+        let reaped = store.delete_entry_if_empty(&id).unwrap();
+        assert!(
+            reaped,
+            "entry with only empty-string fields should be reapable"
+        );
+
+        let entries = store.list_entries(&seg.id).unwrap();
+        assert!(entries.is_empty());
+    }
