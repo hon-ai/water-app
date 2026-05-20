@@ -15,6 +15,27 @@ const THEMES: { id: Theme; label: string }[] = [
   { id: "auto", label: "Auto" },
 ];
 
+/**
+ * Format the lowercase provider id for display. Title-case the known
+ * adapters, with explicit branding for OpenAI / Anthropic.
+ */
+function prettyProviderName(id: string): string {
+  switch (id) {
+    case "anthropic":
+      return "Anthropic";
+    case "openai":
+      return "OpenAI";
+    case "ollama":
+      return "Ollama";
+    case "llamacpp":
+      return "llama.cpp";
+    case "canned":
+      return "Canned (test stub)";
+    default:
+      return id.charAt(0).toUpperCase() + id.slice(1);
+  }
+}
+
 export function SettingsSheet({ open, onClose }: Props) {
   const { theme, setTheme } = useTheme();
   const [status, setStatus] = useState<DiagnosticsStatus | null>(null);
@@ -171,6 +192,16 @@ export function SettingsSheet({ open, onClose }: Props) {
 
       <section style={section}>
         <div style={heading}>Providers</div>
+        <p
+          style={{
+            margin: "-4px 0 12px 0",
+            fontSize: "var(--water-fs-meta)",
+            color: "var(--water-fg-muted)",
+            lineHeight: 1.5,
+          }}
+        >
+          API keys live in <code style={{ fontFamily: "var(--water-font-mono)", background: "color-mix(in srgb, var(--water-fg-faint) 12%, transparent)", padding: "1px 4px", borderRadius: 4 }}>~/.water/dev-keys.toml</code>. Click Test to activate a provider for this session.
+        </p>
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
           {providers.map((p) => (
             <li
@@ -178,47 +209,81 @@ export function SettingsSheet({ open, onClose }: Props) {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
-                padding: "8px 12px",
+                gap: 10,
+                padding: "10px 14px",
                 background: "var(--water-bg-canvas)",
                 borderRadius: "var(--water-r-8)",
+                border:
+                  "1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent)",
+                transition:
+                  "border-color var(--water-dur-tiny) var(--water-ease-out-soft)",
               }}
             >
+              <span
+                aria-hidden
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: p.ok
+                    ? "color-mix(in srgb, var(--water-hue-flow) 80%, transparent)"
+                    : "color-mix(in srgb, var(--water-fg-faint) 60%, transparent)",
+                  boxShadow: p.ok
+                    ? "0 0 10px color-mix(in srgb, var(--water-hue-flow) 60%, transparent)"
+                    : "none",
+                  flexShrink: 0,
+                }}
+              />
               <span
                 style={{
                   flex: 1,
                   fontFamily: "var(--water-font-sans)",
                   fontSize: "var(--water-fs-ui)",
+                  fontWeight: 500,
                 }}
               >
-                {p.id}
+                {prettyProviderName(p.id)}
               </span>
-              <span
-                style={{
-                  fontSize: "var(--water-fs-meta)",
-                  color: p.ok ? "var(--water-hue-flow)" : "var(--water-fg-faint)",
-                }}
-              >
-                {p.ok ? "ok" : "—"}
-              </span>
+              {p.error && (
+                <span
+                  title={p.error}
+                  style={{
+                    fontSize: "var(--water-fs-meta)",
+                    color: "var(--water-hue-drift)",
+                    fontFamily: "var(--water-font-sans)",
+                    maxWidth: 140,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {p.error}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => handleTest(p.id)}
                 disabled={testingId === p.id}
                 style={{
-                  padding: "4px 10px",
+                  padding: "5px 12px",
                   border: "none",
-                  background: "transparent",
+                  background: p.ok
+                    ? "transparent"
+                    : "color-mix(in srgb, var(--water-hue-flow) 22%, transparent)",
                   color: "var(--water-fg-default)",
-                  cursor: "pointer",
+                  cursor: testingId === p.id ? "wait" : "pointer",
                   borderRadius: "var(--water-r-8)",
-                  boxShadow:
-                    "inset 0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
+                  boxShadow: p.ok
+                    ? "inset 0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 30%, transparent)"
+                    : "none",
                   fontFamily: "var(--water-font-sans)",
                   fontSize: "var(--water-fs-meta)",
+                  fontWeight: 500,
+                  transition:
+                    "background-color var(--water-dur-tiny) var(--water-ease-out-soft)",
                 }}
               >
-                {testingId === p.id ? "Testing…" : "Test"}
+                {testingId === p.id ? "Testing…" : p.ok ? "Re-test" : "Test"}
               </button>
             </li>
           ))}

@@ -1,0 +1,156 @@
+/* =====================================================================
+   Conversational Intake — one-question-at-a-time flow for character +
+   world entry creation.
+   ===================================================================== */
+
+[data-testid="conversational-intake"] {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 4px 2px 8px 2px;
+  font-family: var(--water-font-sans);
+  color: var(--water-fg-default);
+  animation:
+    water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both;
+}
+
+[data-testid="conversational-intake"] [data-testid="section"] {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: color-mix(in srgb, var(--water-hue-flow) 70%, var(--water-fg-muted));
+  margin: 0;
+}
+
+[data-testid="conversational-intake"] h3 {
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-title);
+  line-height: var(--water-lh-title);
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  margin: 0;
+  color: var(--water-fg-default);
+}
+
+[data-testid="conversational-intake"] [data-testid="helper"] {
+  margin: -8px 0 0 0;
+  font-size: var(--water-fs-meta);
+  line-height: 1.5;
+  color: var(--water-fg-muted);
+}
+
+[data-testid="conversational-intake"] [data-testid="examples"] {
+  margin: -4px 0 0 0;
+  font-size: var(--water-fs-meta);
+  font-style: italic;
+  color: var(--water-fg-faint);
+}
+
+/* Inputs — shared focus/glow treatment for short_text + long_text + choice. */
+[data-testid="conversational-intake"] input[type="text"],
+[data-testid="conversational-intake"] textarea,
+[data-testid="conversational-intake"] select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 28%, transparent);
+  border-radius: var(--water-r-8);
+  background: var(--water-bg-canvas);
+  color: var(--water-fg-default);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-body);
+  line-height: var(--water-lh-body);
+  outline: none;
+  transition:
+    border-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    box-shadow var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+[data-testid="conversational-intake"] textarea {
+  resize: vertical;
+  min-height: 110px;
+  font-family: var(--water-font-serif);
+  font-size: var(--water-fs-body);
+  line-height: 1.55;
+}
+
+[data-testid="conversational-intake"] input[type="text"]:focus,
+[data-testid="conversational-intake"] textarea:focus,
+[data-testid="conversational-intake"] select:focus {
+  border-color: color-mix(in srgb, var(--water-hue-flow) 60%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--water-hue-flow) 18%, transparent);
+}
+
+/* Navigation row */
+[data-testid="conversational-intake"] [role="group"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+[data-testid="conversational-intake"] [role="group"] button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--water-r-8);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--water-fg-muted);
+  transition:
+    background-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    color var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+[data-testid="conversational-intake"] [role="group"] button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--water-fg-faint) 12%, transparent);
+  color: var(--water-fg-default);
+}
+
+[data-testid="conversational-intake"] [role="group"] button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Primary "Next" is the third button in the group (Back / Skip / Next / Save&close). */
+[data-testid="conversational-intake"] [role="group"] button:nth-child(3) {
+  margin-left: auto;
+  background: color-mix(in srgb, var(--water-hue-flow) 32%, transparent);
+  color: var(--water-fg-default);
+}
+
+[data-testid="conversational-intake"] [role="group"] button:nth-child(3):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--water-hue-flow) 48%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--water-hue-flow) 35%, transparent);
+}
+
+[data-testid="conversational-intake"] [data-testid="progress"] {
+  align-self: flex-end;
+  font-size: var(--water-fs-meta);
+  color: var(--water-fg-faint);
+  margin-top: -4px;
+}
+
+/* StringArrayEditor — chips for accepted items + parser preview. */
+[data-testid="conversational-intake"] [role="list"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+[data-testid="conversational-intake"] [role="list"] li {
+  padding: 4px 10px;
+  border-radius: var(--water-r-16);
+  background: color-mix(in srgb, var(--water-hue-flow) 16%, transparent);
+  color: var(--water-fg-default);
+  font-size: var(--water-fs-meta);
+  font-family: var(--water-font-sans);
+}
