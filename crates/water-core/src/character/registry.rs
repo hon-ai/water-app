@@ -112,6 +112,19 @@ impl CharacterRegistry {
         &self.rows
     }
 
+    /// Case-sensitive name lookup. Matches against the SQL `name` column
+    /// (which mirrors `main.full_name` after [`CharacterStore::update_field`]).
+    /// Returns the first row whose `name` equals `token` exactly.
+    ///
+    /// Used by [`crate::world::collision::resolve_token_kind`] (M4 § 6.2)
+    /// to detect character-vs-world name collisions. Case sensitivity is
+    /// intentional and mirrors the M3 autosuggest convention; world
+    /// lookups are case-insensitive by contrast.
+    #[must_use]
+    pub fn find_by_name(&self, token: &str) -> Option<&CharacterRegistryRow> {
+        self.rows.iter().find(|r| r.name == token)
+    }
+
     /// Returns the least-recently-used character from `present`, skipping
     /// characters whose cooldown hasn't elapsed since their last emit.
     ///

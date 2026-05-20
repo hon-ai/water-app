@@ -10,12 +10,14 @@
 //! read-only hot-path snapshot built once per orchestrator dispatch.
 
 mod store;
+pub mod collision;
 pub mod registry;
 pub mod templates;
 
 #[cfg(test)]
 mod tests;
 
+pub use collision::{resolve_token_kind, TokenKind};
 pub use registry::{WorldEntrySnapshot, WorldRegistry};
 pub use store::{
     WorldEntryFile, WorldEntryIndexRow, WorldSegmentRow, WorldSingleDocFile, WorldStore,
