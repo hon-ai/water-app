@@ -1,0 +1,12 @@
+schema_version = "locations@1"
+id = "01J4PELL000000000000000000"
+name = "The Pell Library"
+aliases = ["Pell", "the library", "Aren's old place"]
+
+[main]
+type = "underground library"
+sensory_detail = "Dust thick enough to read fingertips in. The air smells of cold stone and old paper. No natural light reaches the lower stacks; brass lanterns guttering on iron hooks."
+significance = "Aren spent her childhood here under the sub-basement's east wing. She still flinches at the smell of dust."
+
+[lists]
+notable_features = ["the sub-basement", "the locked east wing", "no natural light", "brass lanterns"]
