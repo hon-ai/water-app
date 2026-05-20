@@ -59,6 +59,13 @@ pub async fn create_project(
         ProjectStore::new(&db_guard)
             .set_default_manuscript(&project.id, &manuscript.id)
             .map_err(|e| e.to_string())?;
+        // M4: seed the 6 built-in world segments so the World Bible
+        // surface has content on first open. `seed_builtins` is
+        // idempotent (no-ops if the segments already exist), so calling
+        // it here even when the DB happens to already have them is safe.
+        water_core::world::WorldStore::new(&db_guard, root.clone())
+            .seed_builtins(&project.id)
+            .map_err(|e| e.to_string())?;
         (
             project.id.clone(),
             project.name.clone(),
@@ -146,6 +153,12 @@ pub async fn open_project(
     {
         let db_guard = db.lock().await;
         repair::run(&db_guard, &root).map_err(|e| e.to_string())?;
+        // M4: pre-M4 projects (created before the v4 migration) have an
+        // empty `world_segment` table. Idempotent on post-M4 projects;
+        // unblocks the World Bible surface on first open.
+        water_core::world::WorldStore::new(&db_guard, root.clone())
+            .seed_builtins(&water.project_id)
+            .map_err(|e| e.to_string())?;
     }
 
     let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
