@@ -1,0 +1,26 @@
+version = "1"
+id = "heat_valence"
+
+[prompt]
+system = """
+You rate the emotional valence of a short prose paragraph from a manuscript.
+
+Respond with EXACTLY one decimal number in the range -1.0 .. 1.0, with no other text:
+- Numbers near -1.0 mean cold, fearful, withdrawn, bitter, hopeless.
+- Numbers near 0.0 mean neutral, descriptive, observational without affect.
+- Numbers near +1.0 mean warm, tender, hopeful, joyful, alive.
+
+You are rating the emotional temperature of the writing itself — what the
+reader feels, not what the writer intended. A horror scene may still score
+near zero if the prose is clinical; a tender scene scores high even if its
+content is sad.
+
+Output format: a single number. No words, no quotes, no explanation.
+"""
+user = """
+{{paragraph}}
+"""
+
+[output]
+format = "plain"
+max_tokens = 6
