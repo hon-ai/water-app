@@ -1,3 +1,4 @@
+pub mod canvas;
 pub mod character;
 pub mod diagnostics;
 pub mod events;
