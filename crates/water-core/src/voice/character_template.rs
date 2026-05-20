@@ -58,21 +58,25 @@ impl CharacterTemplate {
     /// Render the template with the given LSM v2.1 sheet data. Missing
     /// fields cause their entire sentence to be omitted.
     ///
-    /// `world_registry` and `scene_context` (M4 Task 25) are reserved
-    /// for the `{{world.location_*}}` token injection landing in Task
-    /// 26; the signature accepts them now so `CharacterSpeaker::from_row`
-    /// can thread the per-dispatch scene context through.
+    /// When `scene_context.location_id` references an entry in the
+    /// `locations` segment of `world_registry`, the rendered prompt
+    /// gains a Setting block built from that entry's `main.name`,
+    /// `main.type`, and `main.sensory_detail`. Any missing piece drops
+    /// its line via the existing line-based omission rule.
     #[must_use]
     pub fn render(
         &self,
         sheet: &serde_json::Value,
-        _world_registry: &WorldRegistry,
-        _scene_context: &SceneContext,
+        world_registry: &WorldRegistry,
+        scene_context: &SceneContext,
     ) -> String {
         let main = sheet.get("main").unwrap_or(&serde_json::Value::Null);
         let bonus = sheet
             .get("bonus_traits")
             .unwrap_or(&serde_json::Value::Null);
+
+        let (loc_name, loc_type, loc_sensory) =
+            location_tokens(world_registry, scene_context);
 
         let substitutions: &[(&str, String)] = &[
             ("full_name", read_str(main, "full_name")),
@@ -92,10 +96,39 @@ impl CharacterTemplate {
             ),
             ("fears", read_list_joined(bonus, "fears")),
             ("values", read_list_joined(bonus, "values")),
+            ("world.location_name", loc_name),
+            ("world.location_type", loc_type),
+            ("world.location_sensory_detail", loc_sensory),
         ];
 
         render_with_omission(&self.raw, substitutions)
     }
+}
+
+/// Resolve the `{{world.location_*}}` substitutions for the rendering
+/// pass. Returns `(name, type, sensory_detail)` — each is empty when the
+/// information isn't available, which causes its template line to drop
+/// via the line-based omission rule.
+fn location_tokens(
+    world_registry: &WorldRegistry,
+    scene_context: &SceneContext,
+) -> (String, String, String) {
+    let Some(loc_id) = scene_context.location_id.as_ref() else {
+        return (String::new(), String::new(), String::new());
+    };
+    let Some(snap) = world_registry.by_id(loc_id) else {
+        return (String::new(), String::new(), String::new());
+    };
+    if snap.segment_slug != "locations" {
+        return (String::new(), String::new(), String::new());
+    }
+    let main = snap.data.get("main").unwrap_or(&serde_json::Value::Null);
+    let name = if snap.name.trim().is_empty() {
+        String::new()
+    } else {
+        snap.name.clone()
+    };
+    (name, read_str(main, "type"), read_str(main, "sensory_detail"))
 }
 
 fn read_str(obj: &serde_json::Value, key: &str) -> String {
@@ -251,4 +284,145 @@ mod tests {
         assert!(rendered.contains('X'), "name still appears elsewhere");
         assert!(!rendered.contains("weirdo"));
     }
+
+    /// Helper: seed a project + create a location entry with the given main
+    /// fields. Returns (db, project_root, project_id, entry_id).
+    #[cfg(test)]
+    fn mk_location(
+        name: &str,
+        ty: &str,
+        sensory: &str,
+    ) -> (
+        crate::Db,
+        tempfile::TempDir,
+        crate::Id,
+        crate::Id,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::Db::open_in_memory().unwrap();
+        let p = crate::ProjectStore::new(&db).insert("P").unwrap();
+        let store = crate::world::WorldStore::new(&db, dir.path().to_path_buf());
+        store.seed_builtins(&p.id).unwrap();
+        let loc = store
+            .find_segment_by_slug(&p.id, "locations")
+            .unwrap()
+            .unwrap();
+        let entry_id = store.create_entry(&loc.id, name).unwrap();
+        if !ty.is_empty() {
+            store
+                .update_entry_field(&entry_id, "main.type", &serde_json::json!(ty))
+                .unwrap();
+        }
+        if !sensory.is_empty() {
+            store
+                .update_entry_field(
+                    &entry_id,
+                    "main.sensory_detail",
+                    &serde_json::json!(sensory),
+                )
+                .unwrap();
+        }
+        (db, dir, p.id, entry_id)
+    }
+
+    fn baseline_sheet() -> serde_json::Value {
+        json!({
+            "main": {
+                "full_name": "Aren",
+                "role_in_story": "protagonist",
+                "want": "w",
+                "need": "n",
+                "lie_they_believe": "l",
+            },
+            "bonus_traits": { "voice": "v" },
+        })
+    }
+
+    #[test]
+    fn includes_location_sensory_detail_when_scene_has_location_id() {
+        let (db, dir, project_id, entry_id) = mk_location(
+            "The Pell Library",
+            "library",
+            "Dust thick enough to read fingertips in",
+        );
+        let world_reg =
+            crate::world::WorldRegistry::from_db(&db, &project_id, dir.path().to_path_buf())
+                .unwrap();
+        let scene_ctx = SceneContext {
+            scene_id: crate::Id::new(),
+            location_id: Some(entry_id),
+            pov_character_id: None,
+            characters_present: vec![],
+        };
+
+        let rendered =
+            CharacterTemplate::load_builtin().render(&baseline_sheet(), &world_reg, &scene_ctx);
+
+        assert!(
+            rendered.contains("The Pell Library"),
+            "location name missing from rendered prompt:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("library"),
+            "location type missing from rendered prompt:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Dust thick enough to read fingertips in"),
+            "sensory_detail missing from rendered prompt:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("{{world."),
+            "world tokens left unrendered:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn omits_location_lines_when_scene_location_id_is_none() {
+        let world_reg = WorldRegistry::default();
+        let scene_ctx = SceneContext::empty();
+        let rendered =
+            CharacterTemplate::load_builtin().render(&baseline_sheet(), &world_reg, &scene_ctx);
+
+        assert!(
+            !rendered.contains("{{world."),
+            "world tokens left unrendered:\n{rendered}"
+        );
+        // The "Setting:" prefix used for the location block must not appear
+        // when there is no location to render.
+        assert!(
+            !rendered.contains("Setting:"),
+            "setting block leaked through with no location:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn omits_location_lines_when_location_id_points_to_unknown_entry() {
+        let (db, dir, project_id, _entry_id) = mk_location("Pell", "library", "dust");
+        let world_reg =
+            crate::world::WorldRegistry::from_db(&db, &project_id, dir.path().to_path_buf())
+                .unwrap();
+        let scene_ctx = SceneContext {
+            scene_id: crate::Id::new(),
+            location_id: Some(crate::Id::new()), // unknown id
+            pov_character_id: None,
+            characters_present: vec![],
+        };
+
+        let rendered =
+            CharacterTemplate::load_builtin().render(&baseline_sheet(), &world_reg, &scene_ctx);
+
+        assert!(
+            !rendered.contains("Pell"),
+            "unknown-id should not leak the existing location:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("{{world."),
+            "world tokens left unrendered:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("Setting:"),
+            "setting block leaked through with unknown location:\n{rendered}"
+        );
+    }
+
 }
