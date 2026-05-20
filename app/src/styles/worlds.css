@@ -130,3 +130,30 @@
   gap: 18px;
   margin-top: 28px;
 }
+
+/* WorldSegmentView wrapper — the back button + heading + child grid
+   live in a div without a class, so we style via the parent surface
+   and a generic back-button rule below. */
+
+.worlds-surface > div > button:first-child {
+  /* Back buttons rendered as raw <button>← Back</button> in
+     WorldsSurface.tsx and WorldSegmentView.tsx. Soften them to match
+     the rest of the chrome. */
+  border: none;
+  background: transparent;
+  color: var(--water-fg-muted);
+  cursor: pointer;
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--water-r-8);
+  transition:
+    background-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    color var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+.worlds-surface > div > button:first-child:hover {
+  background: color-mix(in srgb, var(--water-hue-flow) 12%, transparent);
+  color: var(--water-fg-default);
+}
