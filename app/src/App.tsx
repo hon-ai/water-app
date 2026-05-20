@@ -124,6 +124,7 @@ export default function App() {
           active={activeNav}
           onSelect={setActiveNav}
           onOpenSettings={() => setSettingsOpen(true)}
+          projectOpen={projectOpen}
         />
         {!projectOpen ? (
           <EmptyState

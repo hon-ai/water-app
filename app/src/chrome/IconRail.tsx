@@ -6,6 +6,14 @@ interface Props {
   active: NavTarget;
   onSelect: (target: NavTarget) => void;
   onOpenSettings: () => void;
+  /**
+   * Hides the Scenes / Characters / World nav buttons when there is no
+   * open project. They would otherwise be visible-but-dead — clicking
+   * one sets `activeNav` but the right-side surface always renders
+   * `<EmptyState>` while `projectOpen === false`, so the writer
+   * perceives them as broken.
+   */
+  projectOpen: boolean;
 }
 
 const NAV: { id: NavTarget; label: string; Icon: typeof FileText }[] = [
@@ -14,7 +22,7 @@ const NAV: { id: NavTarget; label: string; Icon: typeof FileText }[] = [
   { id: "world", label: "World", Icon: Globe },
 ];
 
-export function IconRail({ active, onSelect, onOpenSettings }: Props) {
+export function IconRail({ active, onSelect, onOpenSettings, projectOpen }: Props) {
   return (
     <nav
       aria-label="primary"
@@ -34,30 +42,37 @@ export function IconRail({ active, onSelect, onOpenSettings }: Props) {
         <Droplet size={22} strokeWidth={1.75} />
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, paddingTop: 12 }}>
-        {NAV.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            title={label}
-            aria-label={label}
-            data-active={active === id ? "true" : "false"}
-            onClick={() => onSelect(id)}
-            style={{
-              width: 40,
-              height: 40,
-              display: "grid",
-              placeItems: "center",
-              border: "none",
-              borderRadius: "var(--water-r-16)",
-              cursor: "pointer",
-              background: active === id ? "color-mix(in srgb, var(--water-hue-flow) 30%, transparent)" : "transparent",
-              color: active === id ? "var(--water-fg-default)" : "var(--water-fg-muted)",
-              transition: `background-color var(--water-dur-tiny) var(--water-ease-out-soft)`,
-            }}
-          >
-            <Icon size={18} strokeWidth={1.5} />
-          </button>
-        ))}
+        {projectOpen &&
+          NAV.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              title={label}
+              aria-label={label}
+              data-active={active === id ? "true" : "false"}
+              onClick={() => onSelect(id)}
+              style={{
+                width: 40,
+                height: 40,
+                display: "grid",
+                placeItems: "center",
+                border: "none",
+                borderRadius: "var(--water-r-16)",
+                cursor: "pointer",
+                background:
+                  active === id
+                    ? "color-mix(in srgb, var(--water-hue-flow) 30%, transparent)"
+                    : "transparent",
+                color:
+                  active === id
+                    ? "var(--water-fg-default)"
+                    : "var(--water-fg-muted)",
+                transition: `background-color var(--water-dur-tiny) var(--water-ease-out-soft)`,
+              }}
+            >
+              <Icon size={18} strokeWidth={1.5} />
+            </button>
+          ))}
       </div>
       <button
         type="button"
