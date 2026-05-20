@@ -5,15 +5,18 @@
 //! * [`templates`] — the canonical six built-in segment templates and the
 //!   `WorldTemplateSchema` shape used for user overrides.
 //!
-//! Task 5 will add collection-entry CRUD inside [`store`]; Task 6 will add
-//! `WorldRegistry` / `WorldEntrySnapshot` in a future submodule.
+//! Task 5 added collection-entry CRUD inside [`store`]; Task 6 added
+//! [`registry::WorldRegistry`] / [`registry::WorldEntrySnapshot`] — the
+//! read-only hot-path snapshot built once per orchestrator dispatch.
 
 mod store;
+pub mod registry;
 pub mod templates;
 
 #[cfg(test)]
 mod tests;
 
+pub use registry::{WorldEntrySnapshot, WorldRegistry};
 pub use store::{
     WorldEntryFile, WorldEntryIndexRow, WorldSegmentRow, WorldSingleDocFile, WorldStore,
 };
