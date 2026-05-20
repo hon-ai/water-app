@@ -394,4 +394,92 @@ If a future writer authors a 200-trait OC and then drops them into every scene, 
 
 ---
 
+## 18. Character-vs-world name-collision resolution is heuristic
+
+**What it is.** When a token in a scene paragraph could resolve to either a character (`character.full_name`) or a world entry (`world_entry.name` / aliases), `crate::orchestrator::collision::resolve_token_kind` applies a deterministic policy: if the scene has the character in `characters_present`, the character wins; otherwise both speakers can fire. The character-in-scene rule is a heuristic — it assumes the writer adds characters to the scene before mentioning them.
+
+**Where it lives.** `crates/water-core/src/orchestrator/collision.rs` (the shared helper) + `crates/water-core/src/orchestrator/triggers/world_drift.rs` (consumer).
+
+**Why it's fragile.** Writers often type the character's name first and add the character to `characters_present` after via the autosuggest chip. During that window — a few seconds at most — the resolver will treat the token as a world hit if a world entry with the same name exists. In practice the autosuggest chip surfaces the missing character within the same debounce cycle, so the window is small. But the asymmetry is real: a `Cartographer` pill could land for "Aren" the location before the writer accepts the "Aren" character chip.
+
+**What success looks like.** When the writer adds characters to scenes before/while mentioning them (the common flow per spec § 20), the resolver routes correctly every time.
+
+**First-look mitigations.**
+
+1. Check the scene's `characters_present` set — if the colliding character isn't there yet, the chip should be visible above the editor.
+2. Accept the autosuggest chip; the next paragraph save will route correctly.
+3. If both pills fire repeatedly even with the chip accepted, file a bug — that's a real defect in the resolver.
+
+---
+
+## 19. `world_drift` contextual-overlap pre-check can miss real contradictions
+
+**What it is.** Before spending an LLM call on Stage 2 confirmation, `WorldDriftEvaluator` requires the scene paragraph and the world entry's `[main]` text to share at least 2 content words (stopwords stripped). The gate exists to suppress incidental name mentions (the `near_miss` case in the Pell Library fixture) from burning LLM budget.
+
+**Where it lives.** `crates/water-core/src/orchestrator/triggers/world_drift.rs::contextual_overlap`.
+
+**Why it's fragile.** A 2-word threshold drops paragraphs where the writer's contradiction is stylistically distant from the entry's source text. If an entry's `sensory_detail` says "Dust thick enough to read fingertips in" and the writer's contradiction is "She crossed the marble atrium, gleaming white in the afternoon light," the resolver may see no content overlap and suppress — even though "atrium gleaming white" contradicts "dust thick" semantically.
+
+**What success looks like.** The fixture scenes (`eval/m4_acceptance/scenes/*`) all route correctly: contradictions trip the gate; the near-miss is suppressed.
+
+**First-look mitigations.**
+
+1. If a writer reports a missing `world_drift` pill, check the paragraph + entry overlap manually.
+2. Don't lower the threshold globally — it would over-fire on near-miss mentions.
+3. Upgrade path: M5+'s embedding-similarity pre-check (planned).
+
+---
+
+## 20. Cartographer pill hue follows persona-hue, not segment-hue
+
+**What it is.** Pills emitted by the Cartographer speaker carry `--water-hue-persona-cartographer`, identical regardless of which world segment triggered the drift. A contradiction against a `Locations` entry looks the same as one against a `Concept` entry.
+
+**Where it lives.** `crates/water-core/src/voice/speaker.rs::CartographerSpeaker` + the persona registration in `voice/router.rs`.
+
+**Why it's fragile.** Cosmetic only. Spec § 4.6 doesn't require segment-hued pills; v1 ships persona-hued.
+
+**What success looks like.** The Cartographer pill is recognizably itself; the writer can tell it apart from Echo/Architect/Editor at a glance. Segment-source is conveyed via the pill message text rather than hue.
+
+**First-look mitigations.**
+
+1. If you wanted segment-hued pills (`--water-hue-world-N` round-robin per `world_segment.hue_token`), the path is to extend `CartographerSpeaker::from_row` with an optional `segment_hue` and have the voice router pass it from the trigger snapshot. Deferred to M7 polish unless field-tested writers ask for it.
+
+---
+
+## 21. Unnamed Chorus stubs persist indefinitely
+
+**What it is.** When the writer pins a Chorus + `no_universe_yet` pill, a `locations` `world_entry` is created with `name = ""` and `main.sensory_detail` seeded from the pill snippet. No auto-reaping of these stubs ever runs — they stay in the index as "(unnamed location)" entries until the writer either names them or deletes them.
+
+**Where it lives.** `app/src-tauri/src/commands/pill.rs::pill_pin_core` (creates the stub) + `crates/water-core/src/world/store.rs::create_entry_seeded` (the underlying creator).
+
+**Why it's fragile.** The snippet has value as a fragment even without a name (the whole point of the no-universe-yet flow), but a writer who pins many Chorus pills without elaborating ends up with a Locations grid full of unnamed entries. Could become hygiene debt.
+
+**What success looks like.** Writers typically name a stub within minutes of pinning (the WorldEntrySheet is the first thing they see after pinning, via T30's nav-to-stub event). The unnamed-stub backlog stays small in practice.
+
+**First-look mitigations.**
+
+1. The Locations grid renders unnamed entries as `(unnamed location)` — they're visible.
+2. The writer can manually delete via the entry sheet's delete affordance.
+3. Upgrade path: M5+ may add an optional "reap unnamed entries > N days" pass.
+
+---
+
+## 22. Case-sensitivity asymmetry between character autosuggest and world_drift
+
+**What it is.** Character autosuggest (M3) is case-sensitive on word boundaries; `WorldRegistry::find_by_token` (and therefore `world_drift` Stage 1) is **case-insensitive**. A character named "Marcus" requires the writer to type "Marcus" (not "marcus"); a location named "The Pell Library" matches "the pell library" too.
+
+**Where it lives.** `crates/water-core/src/character/autosuggest.rs` (case-sensitive) vs. `crates/water-core/src/world/registry.rs::find_by_token` (case-insensitive).
+
+**Why it's fragile.** The asymmetry is intentional: place names are more case-variable in English prose than character names. Writers don't write "marcus" mid-sentence, but they routinely write "the library" mid-sentence to refer to "The Pell Library." However, the asymmetry is non-obvious — a reader of the autosuggest tests + the world tests may assume one or the other applies everywhere.
+
+**What success looks like.** Writers see character chips for proper-case character mentions and world chips for either-case place mentions. Both subsystems behave as designed.
+
+**First-look mitigations.**
+
+1. If a character chip isn't surfacing for a known-character mention, check the casing — the M3 tokenizer requires proper case.
+2. If a world chip is surfacing for a stray lowercased place reference, that's expected: the contextual-overlap pre-check (#19) is what suppresses noise, not the case sensitivity.
+3. The asymmetry is documented in `world/registry.rs` (module docstring) and the M4 spec § 6.1 (case-sensitivity policy).
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*
