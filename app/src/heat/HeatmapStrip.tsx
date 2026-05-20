@@ -292,44 +292,54 @@ export function HeatmapStrip({ sceneId }: Props) {
           </div>
         ))}
       </div>
-      {/* Right-edge chip — opens the metric picker. */}
-      <button
-        type="button"
-        data-testid="heatmap-chip"
-        onClick={() => setPickerOpen((v) => !v)}
-        aria-label="Heatmap metrics"
-        aria-haspopup="menu"
-        aria-expanded={pickerOpen ? "true" : "false"}
+      {/* Right-edge chip + picker. Picker is a SIBLING of the button
+          (not a child) so it doesn't inherit text-align:center from
+          the button + so its z-stacking is independent. */}
+      <div
         style={{
           position: "relative",
           flexShrink: 0,
-          padding: "0 10px",
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          border: "none",
-          background: "var(--water-bg-raised)",
-          color: "var(--water-fg-muted)",
-          fontFamily: "var(--water-font-sans)",
-          fontSize: 11,
-          fontWeight: 500,
-          textTransform: "lowercase",
-          letterSpacing: 0.3,
-          boxShadow: "var(--water-elev-1)",
-          cursor: "pointer",
-          transition:
-            "color var(--water-dur-tiny) var(--water-ease-out-soft)",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = "var(--water-fg-default)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = "var(--water-fg-muted)";
         }}
       >
-        {primaryLabel}
-        {activeKinds.length > 1 ? ` +${activeKinds.length - 1}` : ""}
-        <span aria-hidden style={{ fontSize: 9, marginLeft: 2 }}>▾</span>
+        <button
+          type="button"
+          data-testid="heatmap-chip"
+          onClick={() => setPickerOpen((v) => !v)}
+          aria-label="Heatmap metrics"
+          aria-haspopup="menu"
+          aria-expanded={pickerOpen ? "true" : "false"}
+          style={{
+            height: "100%",
+            padding: "0 10px",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            border: "none",
+            background: "var(--water-bg-raised)",
+            color: "var(--water-fg-muted)",
+            fontFamily: "var(--water-font-sans)",
+            fontSize: 11,
+            fontWeight: 500,
+            textTransform: "lowercase",
+            letterSpacing: 0.3,
+            boxShadow: "var(--water-elev-1)",
+            cursor: "pointer",
+            transition:
+              "color var(--water-dur-tiny) var(--water-ease-out-soft)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "var(--water-fg-default)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--water-fg-muted)";
+          }}
+        >
+          {primaryLabel}
+          {activeKinds.length > 1 ? ` +${activeKinds.length - 1}` : ""}
+          <span aria-hidden style={{ fontSize: 9, marginLeft: 2 }}>
+            ▾
+          </span>
+        </button>
         <HeatmapMetricPicker
           open={pickerOpen}
           enabled={enabled}
@@ -338,7 +348,7 @@ export function HeatmapStrip({ sceneId }: Props) {
           }
           onClose={() => setPickerOpen(false)}
         />
-      </button>
+      </div>
       {hover && activeKinds.length > 0 && (
         <HoverTooltip
           metrics={metrics}
@@ -466,19 +476,22 @@ function IntroOverlay({ onDismiss }: { onDismiss: () => void }) {
       onClick={stopProp}
       style={{
         position: "absolute",
-        top: "calc(100% + 12px)",
+        // Sits ABOVE the strip so it doesn't obscure the scene title
+        // below. The editor canvas has ~72 px of breathing room above
+        // the strip; the overlay tucks into that space.
+        bottom: "calc(100% + 8px)",
         left: 0,
         minWidth: 260,
         maxWidth: 320,
         padding: "10px 12px",
-        background: "var(--water-bg-raised)",
+        background: "var(--water-bg-paper)",
         color: "var(--water-fg-default)",
         fontFamily: "var(--water-font-sans)",
         fontSize: 12,
         lineHeight: 1.5,
         borderRadius: "var(--water-r-16)",
         boxShadow: "var(--water-elev-2)",
-        zIndex: 42,
+        zIndex: 1001,
         display: "flex",
         alignItems: "flex-start",
         gap: 8,

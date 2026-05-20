@@ -54,12 +54,17 @@ export function HeatmapMetricPicker({
         position: "absolute",
         top: "calc(100% + 6px)",
         right: 0,
-        minWidth: 260,
-        padding: 6,
-        background: "var(--water-bg-raised)",
+        minWidth: 280,
+        padding: 8,
+        // Fully opaque so the title behind the strip doesn't bleed
+        // through. bg-paper is the canvas color; raised was bleeding
+        // because color-mix layers in some downstream tokens are
+        // partially transparent at this composition depth.
+        background: "var(--water-bg-paper)",
         borderRadius: "var(--water-r-16)",
         boxShadow: "var(--water-elev-2)",
-        zIndex: 40,
+        zIndex: 1000,
+        textAlign: "left",
         animation:
           "water-pill-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
       }}
@@ -73,6 +78,7 @@ export function HeatmapMetricPicker({
           textTransform: "uppercase",
           letterSpacing: 0.6,
           color: "var(--water-fg-muted)",
+          textAlign: "left",
         }}
       >
         Heatmap metrics
@@ -86,12 +92,15 @@ export function HeatmapMetricPicker({
             aria-checked={on ? "true" : "false"}
             data-testid={`heatmap-picker-row-${kind}`}
             style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
+              display: "grid",
+              gridTemplateColumns: "auto 1fr",
+              alignItems: "center",
+              columnGap: 10,
+              rowGap: 2,
               padding: "8px 10px",
               borderRadius: "var(--water-r-8)",
               cursor: "pointer",
+              textAlign: "left",
               transition:
                 "background-color var(--water-dur-tiny) var(--water-ease-out-soft)",
             }}
@@ -103,6 +112,7 @@ export function HeatmapMetricPicker({
               e.currentTarget.style.background = "transparent";
             }}
           >
+            {/* Row 1: checkbox + title (checkbox aligns to title baseline). */}
             <input
               type="checkbox"
               checked={on}
@@ -112,54 +122,64 @@ export function HeatmapMetricPicker({
                 void ipc
                   .heatSetMetricEnabled(kind, next)
                   .catch(() => {
-                    /* swallow — toggle lives in local state regardless */
+                    /* swallow */
                   });
               }}
-              style={{ marginTop: 2 }}
+              style={{
+                gridRow: "1",
+                gridColumn: "1",
+                margin: 0,
+                cursor: "pointer",
+              }}
             />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontFamily: "var(--water-font-sans)",
-                  fontSize: "var(--water-fs-ui)",
-                  fontWeight: 500,
-                  color: "var(--water-fg-default)",
-                }}
-              >
-                {label}
-                {requiresLlm && (
-                  <span
-                    title="Requires a configured LLM provider"
-                    style={{
-                      padding: "1px 6px",
-                      fontSize: 9,
-                      fontWeight: 600,
-                      letterSpacing: 0.4,
-                      borderRadius: "var(--water-r-8)",
-                      background:
-                        "color-mix(in srgb, var(--water-hue-coherence) 22%, transparent)",
-                      color: "var(--water-fg-muted)",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    LLM
-                  </span>
-                )}
-              </div>
-              <div
-                style={{
-                  fontFamily: "var(--water-font-sans)",
-                  fontSize: 11,
-                  lineHeight: 1.5,
-                  color: "var(--water-fg-muted)",
-                  marginTop: 2,
-                }}
-              >
-                {description}
-              </div>
+            <div
+              style={{
+                gridRow: "1",
+                gridColumn: "2",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontFamily: "var(--water-font-sans)",
+                fontSize: "var(--water-fs-ui)",
+                fontWeight: 500,
+                color: "var(--water-fg-default)",
+                textAlign: "left",
+              }}
+            >
+              {label}
+              {requiresLlm && (
+                <span
+                  title="Requires a configured LLM provider"
+                  style={{
+                    padding: "1px 6px",
+                    fontSize: 9,
+                    fontWeight: 600,
+                    letterSpacing: 0.4,
+                    borderRadius: "var(--water-r-8)",
+                    background:
+                      "color-mix(in srgb, var(--water-hue-coherence) 28%, var(--water-bg-paper))",
+                    color: "var(--water-fg-muted)",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  LLM
+                </span>
+              )}
+            </div>
+            {/* Row 2: description spans column 2 only (sits under the
+                title, indented past the checkbox column). */}
+            <div
+              style={{
+                gridRow: "2",
+                gridColumn: "2",
+                fontFamily: "var(--water-font-sans)",
+                fontSize: 11,
+                lineHeight: 1.45,
+                color: "var(--water-fg-muted)",
+                textAlign: "left",
+              }}
+            >
+              {description}
             </div>
           </label>
         );
