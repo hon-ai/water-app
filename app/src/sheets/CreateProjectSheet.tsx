@@ -40,21 +40,26 @@ export function CreateProjectSheet({ open, onClose, onCreated }: Props) {
 
   const fieldLabel: React.CSSProperties = {
     display: "block",
-    fontSize: "var(--water-fs-meta)",
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
     color: "var(--water-fg-muted)",
-    marginBottom: 4,
+    marginBottom: 6,
     fontFamily: "var(--water-font-sans)",
   };
   const fieldInput: React.CSSProperties = {
     width: "100%",
-    padding: "8px 12px",
-    border: "none",
+    padding: "10px 12px",
+    border: "1px solid color-mix(in srgb, var(--water-fg-faint) 22%, transparent)",
     borderRadius: "var(--water-r-8)",
     background: "var(--water-bg-canvas)",
     color: "var(--water-fg-default)",
     fontFamily: "var(--water-font-sans)",
     fontSize: "var(--water-fs-body)",
     outline: "none",
+    transition:
+      "border-color var(--water-dur-tiny) var(--water-ease-out-soft), box-shadow var(--water-dur-tiny) var(--water-ease-out-soft)",
   };
 
   return (
