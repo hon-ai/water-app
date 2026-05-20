@@ -20,6 +20,8 @@
 //! by text_hash for cache-skip) and [`scene_typing_history`] (append-only
 //! ring for pacing). Both cascade on scene delete (v5 migration).
 
+mod store;
 mod types;
 
+pub use store::HeatStore;
 pub use types::{HeatMetricKind, HeatRow};
