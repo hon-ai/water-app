@@ -63,9 +63,11 @@ describe("WorldsSurface", () => {
     render(<WorldsSurface projectId="p1" />);
     await waitFor(() => screen.getByTestId("segment-tile-locations"));
     fireEvent.click(screen.getByTestId("segment-tile-locations"));
-    expect(screen.getByTestId("segment-view-placeholder")).toHaveTextContent(
-      "seg-2",
-    );
+    // T21–T22: tile click now mounts `WorldSegmentView`, which for a
+    // collection segment resolves to `WorldCollectionGrid` with the
+    // `+ New entry` button. The single-doc placeholder testid is gone.
+    await waitFor(() => screen.getByTestId("new-entry-button"));
+    expect(screen.getByRole("heading", { name: "Locations" })).toBeInTheDocument();
   });
 
   it("back button returns to index from segment view", async () => {

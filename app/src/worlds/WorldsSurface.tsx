@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { WorldIndex } from "./WorldIndex";
+import { WorldSegmentView } from "./WorldSegmentView";
 
 /**
  * Worlds surface router (M4 T20, spec § 10).
@@ -46,6 +47,10 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
     queueMicrotask(() => window.scrollTo(0, indexScrollY));
   }
 
+  function goToEntry(segmentId: string, entryId: string) {
+    setView({ kind: "entry", segmentId, entryId });
+  }
+
   return (
     <div className="worlds-surface">
       {view.kind === "index" && (
@@ -57,9 +62,17 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
       {view.kind === "segment" && (
         <div>
           <button onClick={goToIndex}>← Back</button>
-          <div data-testid="segment-view-placeholder">
-            segment: {view.segmentId}
-          </div>
+          <WorldSegmentView
+            segmentId={view.segmentId}
+            onOpenEntry={(entryId) => goToEntry(view.segmentId, entryId)}
+            onOpenIntake={(segId, draftId) =>
+              setView({
+                kind: "entry-intake",
+                segmentId: segId,
+                draftEntryId: draftId,
+              })
+            }
+          />
         </div>
       )}
       {view.kind === "entry" && (
