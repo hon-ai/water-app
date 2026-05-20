@@ -81,6 +81,11 @@ pub async fn pill_regenerate(
 pub struct PinPillResponse {
     pub pin_id: String,
     pub stub_entry_id: Option<String>,
+    /// `Some(segment_id)` whenever `stub_entry_id` is `Some` — the
+    /// renderer needs both to route to the new entry sheet (which is
+    /// addressed by (segment, entry) in the worlds surface). Always
+    /// `None` when `stub_entry_id` is `None`.
+    pub stub_segment_id: Option<String>,
 }
 
 /// Core implementation of `pill_pin` extracted so unit tests can drive
@@ -135,26 +140,29 @@ pub async fn pill_pin_core(
 
     // Chorus + no_universe_yet → create a `locations` stub seeded with
     // the snippet so the writer can elaborate immediately. Other
-    // (speaker, trigger) combinations return `stub_entry_id: None`.
-    let stub_entry_id = if pill.speaker_id == "chorus" && pill.trigger_id == "no_universe_yet" {
-        let project_id = parse_id(&project_id)?;
-        let g = db.lock().await;
-        let store = water_core::world::WorldStore::new(&g, project_root.clone());
-        let seg = store
-            .find_segment_by_slug(&project_id, "locations")
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "locations segment missing".to_string())?;
-        let entry_id = store
-            .create_entry_seeded(&seg.id, "", "main.sensory_detail", &snippet)
-            .map_err(|e| e.to_string())?;
-        Some(entry_id.to_string())
-    } else {
-        None
-    };
+    // (speaker, trigger) combinations return `stub_entry_id: None` and
+    // `stub_segment_id: None`.
+    let (stub_entry_id, stub_segment_id) =
+        if pill.speaker_id == "chorus" && pill.trigger_id == "no_universe_yet" {
+            let project_id = parse_id(&project_id)?;
+            let g = db.lock().await;
+            let store = water_core::world::WorldStore::new(&g, project_root.clone());
+            let seg = store
+                .find_segment_by_slug(&project_id, "locations")
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "locations segment missing".to_string())?;
+            let entry_id = store
+                .create_entry_seeded(&seg.id, "", "main.sensory_detail", &snippet)
+                .map_err(|e| e.to_string())?;
+            (Some(entry_id.to_string()), Some(seg.id.to_string()))
+        } else {
+            (None, None)
+        };
 
     Ok(PinPillResponse {
         pin_id: pill.pill_id.clone(),
         stub_entry_id,
+        stub_segment_id,
     })
 }
 
@@ -345,6 +353,27 @@ mod tests {
             sensory.contains("library that remembers"),
             "snippet must be seeded into main.sensory_detail; got {sensory:?}"
         );
+
+        // M4 T30: `stub_segment_id` must also be set so the renderer
+        // can route to the new entry sheet (addressed by (seg, entry)).
+        let stub_seg = resp
+            .stub_segment_id
+            .expect("stub_segment_id must accompany stub_entry_id");
+        let loc_seg_id = store
+            .find_segment_by_slug(&p_id(&g, &project_id), "locations")
+            .unwrap()
+            .unwrap()
+            .id
+            .to_string();
+        assert_eq!(stub_seg, loc_seg_id);
+    }
+
+    /// Helper to look up the project id row from a borrowed Db ref. The
+    /// stub test reaches into the DB after the core fn has returned, so
+    /// we re-parse the project_id rather than threading it as a typed
+    /// param.
+    fn p_id(_g: &Db, project_id_str: &str) -> water_core::Id {
+        project_id_str.parse().unwrap()
     }
 
     #[tokio::test]

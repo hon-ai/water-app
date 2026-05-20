@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { WorldIndex } from "./WorldIndex";
 import { WorldSegmentView } from "./WorldSegmentView";
 import { WorldEntrySheet } from "./WorldEntrySheet";
@@ -52,6 +52,25 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
   function goToEntry(segmentId: string, entryId: string) {
     setView({ kind: "entry", segmentId, entryId });
   }
+
+  // M4 T30: external nav from the Bouquet pin handler when a Chorus +
+  // `no_universe_yet` pin seeds a new `locations` stub. The handler
+  // dispatches `water:nav-world-entry` with `{ segmentId, entryId }`;
+  // we route to the entry view so the writer sees the stub immediately.
+  // Decoupled via the window event rather than a context to keep
+  // `<Bouquet>` (which lives under the editor canvas, not this surface)
+  // unaware of the worlds-surface routing primitive.
+  useEffect(() => {
+    function handler(e: Event) {
+      const detail = (e as CustomEvent<{ segmentId?: string; entryId?: string }>).detail;
+      if (!detail?.segmentId || !detail.entryId) return;
+      goToEntry(detail.segmentId, detail.entryId);
+    }
+    window.addEventListener("water:nav-world-entry", handler);
+    return () => {
+      window.removeEventListener("water:nav-world-entry", handler);
+    };
+  }, []);
 
   return (
     <div className="worlds-surface">

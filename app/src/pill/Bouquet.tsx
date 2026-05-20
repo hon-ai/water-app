@@ -158,7 +158,33 @@ export function Bouquet({
               const el = document.querySelector(`[data-bid="${blockId}"]`);
               snippet = el?.textContent?.slice(0, 200) ?? "";
             }
-            void ipc.pillPin(pinPayload, sceneId, blockId, snippet);
+            void (async () => {
+              try {
+                const resp = await ipc.pillPin(
+                  pinPayload,
+                  sceneId,
+                  blockId,
+                  snippet,
+                );
+                // M4 T29/T30: Chorus + no_universe_yet pins seed a new
+                // `locations` stub. Route to the new entry sheet so the
+                // writer sees the stub immediately. Use a custom event
+                // so Bouquet stays decoupled from the worlds-surface
+                // routing primitive.
+                if (resp?.stub_entry_id && resp.stub_segment_id) {
+                  window.dispatchEvent(
+                    new CustomEvent("water:nav-world-entry", {
+                      detail: {
+                        segmentId: resp.stub_segment_id,
+                        entryId: resp.stub_entry_id,
+                      },
+                    }),
+                  );
+                }
+              } catch {
+                /* swallow — pin failure leaves the bouquet open */
+              }
+            })();
           }}
           style={iconBtnStyle}
         >
