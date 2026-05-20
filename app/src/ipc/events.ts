@@ -50,6 +50,13 @@ export interface WaterEventPayloads {
       text: string;
     }>;
   };
+  /**
+   * M5: emitted by the orchestrator after a heat-metric recompute
+   * lands. The renderer's HeatmapStrip subscribes and re-fetches
+   * `heat_read` for the matching scene; small payload so we don't
+   * spam every metric track. Fires on every autosave.
+   */
+  "heat:updated": { scene_id: string };
 }
 
 export type WaterEventName = keyof WaterEventPayloads;

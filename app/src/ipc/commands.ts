@@ -242,6 +242,48 @@ export type WorldEntryIndexEntry = {
 };
 
 /**
+ * M5: one row of a per-(scene, paragraph_ix, metric) heat cache.
+ * Mirrors `water_core::heat::HeatRow`. Returned by `heatRead`; the
+ * renderer (HeatmapStrip) plots `value` along the strip with
+ * paragraph_ix mapping to x-position.
+ */
+export interface HeatRow {
+  paragraph_ix: number;
+  value: number;
+  text_hash: string;
+  updated_at: string;
+}
+
+/**
+ * M5: the five heat metric kinds. Mirrors `HeatMetricKind` on the
+ * Rust side; values are the snake-case strings stored in
+ * `heat_metric.metric`.
+ */
+export type HeatMetricKind =
+  | "pacing"
+  | "valence"
+  | "coherence"
+  | "presence"
+  | "world_refs";
+
+/**
+ * M5: response shape from `heat_read`. Map keyed by metric kind;
+ * value is the (possibly empty) per-paragraph row list. Empty vec
+ * means "no data yet for this metric" — render an empty track.
+ */
+export interface HeatReadResponse {
+  metrics: Record<HeatMetricKind, HeatRow[]>;
+}
+
+/**
+ * M5: writer's persisted metric-picker state. Read on mount,
+ * written when the writer toggles a row in the metric picker.
+ */
+export interface HeatMetricEnabledMap {
+  enabled: Partial<Record<HeatMetricKind, boolean>>;
+}
+
+/**
  * Response from `pill_pin`. Mirrors `commands::pill::PinPillResponse` on
  * the Rust side. `stub_entry_id` is non-null only for the Chorus +
  * `no_universe_yet` path (M4 T29), which seeds a new `locations`
@@ -450,6 +492,29 @@ export const ipc = {
     invoke("world_autosuggest", {
       req: { scene_id: req.sceneId, paragraph: req.paragraph },
     }),
+
+  /**
+   * M5 Heatmap. Read the cached per-paragraph metric rows for one
+   * scene. Subscribe to the `heat:updated` event to know when a
+   * recompute landed; refetch then.
+   */
+  heatRead: (sceneId: string): Promise<HeatReadResponse> =>
+    invoke("heat_read", { sceneId }),
+  /**
+   * Persist the writer's metric-picker toggle for this project. The
+   * orchestrator currently writes all enabled metrics; this is the
+   * renderer-side opt-in/out (the metric picker popover).
+   */
+  heatSetMetricEnabled: (
+    kind: HeatMetricKind,
+    enabled: boolean,
+  ): Promise<void> => invoke("heat_set_metric_enabled", { kind, enabled }),
+  /**
+   * Read the persisted picker state on mount so toggles survive
+   * restarts. Returns an empty map on first launch.
+   */
+  heatReadSettings: (): Promise<HeatMetricEnabledMap> =>
+    invoke("heat_read_settings"),
 
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),
