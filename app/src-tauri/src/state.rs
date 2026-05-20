@@ -3,6 +3,7 @@
 //! constructed via `Default` (the DB requires a path) — the state holds an
 //! `Option<OpenProject>` so the "no project open" state is the `None` arm.
 
+use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -10,6 +11,18 @@ use water_core::{
     llm::LlmRouter, CharacterWriteLocks, Db, SceneWriteLocks, Sidecar, SidecarSupervisor,
     SnapshotScheduler,
 };
+
+/// Per-`world_entry` write-lock registry. Parallel to `SceneWriteLocks` /
+/// `CharacterWriteLocks` but kept as a raw `DashMap<Id, Arc<Mutex<()>>>`
+/// rather than a typed wrapper in `water-core` because M4's write paths
+/// (the world Tauri commands) already live in this crate, so the wrapper
+/// would have no other call sites. If a `WorldStore`-level write path is
+/// ever added in `water-core`, lift this into a `world_locks.rs` mirror
+/// of `character_locks.rs` and re-export.
+///
+/// Same lock-ordering rule as the other registries (KNOWN_FRAGILE #6):
+/// `project lock → drop → world write-lock → db lock`.
+pub type WorldWriteLocks = DashMap<water_core::Id, Arc<Mutex<()>>>;
 
 pub struct OpenProject {
     pub root: PathBuf,
@@ -43,6 +56,21 @@ pub struct OpenProject {
     /// concurrently and tear the on-disk `.toml`. Same lock-ordering rule
     /// as scene writes: acquire the per-character lock BEFORE the DB lock.
     pub character_write_locks: CharacterWriteLocks,
+    /// Per-`world_entry` write locks. The M4 world commands
+    /// (`world_entry_update_field`, `world_single_doc_update_field`,
+    /// `world_entry_update_aliases`, etc.) mutate on-disk `.toml` files
+    /// and the `world_entry.data_json` mirror column under one BEGIN /
+    /// COMMIT transaction. Concurrent updates against the same entry id
+    /// would race the file write — the per-entry lock serializes them.
+    /// Same lock-ordering rule (KNOWN_FRAGILE #6): acquire BEFORE the DB
+    /// lock.
+    ///
+    /// Allow-dead-code while the field is scaffolding: the M4 plan adds
+    /// the registry now (Phase B Task 12) so the wiring for the write
+    /// commands (Phase C / later) can pull it from `OpenProject`
+    /// without another struct-touch commit.
+    #[allow(dead_code)]
+    pub world_write_locks: WorldWriteLocks,
     /// Per-project orchestrator. `None` only on the (currently unreachable)
     /// path where service spawn fails; in practice this is always `Some`
     /// once `open_project`/`create_project` returns. Dropped on

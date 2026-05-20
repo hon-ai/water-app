@@ -72,7 +72,9 @@ async fn character_create_core(
     root: PathBuf,
     project_id: String,
 ) -> Result<CharacterIndexEntry, String> {
-    let project_id: Id = project_id.parse().map_err(|e: water_core::Error| e.to_string())?;
+    let project_id: Id = project_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
     let db_guard = db.lock().await;
     let hue = next_hue_token(&db_guard).map_err(|e| e.to_string())?;
     let store = CharacterStore::new(&db_guard, root);
@@ -102,9 +104,7 @@ async fn character_read_core(
     store.read(&id).map_err(|e| e.to_string())
 }
 
-async fn character_list_core(
-    db: Arc<Mutex<Db>>,
-) -> Result<Vec<CharacterIndexEntry>, String> {
+async fn character_list_core(db: Arc<Mutex<Db>>) -> Result<Vec<CharacterIndexEntry>, String> {
     let db_guard = db.lock().await;
     let rows = CharacterStore::list_index(&db_guard).map_err(|e| e.to_string())?;
     Ok(rows
@@ -353,9 +353,7 @@ async fn character_autosuggest_for_scene_core(
 // ----------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn character_create(
-    state: State<'_, AppState>,
-) -> Result<CharacterIndexEntry, String> {
+pub async fn character_create(state: State<'_, AppState>) -> Result<CharacterIndexEntry, String> {
     let (db, root, project_id) = {
         let proj = state.project.lock().await;
         let project = proj.as_ref().ok_or("no project open")?;
@@ -515,8 +513,13 @@ mod tests {
     /// no public test constructor. The `_core` helpers in this file are
     /// the actual unit-under-test; the `#[tauri::command]` shims are just
     /// argument plumbing.
-    async fn test_project() -> (TempDir, Arc<Mutex<Db>>, PathBuf, String, CharacterWriteLocks)
-    {
+    async fn test_project() -> (
+        TempDir,
+        Arc<Mutex<Db>>,
+        PathBuf,
+        String,
+        CharacterWriteLocks,
+    ) {
         let dir = TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
         std::fs::create_dir_all(root.join("characters")).unwrap();
@@ -697,8 +700,7 @@ mod tests {
         // contract is also covered at the water-core unit-test level in
         // `delete_and_cascade_clears_scene_pov_and_presence`; this version
         // proves the Tauri command shims compose correctly.
-        let (_dir, db, root, pid, char_locks, scene, scene_locks) =
-            test_project_with_scene().await;
+        let (_dir, db, root, pid, char_locks, scene, scene_locks) = test_project_with_scene().await;
         let c = character_create_core(db.clone(), root.clone(), pid.clone())
             .await
             .unwrap();
@@ -735,7 +737,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(presence_before, 1, "fixture precondition: presence row should exist before delete");
+        assert_eq!(
+            presence_before, 1,
+            "fixture precondition: presence row should exist before delete"
+        );
 
         // Cascade through the T12 command.
         character_delete_core(db.clone(), root.clone(), char_locks.clone(), c.id.clone())
@@ -757,7 +762,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(presence_after, 0, "delete cascade should remove presence rows");
+        assert_eq!(
+            presence_after, 0,
+            "delete cascade should remove presence rows"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -848,8 +856,7 @@ mod tests {
 
     #[tokio::test]
     async fn autosuggest_excludes_zero_mention_chars() {
-        let (_dir, db, root, pid, locks, scene, _scene_locks) =
-            test_project_with_scene().await;
+        let (_dir, db, root, pid, locks, scene, _scene_locks) = test_project_with_scene().await;
         let c1 = character_create_core(db.clone(), root.clone(), pid.clone())
             .await
             .unwrap();
@@ -884,7 +891,11 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(results.len(), 1, "Talia has zero mentions; should be excluded");
+        assert_eq!(
+            results.len(),
+            1,
+            "Talia has zero mentions; should be excluded"
+        );
         assert_eq!(results[0].full_name, "Marcus");
         assert_eq!(results[0].mention_count, 1);
     }
