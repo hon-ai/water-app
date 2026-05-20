@@ -87,6 +87,8 @@ const TASK_PILL_REGENERATE: &str = include_str!("../../../../prompts/tasks/pill_
 
 const TASK_PILL_DISSONANCE_CHECK: &str =
     include_str!("../../../../prompts/tasks/pill_dissonance_check.toml");
+const TASK_WORLD_DRIFT_CHECK: &str =
+    include_str!("../../../../prompts/tasks/world_drift_check.toml");
 
 /// Holds all built-in prompts in memory. Built once at startup via
 /// [`PromptLibrary::load_builtin`] and shared (typically behind `Arc`) across
@@ -130,11 +132,15 @@ impl PromptLibrary {
         }
 
         let mut confirmations: HashMap<String, ConfirmationPrompt> = HashMap::new();
-        // One confirmation today (`pill_dissonance_check`); the loop shape
-        // matches `triggers`/`tasks` above so adding a second is a one-line
-        // change at the array literal.
-        #[allow(clippy::single_element_loop)]
-        for src in [TASK_PILL_DISSONANCE_CHECK] {
+        // Two confirmations today: M3's `pill_dissonance_check` (character
+        // contradicts stated belief/value/fear) and M4 Task 17's
+        // `world_drift_check` (paragraph contradicts a world-bible entry).
+        // Both share the same shared Stage-2 dispatch helper
+        // (`run_stage2_confirmation` in `orchestrator_service.rs`): yes →
+        // emit pill, anything else → drop. The loop shape matches
+        // `triggers`/`tasks` above so adding a third is a one-line change
+        // at the array literal.
+        for src in [TASK_PILL_DISSONANCE_CHECK, TASK_WORLD_DRIFT_CHECK] {
             let p: ConfirmationPrompt = toml::from_str(src).map_err(|e| e.to_string())?;
             confirmations.insert(p.id.clone(), p);
         }
@@ -205,7 +211,7 @@ mod tests {
         assert_eq!(lib.tone.version, "1");
         assert_eq!(lib.triggers.len(), 10);
         assert_eq!(lib.tasks.len(), 3);
-        assert_eq!(lib.confirmations.len(), 1);
+        assert_eq!(lib.confirmations.len(), 2);
         assert!(lib
             .tone
             .blacklist_regex
@@ -267,6 +273,73 @@ mod tests {
         assert!(req
             .system
             .contains("contradicts a character's stated belief"));
+    }
+
+    #[test]
+    fn library_loads_world_drift_check_confirmation() {
+        // M4 Task 17: world_drift_check parallels pill_dissonance_check in
+        // schema (version + id + [prompt] system/user + [output] format/
+        // max_tokens). The Stage-2 dispatcher is shared and treats the
+        // response as plain text starting with "yes"/non-yes.
+        let lib = PromptLibrary::load_builtin().unwrap();
+        let c = lib
+            .confirmation("world_drift_check")
+            .expect("world_drift_check confirmation must load");
+        assert_eq!(c.id, "world_drift_check");
+        assert_eq!(c.version, "1");
+        assert_eq!(c.output.format, "plain");
+        assert_eq!(c.output.max_tokens, 4);
+        // All five variables the Stage-1 evaluator substitutes must be
+        // present as `{{var}}` placeholders so `render_confirmation_request`
+        // can fill them. Asserted explicitly so a typo in either side
+        // (template or evaluator call site) fails this test, not silently
+        // at runtime.
+        assert!(c.prompt.user.contains("{{entry_name}}"));
+        assert!(c.prompt.user.contains("{{segment_slug}}"));
+        assert!(c.prompt.user.contains("{{entry_excerpt}}"));
+        assert!(c.prompt.user.contains("{{paragraph}}"));
+        assert!(c.prompt.user.contains("{{matched_token}}"));
+        // System prompt must convey the yes/no convention so the LLM
+        // produces a `starts_with("yes")` answer the shared Stage-2
+        // dispatcher understands.
+        assert!(
+            c.prompt.system.to_lowercase().contains("yes")
+                && c.prompt.system.to_lowercase().contains("no")
+        );
+    }
+
+    #[test]
+    fn render_world_drift_check_substitutes_all_vars() {
+        // Mirrors `render_confirmation_request_substitutes_all_vars` for
+        // the M4 Task 17 prompt. Also unblocks Task 16's `.ok()?` swallow:
+        // with this prompt present, the Stage-1 evaluator's call site
+        // returns Ok and a candidate can be emitted.
+        let lib = PromptLibrary::load_builtin().unwrap();
+        let req = lib
+            .render_confirmation_request(
+                "world_drift_check",
+                &[
+                    ("entry_name", "The Pell Library"),
+                    ("segment_slug", "locations"),
+                    ("entry_excerpt", "type: library\nsensory_detail: dusty\n"),
+                    ("paragraph", "She walked into Pell and the sunlight glared."),
+                    ("matched_token", "Pell"),
+                ],
+            )
+            .expect("render must succeed for known id");
+        assert_eq!(req.kind, "world_drift_check");
+        assert!(
+            !req.user.contains("{{"),
+            "no {{ placeholders should remain after substitution; got: {}",
+            req.user
+        );
+        assert!(req.user.contains("The Pell Library"));
+        assert!(req.user.contains("locations"));
+        assert!(req.user.contains("library"));
+        assert!(req.user.contains("dusty"));
+        assert!(req.user.contains("She walked into Pell"));
+        assert!(req.user.contains("Pell"));
+        assert!(!req.system.is_empty());
     }
 
     #[test]

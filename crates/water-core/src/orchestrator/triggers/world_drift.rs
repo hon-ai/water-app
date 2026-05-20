@@ -399,4 +399,110 @@ mod tests {
         let out = render_entry_excerpt(&entry, 100);
         assert!(out.len() <= 100, "got {} chars", out.len());
     }
+
+    #[test]
+    fn evaluator_fires_when_paragraph_overlaps_with_entry() {
+        // M4 Task 17 integration: with `prompts/tasks/world_drift_check.toml`
+        // now shipping, the evaluator's `.ok()?` call no longer silently
+        // drops; a full Stage-1 candidate (including the rendered Stage-2
+        // `ConfirmationRequest`) is emitted.
+        //
+        // Recipe (mirrors `WorldRegistry::from_db` happy-path tests):
+        //   1. Open in-memory DB + tempdir for project root.
+        //   2. Seed the 6 built-in world segments for a fresh project.
+        //   3. Create an entry "Pell" under `locations` with a
+        //      `main.sensory_detail` whose vocabulary overlaps the
+        //      paragraph (≥ MIN_CONTEXT_OVERLAP_WORDS = 2 non-stopword
+        //      tokens of length ≥ 3).
+        //   4. Build a `WorldRegistry::from_db` snapshot.
+        //   5. Run the evaluator at a paragraph boundary (cursor != mid-
+        //      sentence) with a paragraph that names "Pell" and shares the
+        //      overlap vocabulary.
+        //   6. Assert: candidate emitted, trigger_id == "world_drift",
+        //      requires_confirmation populated with kind ==
+        //      "world_drift_check" and the entry's name in the user prompt.
+        use crate::world::WorldStore;
+        use crate::{Db, ProjectStore};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let project = ProjectStore::new(&db).insert("P").unwrap();
+        let store = WorldStore::new(&db, dir.path().to_path_buf());
+        store.seed_builtins(&project.id).unwrap();
+        let locations = store
+            .find_segment_by_slug(&project.id, "locations")
+            .unwrap()
+            .expect("locations segment must exist after seed_builtins");
+        // Seed `main.sensory_detail` so the overlap gate finds shared
+        // vocabulary in the paragraph below.
+        store
+            .create_entry_seeded(
+                &locations.id,
+                "Pell",
+                "main.sensory_detail",
+                "Dust thick enough to read fingertips in the sub-basement",
+            )
+            .unwrap();
+        let world_reg =
+            crate::world::WorldRegistry::from_db(&db, &project.id, dir.path().to_path_buf())
+                .unwrap();
+
+        let telem = TypingTelemetry {
+            idle_for_ms: 4000,
+            cursor_classification: CursorClassification::AtParagraphEnd,
+            block_id: "^bk-0001".to_string(),
+            recent_word_delta: 0,
+            structural_inflection: StructuralInflection::None,
+        };
+        // Paragraph: ≥ MIN_PARAGRAPH_WORDS (12) words, names "Pell", and
+        // shares "dust", "fingertips", "sub", "basement" with the entry's
+        // sensory_detail — well above the 2-word overlap floor.
+        let analysis = AnalysisSnapshot {
+            last_block_text: Some(
+                "She walked into Pell and saw the dust on her fingertips in the sub-basement."
+                    .to_string(),
+            ),
+            ..AnalysisSnapshot::default()
+        };
+        let scene = SceneSnapshot {
+            id: Id::new(),
+            pov_character_id: None,
+            location_id: None,
+            characters_present: vec![],
+            word_count: 100,
+            seconds_since_last_pill: 60,
+        };
+        let project_snap = ProjectSnapshot::default();
+        let characters = crate::character::registry::CharacterRegistry::empty();
+        let ctx = TriggerContext {
+            telemetry: &telem,
+            analysis: &analysis,
+            scene: &scene,
+            project: &project_snap,
+            characters: &characters,
+            world_registry: &world_reg,
+            prompts: test_util::test_prompts(),
+        };
+
+        let cand = WorldDrift
+            .evaluate(&ctx)
+            .expect("expected candidate when paragraph overlaps with entry");
+        assert_eq!(cand.trigger_id, "world_drift");
+        assert_eq!(cand.preferred_track, SpeakerTrack::Persona);
+        let req = cand
+            .requires_confirmation
+            .as_ref()
+            .expect("Task 17 prompt landed; render_confirmation_request must succeed");
+        assert_eq!(req.kind, "world_drift_check");
+        assert!(
+            req.user.contains("Pell"),
+            "user prompt must include entry name; got: {}",
+            req.user
+        );
+        assert!(
+            !req.user.contains("{{"),
+            "no {{ placeholders should remain after substitution; got: {}",
+            req.user
+        );
+    }
 }
