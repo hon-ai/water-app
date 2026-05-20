@@ -93,7 +93,12 @@ fn build_provider(provider_id: &str) -> Result<Arc<dyn LlmProvider>, String> {
 
 fn default_model_for(provider_id: &str) -> String {
     match provider_id {
-        "anthropic" => "claude-3-5-sonnet-latest".into(),
+        // Claude Sonnet 4.6 — current production-tier model. Used both by
+        // the provider Test button and as the default `BouquetRequest.model`
+        // when the renderer doesn't override it. Cheap-enough for the test
+        // bouquet (3 short variants); quality-good-enough for level-0 pill
+        // text. Update when Anthropic publishes a newer Sonnet generation.
+        "anthropic" => "claude-sonnet-4-6".into(),
         "openai" => "gpt-4o-mini".into(),
         "ollama" => "qwen2.5:3b".into(),
         "llamacpp" => "default".into(),

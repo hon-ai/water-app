@@ -1,4 +1,4 @@
-use super::{BouquetRequest, BouquetVariant, LlmProvider, ProviderId};
+use super::{BouquetRequest, BouquetVariant, GenerateRequest, LlmProvider, ProviderId};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -75,8 +75,10 @@ impl LlmProvider for AnthropicProvider {
 
     async fn health(&self) -> Result<()> {
         // Anthropic has no /health endpoint; do a 1-token sanity call.
+        // Claude Haiku 4.5 — cheapest current-generation model, right size
+        // for a 1-token connectivity probe.
         let body = MessagesRequest {
-            model: "claude-3-5-haiku-latest",
+            model: "claude-haiku-4-5-20251001",
             max_tokens: 1,
             temperature: 0.0,
             system: "Respond with the single character A and nothing else.",
@@ -140,6 +142,65 @@ impl LlmProvider for AnthropicProvider {
             .next()
             .ok_or_else(|| Error::Provider("anthropic: no text block".into()))?;
         parse_bouquet_json(&text, req.n_variants)
+    }
+
+    async fn generate_raw(&self, req: GenerateRequest) -> Result<String> {
+        // Single-shot text generation. Used by orchestrator-side Stage 2
+        // confirmation prompts and by the level-0 pill text generation
+        // path. When the caller leaves `req.model` empty (the
+        // `GenerateRequest::default()` shape used by
+        // `LlmRouter::generate_raw_with_default`), fall back to Sonnet
+        // 4.6: Haiku showed a strong "no" bias on Stage 2 confirmation
+        // calls (it correctly noticed that subtly-worded contradictions
+        // could coexist) and the level-0 path benefits from Sonnet's
+        // observational quality. Callers that need a different model
+        // (e.g. health checks using Haiku) supply it explicitly.
+        let model = if req.model.is_empty() {
+            "claude-sonnet-4-6"
+        } else {
+            &req.model
+        };
+        let max_tokens = if req.max_output_tokens == 0 {
+            // Sized for the M3 Stage 2 confirmation prompt (1 token of
+            // "yes"/"no" plus a small buffer for whitespace) plus the M2
+            // level-0 budget when the level-0 path forgets to set it.
+            512
+        } else {
+            req.max_output_tokens
+        };
+        let body = MessagesRequest {
+            model,
+            max_tokens,
+            temperature: req.temperature,
+            system: &req.system,
+            messages: vec![MessagesMessage {
+                role: "user",
+                content: &req.user,
+            }],
+        };
+        let r = self
+            .http
+            .post(format!("{}/v1/messages", self.base_url))
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| Error::Provider(format!("anthropic: {e}")))?;
+        let r = r
+            .error_for_status()
+            .map_err(|e| Error::Provider(format!("anthropic http: {e}")))?;
+        let resp: MessagesResponse = r
+            .json()
+            .await
+            .map_err(|e| Error::Provider(format!("anthropic json: {e}")))?;
+        resp.content
+            .into_iter()
+            .map(|b| match b {
+                MessagesContentBlock::Text { text } => text,
+            })
+            .next()
+            .ok_or_else(|| Error::Provider("anthropic: no text block".into()))
     }
 }
 
