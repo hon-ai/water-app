@@ -167,7 +167,10 @@ mod tests {
                 status: "draft".into(),
                 created_at: "2026-05-16T09:00:00+00:00".into(),
                 updated_at: "2026-05-16T09:00:00+00:00".into(),
-                word_count: 0, // intentionally wrong; repair fixes it
+                word_count: 0,
+                canvas_x: None,
+                canvas_y: None,
+                canvas_group: None, // intentionally wrong; repair fixes it
             },
             // No block ids; repair will add them.
             body: "First.\n\nSecond.\n".into(),
