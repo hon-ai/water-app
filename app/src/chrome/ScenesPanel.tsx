@@ -129,21 +129,34 @@ export function ScenesPanel({
         <button
           type="button"
           onClick={onOpenProjectMenu}
+          aria-label="Project menu"
+          title="Switch or close project"
           style={{
             flex: 1,
             display: "flex",
             alignItems: "center",
             gap: 6,
             border: "none",
-            background: "transparent",
+            background:
+              "color-mix(in srgb, var(--water-fg-faint) 8%, transparent)",
             color: "var(--water-fg-default)",
             fontFamily: "var(--water-font-sans)",
             fontSize: "var(--water-fs-ui)",
             fontWeight: 500,
-            padding: "4px 8px",
+            padding: "5px 10px",
             borderRadius: "var(--water-r-8)",
             cursor: "pointer",
             textAlign: "left",
+            transition:
+              "background-color var(--water-dur-tiny) var(--water-ease-out-soft)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background =
+              "color-mix(in srgb, var(--water-fg-faint) 16%, transparent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background =
+              "color-mix(in srgb, var(--water-fg-faint) 8%, transparent)";
           }}
         >
           <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
