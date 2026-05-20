@@ -25,6 +25,7 @@ const V2_PILL_ENGINE: &str = include_str!("../sql/v2_pill_engine.sql");
 const V3_CHARACTER_HUE: &str = include_str!("../sql/v3_character_hue.sql");
 const V4_WORLD_BIBLE: &str = include_str!("../sql/v4_world_bible.sql");
 const V5_HEATMAP: &str = include_str!("../sql/v5_heatmap.sql");
+const V6_CANVAS: &str = include_str!("../sql/v6_canvas.sql");
 
 #[must_use]
 pub fn all() -> Migrations<'static> {
@@ -34,6 +35,7 @@ pub fn all() -> Migrations<'static> {
         M::up(V3_CHARACTER_HUE),
         M::up(V4_WORLD_BIBLE),
         M::up(V5_HEATMAP),
+        M::up(V6_CANVAS),
     ])
 }
 
@@ -111,7 +113,7 @@ mod tests {
 
         // Db::open now sees a v1 DB and ratchets to latest (v5).
         let db = Db::open(&path).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 5);
+        assert_eq!(current_version(db.conn()).unwrap(), 6);
     }
 
     #[test]
@@ -201,16 +203,16 @@ mod tests {
         // Db::open already ratcheted to latest; another run_pending must be a no-op.
         run_pending(&mut db).unwrap();
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 5);
+        assert_eq!(current_version(db.conn()).unwrap(), 6);
     }
 
     #[test]
-    fn migration_ratchets_to_v5() {
+    fn migration_ratchets_to_v6() {
         let (_tmp, mut db) = fresh_v1_db();
         // fresh_v1_db actually returns a DB already ratcheted to latest via
         // Db::open; another run_pending is a no-op that still leaves us at v5.
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 5);
+        assert_eq!(current_version(db.conn()).unwrap(), 6);
     }
 
     #[test]
@@ -425,14 +427,76 @@ mod tests {
         assert_eq!(count, 1, "heat_metric_by_scene index missing");
     }
 
+    // The historical `v5_schema_version_is_five` check retired when v6
+    // landed; `v6_schema_version_is_six` below replaces it.
+
     #[test]
-    fn v5_schema_version_is_five() {
+    fn v6_schema_version_is_six() {
         let db = Db::open_in_memory().unwrap();
         let version: u32 = db
             .conn()
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
+    }
+
+    #[test]
+    fn v6_adds_scene_canvas_columns() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(scene)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in ["canvas_x", "canvas_y", "canvas_group"] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "scene missing column {required}; got {cols:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn v6_canvas_columns_are_nullable_by_default() {
+        // Pre-M6 scenes (or new scenes that don't set canvas position
+        // on insert) MUST have NULL canvas_x / canvas_y. The renderer
+        // treats NULL as "unplaced" and auto-flows them.
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO project (id, name, created_at, updated_at)
+                 VALUES ('p1', 'P', '0', '0')",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO manuscript (id, project_id, name, ordering, created_at, updated_at)
+                 VALUES ('m1', 'p1', 'M', 0, '0', '0')",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO scene (id, manuscript_id, ordering, name, file_path, created_at, updated_at)
+                 VALUES ('s1', 'm1', 0, 's', 'manuscript/scenes/s1.md', '0', '0')",
+                [],
+            )
+            .unwrap();
+        let (x, y, group): (Option<f64>, Option<f64>, Option<String>) = db
+            .conn()
+            .query_row(
+                "SELECT canvas_x, canvas_y, canvas_group FROM scene WHERE id = 's1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert!(x.is_none());
+        assert!(y.is_none());
+        assert!(group.is_none());
     }
 
     #[test]
