@@ -70,6 +70,10 @@ fn main() {
             commands::heat::heat_read,
             commands::heat::heat_set_metric_enabled,
             commands::heat::heat_read_settings,
+            commands::canvas::scene_canvas_list,
+            commands::canvas::scene_canvas_set_position,
+            commands::canvas::scene_canvas_set_group,
+            commands::canvas::scene_canvas_reset_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
