@@ -7,6 +7,8 @@
 //! stored in the `hue_token` column.
 
 use crate::voice::speaker::{CharacterSpeaker, SpeakerArc};
+use crate::voice::SceneContext;
+use crate::world::WorldRegistry;
 use crate::{Db, Id};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -72,11 +74,21 @@ impl CharacterRegistry {
             })
             .map_err(|e| e.to_string())?;
 
+        // World + scene context are unavailable at registry-build time
+        // (the registry is loaded once at project-open, before any scene
+        // is selected). M4 Task 25 still requires the new arguments to
+        // `from_row`; pass empty defaults so the world-location lines
+        // drop via the line-based omission rule. Per-dispatch world-
+        // aware rendering would require moving construction to the
+        // router — left as a follow-on once a consumer needs it.
+        let empty_world = WorldRegistry::default();
+        let empty_scene = SceneContext::empty();
         let mut rows: Vec<CharacterRegistryRow> = Vec::new();
         let mut by_id: HashMap<String, SpeakerArc> = HashMap::new();
         for row in rows_iter {
             let row = row.map_err(|e| e.to_string())?;
-            let speaker: SpeakerArc = Arc::new(CharacterSpeaker::from_row(&row));
+            let speaker: SpeakerArc =
+                Arc::new(CharacterSpeaker::from_row(&row, &empty_world, &empty_scene));
             by_id.insert(row.id.as_str().to_string(), speaker);
             rows.push(row);
         }
@@ -101,7 +113,10 @@ impl CharacterRegistry {
     /// bypassing the DB load path.
     #[cfg(test)]
     pub fn insert_for_test(&mut self, row: CharacterRegistryRow) {
-        let speaker: SpeakerArc = Arc::new(CharacterSpeaker::from_row(&row));
+        let empty_world = WorldRegistry::default();
+        let empty_scene = SceneContext::empty();
+        let speaker: SpeakerArc =
+            Arc::new(CharacterSpeaker::from_row(&row, &empty_world, &empty_scene));
         self.by_id.insert(row.id.as_str().to_string(), speaker);
         self.rows.push(row);
     }
