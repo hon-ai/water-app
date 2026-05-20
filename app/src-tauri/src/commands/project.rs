@@ -322,6 +322,7 @@ async fn spawn_orchestrator_for_project(
         characters,
         world_registry,
         project_root,
+        db.clone(),
     );
     Some(handle)
 }
