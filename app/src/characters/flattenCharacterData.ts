@@ -1,4 +1,5 @@
 import type { CharacterFile } from "../ipc/commands";
+import { flattenSerdeFlatten } from "../util/flattenSerdeFlatten";
 
 /**
  * Flatten a `CharacterFile` into the `{ "<section>.<leaf>": value }`
@@ -17,23 +18,13 @@ import type { CharacterFile } from "../ipc/commands";
  * Shared by:
  *  - `intake/CharacterIntakeSheet.tsx` (T16)
  *  - `characters/CharacterSheet.tsx`  (T18)
+ *
+ * M4 T19: the actual flatten logic now lives in
+ * `util/flattenSerdeFlatten.ts` so the World Bible UI can reuse it. This
+ * wrapper stays as the typed entrypoint for the character call sites.
  */
 export function flattenCharacterToDottedPaths(
   file: CharacterFile,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  const skipKeys = new Set(["id", "name", "schema_version"]);
-  for (const [section, fields] of Object.entries(file)) {
-    if (skipKeys.has(section)) continue;
-    if (
-      typeof fields === "object" &&
-      fields !== null &&
-      !Array.isArray(fields)
-    ) {
-      for (const [k, v] of Object.entries(fields as Record<string, unknown>)) {
-        out[`${section}.${k}`] = v;
-      }
-    }
-  }
-  return out;
+  return flattenSerdeFlatten(file as Record<string, unknown>);
 }
