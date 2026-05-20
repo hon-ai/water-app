@@ -389,6 +389,9 @@ mod tests {
                 created_at: "2026-05-16T09:00:00+00:00".into(),
                 updated_at: "2026-05-16T09:00:00+00:00".into(),
                 word_count: 2,
+                canvas_x: None,
+                canvas_y: None,
+                canvas_group: None,
             },
             body: "Hello world.\n".into(),
         }
@@ -479,6 +482,9 @@ mod tests {
                 created_at: "2026-05-17T09:00:00+00:00".into(),
                 updated_at: "2026-05-17T09:00:00+00:00".into(),
                 word_count: 1,
+                canvas_x: None,
+                canvas_y: None,
+                canvas_group: None,
             },
             body: "Hello.\n".into(),
         }
@@ -598,6 +604,9 @@ mod tests {
                 created_at: "2026-05-19T09:00:00+00:00".into(),
                 updated_at: "2026-05-19T09:00:00+00:00".into(),
                 word_count: 1,
+                canvas_x: None,
+                canvas_y: None,
+                canvas_group: None,
             },
             body: "Nowhere.\n".into(),
         }

@@ -61,6 +61,9 @@ impl<'a> SceneStore<'a> {
             created_at: now.to_rfc3339(),
             updated_at: now.to_rfc3339(),
             word_count: 0,
+            canvas_x: None,
+            canvas_y: None,
+            canvas_group: None,
         };
         let file = SceneFile {
             frontmatter,
@@ -189,6 +192,80 @@ impl<'a> SceneStore<'a> {
         )?;
 
         self.row(id)
+    }
+
+    /// M6: persist a scene's canvas position. `None` clears the
+    /// position (renderer falls back to auto-flow).
+    ///
+    /// Writes through to the scene-md frontmatter so manual edits +
+    /// `git mv` survive across rebuilds (`rebuild::run` re-syncs the
+    /// DB from the file on disk).
+    ///
+    /// # Errors
+    /// Returns `Error::NotFound` if no scene exists with `id`; propagates
+    /// io / sqlite errors otherwise.
+    pub fn set_canvas_position(
+        &self,
+        id: &Id,
+        x: Option<f32>,
+        y: Option<f32>,
+    ) -> Result<()> {
+        let path = self.path_for(id)?;
+        let mut file = SceneFile::read(&path)?;
+        file.frontmatter.canvas_x = x;
+        file.frontmatter.canvas_y = y;
+        file.frontmatter.updated_at = Utc::now().to_rfc3339();
+        file.write(&path)?;
+        self.db.conn().execute(
+            "UPDATE scene SET canvas_x = ?2, canvas_y = ?3, updated_at = ?4
+             WHERE id = ?1",
+            (
+                id.as_str(),
+                x.map(f64::from),
+                y.map(f64::from),
+                &file.frontmatter.updated_at,
+            ),
+        )?;
+        Ok(())
+    }
+
+    /// M6: persist a scene's canvas group label. `None` clears it.
+    ///
+    /// # Errors
+    /// Returns `Error::NotFound` if no scene exists with `id`; propagates
+    /// io / sqlite errors otherwise.
+    pub fn set_canvas_group(&self, id: &Id, group: Option<&str>) -> Result<()> {
+        let path = self.path_for(id)?;
+        let mut file = SceneFile::read(&path)?;
+        file.frontmatter.canvas_group = group.map(str::to_string);
+        file.frontmatter.updated_at = Utc::now().to_rfc3339();
+        file.write(&path)?;
+        self.db.conn().execute(
+            "UPDATE scene SET canvas_group = ?2, updated_at = ?3 WHERE id = ?1",
+            (id.as_str(), group, &file.frontmatter.updated_at),
+        )?;
+        Ok(())
+    }
+
+    /// M6: clear every scene's canvas position in the given project.
+    /// Used by the right-click "reset to manuscript order" action.
+    /// Does NOT clear group labels — those are independent of position.
+    ///
+    /// # Errors
+    /// Propagates sqlite errors.
+    pub fn reset_all_canvas_positions(&self, project_id: &Id) -> Result<()> {
+        // SQL-only update is intentional: the on-disk frontmatter
+        // round-trip happens lazily next time each scene is written
+        // through `set_canvas_position` or `rename`. For a hard reset
+        // of dozens-to-hundreds of scenes, deferring file writes keeps
+        // the right-click action snappy.
+        self.db.conn().execute(
+            "UPDATE scene SET canvas_x = NULL, canvas_y = NULL
+             WHERE manuscript_id IN
+                (SELECT id FROM manuscript WHERE project_id = ?1)",
+            [project_id.as_str()],
+        )?;
+        Ok(())
     }
 
     pub fn list(&self, manuscript_id: &Id) -> Result<Vec<SceneRow>> {

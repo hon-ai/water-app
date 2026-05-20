@@ -4,7 +4,9 @@ use crate::{Error, Id, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// `Eq` dropped in M6: f32 doesn't impl Eq (NaN). The struct gains
+// `canvas_x` / `canvas_y` as Option<f32>; PartialEq still works.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneFrontmatter {
     pub id: Id,
     pub name: String,
@@ -24,13 +26,25 @@ pub struct SceneFrontmatter {
     pub updated_at: String,
     #[serde(default)]
     pub word_count: i64,
+    /// M6: position in the macro spatial canvas. `None` = unplaced;
+    /// the renderer auto-flows unplaced scenes on first paint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas_x: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas_y: Option<f32>,
+    /// M6: optional group label ("Act II", etc.). Pure visual hint
+    /// (per spec § 8: not a separate model entity in v1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas_group: Option<String>,
 }
 
 fn default_status() -> String {
     "draft".to_owned()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// `Eq` dropped in M6 — `SceneFrontmatter` now carries `Option<f32>`
+// canvas position which is PartialEq but not Eq.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SceneFile {
     pub frontmatter: SceneFrontmatter,
     pub body: String,
@@ -113,6 +127,9 @@ mod tests {
                 created_at: "2026-05-16T09:00:00+00:00".into(),
                 updated_at: "2026-05-16T09:00:00+00:00".into(),
                 word_count: 0,
+                canvas_x: None,
+                canvas_y: None,
+                canvas_group: None,
             },
             body: "Hello.\n".into(),
         }
