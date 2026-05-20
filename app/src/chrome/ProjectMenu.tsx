@@ -32,7 +32,7 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
     display: "block",
     width: "100%",
     textAlign: "left",
-    padding: "8px 12px",
+    padding: "9px 12px",
     border: "none",
     background: "transparent",
     color: "var(--water-fg-default)",
@@ -40,6 +40,15 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
     borderRadius: "var(--water-r-8)",
     fontFamily: "var(--water-font-sans)",
     fontSize: "var(--water-fs-ui)",
+    transition:
+      "background-color var(--water-dur-tiny) var(--water-ease-out-soft)",
+  };
+  const onItemEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.background =
+      "color-mix(in srgb, var(--water-hue-flow) 14%, transparent)";
+  };
+  const onItemLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.background = "transparent";
   };
 
   return (
@@ -47,22 +56,32 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
       ref={ref}
       role="menu"
       style={{
+        // Positioned below the project-name button in the ScenesPanel
+        // header. The wrapping container in App.tsx is a flex row that
+        // also contains the full-height ScenesPanel, so `top: 100%`
+        // anchors the menu at the bottom of the viewport (off-screen
+        // behind the editor canvas). Anchor by a fixed offset matching
+        // the panel's header padding + button height instead.
         position: "absolute",
-        top: "100%",
-        left: 12,
-        marginTop: 4,
-        minWidth: 200,
-        padding: 4,
+        top: 48,
+        left: 14,
+        minWidth: 220,
+        padding: 6,
         background: "var(--water-bg-paper)",
         borderRadius: "var(--water-r-16)",
-        boxShadow: "0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 25%, transparent)",
+        boxShadow:
+          "0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 25%, transparent), 0 8px 24px color-mix(in srgb, var(--water-fg-default) 14%, transparent)",
         zIndex: "var(--water-z-tooltip)" as unknown as number,
+        animation:
+          "water-pill-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
       }}
     >
       <button
         type="button"
         role="menuitem"
         style={item}
+        onMouseEnter={onItemEnter}
+        onMouseLeave={onItemLeave}
         onClick={() => {
           onClose();
           onSwitchProject();
@@ -74,6 +93,8 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
         type="button"
         role="menuitem"
         style={item}
+        onMouseEnter={onItemEnter}
+        onMouseLeave={onItemLeave}
         onClick={() => {
           onClose();
           onCloseProject();
