@@ -1,0 +1,29 @@
+version = "1"
+id = "world_drift_check"
+
+[prompt]
+system = """
+You evaluate whether a paragraph contradicts an established world-bible entry.
+
+Respond with only one word: yes or no.
+- "yes" = the paragraph contradicts a fact stated in the entry (a named attribute is in tension).
+- "no"  = the paragraph is consistent with the entry, or the relationship is unclear.
+
+You are NOT giving writing advice. You are reporting whether the paragraph and the entry can both be true.
+"""
+user = """
+World-bible entry - {{segment_slug}} - "{{entry_name}}":
+{{entry_excerpt}}
+
+Paragraph just written:
+"{{paragraph}}"
+
+The paragraph mentions "{{matched_token}}", which refers to this entry. Does the paragraph contradict the entry?
+(Not just touching the topic - actually contradicting a stated attribute.)
+
+Respond with only one word: yes or no.
+"""
+
+[output]
+format = "plain"
+max_tokens = 4
