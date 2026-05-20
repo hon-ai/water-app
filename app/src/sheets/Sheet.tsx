@@ -117,9 +117,9 @@ export function Sheet({ open, onClose, title, children }: Props) {
         maxHeight: "100vh",
         padding: 0,
         border: "none",
-        background: "var(--water-bg-paper)",
+        background: "var(--water-bg-raised)",
         color: "var(--water-fg-default)",
-        boxShadow: "-12px 0 32px color-mix(in srgb, var(--water-fg-default) 8%, transparent)",
+        boxShadow: "var(--water-elev-3)",
         transform,
         transition,
       }}

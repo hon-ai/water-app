@@ -8,12 +8,32 @@
 :root {
   color-scheme: light dark;
 
-  /* Substrate — neutral Apple-minimal */
-  --water-bg-paper:      #fbfaf7;   /* warm paper-white */
-  --water-bg-canvas:     #f5f3ee;
+  /* Substrate — cool-gray paper. Earlier warm cream (#fbfaf7 / #f5f3ee)
+     read as off-white-flat; the cool variant carries more depth against
+     pastel hues and lets the elevation tokens below actually register. */
+  --water-bg-paper:      #f4f4f6;   /* main canvas — cool light gray */
+  --water-bg-canvas:     #ecedef;   /* one step darker for sidebars/chips */
   --water-fg-default:    #161a1f;
   --water-fg-muted:      #5a6168;
   --water-fg-faint:      #9aa0a6;
+
+  /* Elevation — light-mode soft drop-shadows for tiles, cards, popovers.
+     Dark-mode overrides below disable elevation (glow shadows already
+     carry depth there). Use sparingly: cards = elev-1, popovers = elev-2,
+     dialogs = elev-3. */
+  --water-elev-1:
+    0 1px 2px color-mix(in srgb, #1a2030 7%, transparent),
+    0 0 0 1px color-mix(in srgb, #1a2030 4%, transparent);
+  --water-elev-2:
+    0 4px 12px color-mix(in srgb, #1a2030 10%, transparent),
+    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
+  --water-elev-3:
+    0 12px 32px color-mix(in srgb, #1a2030 16%, transparent),
+    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
+
+  /* Raised-card surface — slightly lighter than canvas so cards visually
+     "float" above the surrounding gray. Used by tile / card components. */
+  --water-bg-raised:     #fafafb;
 
   /* Glow — semantic */
   --water-hue-flow:           #b8e4d9;   /* mint-cyan */
@@ -77,12 +97,16 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Liminal glowing space */
+    /* Liminal glowing space — glow shadows already give depth here. */
     --water-bg-paper:      #0d0e12;
     --water-bg-canvas:     #0a0b0e;
+    --water-bg-raised:     #14161b;
     --water-fg-default:    #ecedef;
     --water-fg-muted:      #9aa0a6;
     --water-fg-faint:      #6a6f76;
+    --water-elev-1: none;
+    --water-elev-2: none;
+    --water-elev-3: none;
 
     /* Glow chroma boosted ~15% */
     --water-hue-flow:           #9ce5d1;
@@ -111,20 +135,34 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --water-bg-paper:    #fbfaf7;
-  --water-bg-canvas:   #f5f3ee;
+  --water-bg-paper:    #f4f4f6;
+  --water-bg-canvas:   #ecedef;
+  --water-bg-raised:   #fafafb;
   --water-fg-default:  #161a1f;
   --water-fg-muted:    #5a6168;
   --water-fg-faint:    #9aa0a6;
+  --water-elev-1:
+    0 1px 2px color-mix(in srgb, #1a2030 7%, transparent),
+    0 0 0 1px color-mix(in srgb, #1a2030 4%, transparent);
+  --water-elev-2:
+    0 4px 12px color-mix(in srgb, #1a2030 10%, transparent),
+    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
+  --water-elev-3:
+    0 12px 32px color-mix(in srgb, #1a2030 16%, transparent),
+    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
   --water-bg-paper:    #0d0e12;
   --water-bg-canvas:   #0a0b0e;
+  --water-bg-raised:   #14161b;
   --water-fg-default:  #ecedef;
   --water-fg-muted:    #9aa0a6;
   --water-fg-faint:    #6a6f76;
+  --water-elev-1: none;
+  --water-elev-2: none;
+  --water-elev-3: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
