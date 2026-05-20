@@ -660,9 +660,16 @@ impl<'a> WorldStore<'a> {
         Ok(id)
     }
 
-    /// Creates an entry and immediately writes one seed field. Used by the
-    /// Chorus-pin stub handler (Task 29) which materializes a draft entry
-    /// from a generated snippet.
+    /// Creates an entry and immediately writes one field's seed value.
+    /// Used by the Chorus-pin stub handler (Task 29) which materializes a
+    /// draft entry from a generated snippet.
+    ///
+    /// If the seed write fails (e.g. invalid `seed_field_id`), the entry
+    /// row created by the initial `create_entry` is rolled back via a
+    /// best-effort `delete_entry` so no orphan persists. If the cleanup
+    /// itself fails the original seed-write error is still returned (the
+    /// seed failure is the user-visible cause); the cleanup failure is
+    /// surfaced via `tracing::warn!`.
     pub fn create_entry_seeded(
         &self,
         segment_id: &Id,
@@ -671,12 +678,25 @@ impl<'a> WorldStore<'a> {
         seed_value: &str,
     ) -> Result<Id> {
         let id = self.create_entry(segment_id, name)?;
-        self.update_entry_field(
+        match self.update_entry_field(
             &id,
             seed_field_id,
             &serde_json::Value::String(seed_value.to_string()),
-        )?;
-        Ok(id)
+        ) {
+            Ok(()) => Ok(id),
+            Err(e) => {
+                if let Err(cleanup_err) = self.delete_entry(&id) {
+                    tracing::warn!(
+                        target: "water::world",
+                        entry_id = %id.as_str(),
+                        cleanup_error = %cleanup_err,
+                        original_error = %e,
+                        "create_entry_seeded: failed to delete orphan after seed-write failure"
+                    );
+                }
+                Err(e)
+            }
+        }
     }
 
     /// Updates one field in a collection entry by dotted `section.leaf`
