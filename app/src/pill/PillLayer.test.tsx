@@ -65,7 +65,7 @@ describe("PillLayer", () => {
     expect(screen.queryByText("first pill")).toBeNull();
   });
 
-  it("displays at most 2 pills simultaneously (FIFO evicts oldest)", async () => {
+  it("displays at most 4 pills simultaneously (FIFO evicts oldest)", async () => {
     const handlers = mockHandlers();
     render(<PillLayer />);
     await waitFor(() => expect(handlers.emerged).toBeDefined());
@@ -82,9 +82,21 @@ describe("PillLayer", () => {
         samplePill({ pill_id: "p3", speaker_id: "architect", hue_token: "--water-hue-architect", text: "C", block_target_id: null }),
       ),
     );
-    // FIFO: A evicts, B + C remain.
+    act(() =>
+      handlers.emerged!(
+        samplePill({ pill_id: "p4", speaker_id: "echo", hue_token: "--water-hue-echo", text: "D", block_target_id: null }),
+      ),
+    );
+    act(() =>
+      handlers.emerged!(
+        samplePill({ pill_id: "p5", speaker_id: "chorus", hue_token: "--water-hue-chorus", text: "E", block_target_id: null }),
+      ),
+    );
+    // FIFO @ MAX_ON_SCREEN=4: A evicts, B + C + D + E remain.
     expect(screen.queryByText("A")).toBeNull();
     expect(screen.getByText("B")).toBeInTheDocument();
     expect(screen.getByText("C")).toBeInTheDocument();
+    expect(screen.getByText("D")).toBeInTheDocument();
+    expect(screen.getByText("E")).toBeInTheDocument();
   });
 });

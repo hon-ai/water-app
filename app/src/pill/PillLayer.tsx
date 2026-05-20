@@ -7,7 +7,7 @@ import { PillCapsule } from "./PillCapsule";
 import { RabbitHole, type RabbitHoleLevel } from "./RabbitHole";
 import type { Pill } from "./types";
 
-const MAX_ON_SCREEN = 2;
+const MAX_ON_SCREEN = 4;
 /** Below this `<main>` width the pill margin overlaps the prose; capsules
  *  drop to 0.7 opacity so writing underneath stays readable. Matches the
  *  PinnedColumn collapse breakpoint so both fallbacks engage in lockstep. */

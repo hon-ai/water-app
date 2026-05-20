@@ -68,13 +68,13 @@ export function PillCapsule({ pill, onClick }: Props) {
       "water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
   };
   const chipStyle: CSSProperties = {
-    display: "inline-block",
+    display: "block",
     fontSize: 10,
     fontWeight: 600,
     textTransform: "uppercase",
     letterSpacing: 0.6,
     color: `color-mix(in oklch, var(${pill.hue_token}) 80%, var(--water-fg-default))`,
-    marginBottom: 2,
+    marginBottom: 4,
     opacity: 0.85,
   };
   return (
