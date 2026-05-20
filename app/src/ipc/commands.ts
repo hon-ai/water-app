@@ -191,6 +191,40 @@ export interface WorldTemplateSchema {
   fields: WorldTemplateField[];
 }
 
+/**
+ * One world doc — either a single-doc segment or one collection entry.
+ * Mirrors `commands::world::WorldEntryFilePayload`. Section keys
+ * (`"main"`, `"lists"`, …) land at top level via `#[serde(flatten)]` on
+ * the Rust side, so callers should read them as `file["main"]` etc.
+ *
+ * For single-doc segments `aliases` is always `[]`; for collection
+ * entries it carries the per-entry alias list (used by world
+ * autosuggest's case-insensitive name+alias index).
+ */
+export type WorldEntryFile = {
+  id: string;
+  segment_id: string;
+  schema_version: string;
+  name: string;
+  aliases: string[];
+  // Section keys (e.g. "main", "lists") land at top level via
+  // #[serde(flatten)] on the Rust side.
+  [key: string]: unknown;
+};
+
+/**
+ * One row in a collection-segment index, or one hit from the world
+ * autosuggest scanner. Mirrors `commands::world::WorldEntryIndexPayload`.
+ * `preview` is server-computed (first non-empty `[main]` field truncated
+ * to 80 chars) for index rows and empty (`""`) for autosuggest hits.
+ */
+export type WorldEntryIndexEntry = {
+  id: string;
+  segment_id: string;
+  name: string;
+  preview: string;
+};
+
 export const ipc = {
   createProject: (parentDir: string, name: string): Promise<OpenProjectInfo> =>
     invoke("create_project", { parentDir, name }),
@@ -300,6 +334,77 @@ export const ipc = {
     invoke("world_segment_delete", { segmentId }),
   worldIntakeSchema: (segmentId: string): Promise<WorldTemplateSchema> =>
     invoke("world_intake_schema", { segmentId }),
+
+  // World single-doc commands (M4 T9). `worldSingleDocRead` lazily
+  // materializes an empty row the first time a segment is opened, so the
+  // first read after `seed_builtins` is always non-null.
+  worldSingleDocRead: (segmentId: string): Promise<WorldEntryFile> =>
+    invoke("world_single_doc_read", { segmentId }),
+  worldSingleDocUpdateField: (req: {
+    segmentId: string;
+    fieldId: string;
+    value: unknown;
+  }): Promise<void> =>
+    invoke("world_single_doc_update_field", {
+      req: {
+        segment_id: req.segmentId,
+        field_id: req.fieldId,
+        value: req.value,
+      },
+    }),
+
+  // World collection-entry CRUD + autosuggest (M4 T10).
+  //
+  // `worldEntryCreate` accepts an empty `name` — the Chorus stub flow
+  // intentionally relies on this to create an empty entry that the
+  // orphan reaper (`worldEntryDeleteIfEmpty`) can collect later if the
+  // user abandons it.
+  //
+  // `worldAutosuggest` is scoped to `locations`-slug entries only in
+  // M4; other segments are filtered out server-side. `sceneId` is
+  // accepted now but currently unused (reserved for presence-aware
+  // filtering, matching the character autosuggest surface convention).
+  worldEntryList: (segmentId: string): Promise<WorldEntryIndexEntry[]> =>
+    invoke("world_entry_list", { segmentId }),
+  worldEntryRead: (entryId: string): Promise<WorldEntryFile> =>
+    invoke("world_entry_read", { entryId }),
+  worldEntryCreate: (req: {
+    segmentId: string;
+    name: string;
+  }): Promise<string> =>
+    invoke("world_entry_create", {
+      req: { segment_id: req.segmentId, name: req.name },
+    }),
+  worldEntryUpdateField: (req: {
+    entryId: string;
+    fieldId: string;
+    value: unknown;
+  }): Promise<void> =>
+    invoke("world_entry_update_field", {
+      req: {
+        entry_id: req.entryId,
+        field_id: req.fieldId,
+        value: req.value,
+      },
+    }),
+  worldEntryUpdateAliases: (req: {
+    entryId: string;
+    aliases: string[];
+  }): Promise<void> =>
+    invoke("world_entry_update_aliases", {
+      req: { entry_id: req.entryId, aliases: req.aliases },
+    }),
+  worldEntryDeleteIfEmpty: (entryId: string): Promise<boolean> =>
+    invoke("world_entry_delete_if_empty", { entryId }),
+  worldEntryDelete: (entryId: string): Promise<void> =>
+    invoke("world_entry_delete", { entryId }),
+  worldAutosuggest: (req: {
+    sceneId: string;
+    paragraph: string;
+  }): Promise<WorldEntryIndexEntry[]> =>
+    invoke("world_autosuggest", {
+      req: { scene_id: req.sceneId, paragraph: req.paragraph },
+    }),
 
   providerTest: (providerId: string): Promise<string[]> =>
     invoke("provider_test", { providerId }),

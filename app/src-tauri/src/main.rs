@@ -56,6 +56,16 @@ fn main() {
             commands::world::world_segment_set_hidden,
             commands::world::world_segment_delete,
             commands::world::world_intake_schema,
+            commands::world::world_single_doc_read,
+            commands::world::world_single_doc_update_field,
+            commands::world::world_entry_list,
+            commands::world::world_entry_read,
+            commands::world::world_entry_create,
+            commands::world::world_entry_update_field,
+            commands::world::world_entry_update_aliases,
+            commands::world::world_entry_delete_if_empty,
+            commands::world::world_entry_delete,
+            commands::world::world_autosuggest,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
