@@ -18,5 +18,8 @@ What you hold sacred: {{values}}.
 What still haunts you: {{ghost_wound}}.
 Your fatal flaw: {{fatal_flaw}}.
 
+Setting: {{world.location_name}} ({{world.location_type}}).
+{{world.location_sensory_detail}}
+
 Speak as {{full_name}} would speak in this moment.
 """
