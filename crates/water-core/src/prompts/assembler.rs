@@ -173,6 +173,41 @@ mod tests {
         assert!(!req.expect_json);
     }
 
+    /// M4 Task 18: confirm Cartographer + `world_drift` assembles cleanly
+    /// through the existing Level-0 path. This is the architectural contract
+    /// the M4 plan implied with "real Cartographer voice template": the
+    /// world-track trigger framing arrives via the trigger TOML, and the
+    /// reactive-observational voice arrives via the persona TOML — there is
+    /// no separate Mustache renderer, just the existing `assemble_level_0`.
+    #[test]
+    fn cartographer_world_drift_level_0_assembly_is_clean() {
+        let lib = PromptLibrary::load_builtin().unwrap();
+        let dir = TempDir::new().unwrap();
+        let db = Db::open(dir.path().join("p.db")).unwrap();
+        let reg = PersonaRegistry::from_db(&db).unwrap();
+        let cart = reg.by_id("cartographer").unwrap();
+        let req = assemble_level_0(
+            &lib,
+            &*cart,
+            "world_drift",
+            "The Pell Library opened its doors at dusk, though no one had said the name aloud in a year.",
+        )
+        .unwrap();
+
+        // Cartographer voice surfaces.
+        assert!(req.system.contains("Cartographer"));
+        assert!(req.system.contains("notice") || req.system.contains("notices"));
+        // World-drift trigger framing surfaces.
+        assert!(req.system.contains("world_drift"));
+        assert!(req.system.contains("named entity"));
+        // Scene excerpt is in the user block, not the system block.
+        assert!(req.user.contains("Pell Library"));
+        // The tone block carries the blacklist clause that explicitly forbids
+        // the phrases. We assert it survives into the assembled system prompt
+        // so the LLM sees the guardrail.
+        assert!(req.system.contains("Never say"));
+    }
+
     #[test]
     fn regenerate_substitutes_prior_first_words() {
         let lib = PromptLibrary::load_builtin().unwrap();

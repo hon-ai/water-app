@@ -114,4 +114,49 @@ mod tests {
         let echo = reg.by_id("echo").unwrap();
         assert_eq!(echo.display_name(), "Whisper");
     }
+
+    /// M4 Task 18: the Cartographer voice template must be reactive and
+    /// observational (notices the world, does not instruct the writer) and
+    /// must not itself contain any blacklisted phrase that would later
+    /// leak through into a pill if the model echoed it back.
+    #[test]
+    fn cartographer_voice_profile_is_reactive_and_blacklist_clean() {
+        let (_t, db) = fresh_db();
+        let reg = PersonaRegistry::from_db(&db).unwrap();
+        let cart = reg.by_id("cartographer").unwrap();
+
+        // Reactive-observational language we expect to find.
+        let fragment = cart.prompt_fragment();
+        assert!(
+            fragment.contains("notice") || fragment.contains("notices"),
+            "Cartographer voice should be observational (contain 'notice'): {fragment}"
+        );
+        assert!(
+            fragment.contains("world"),
+            "Cartographer voice should mention the world: {fragment}"
+        );
+
+        // Blacklist-discipline: the voice template must explicitly forbid
+        // the same phrases the post-filter regex rejects. The forbid-list
+        // legitimately quotes these phrases as forbidden words, so we
+        // assert the *forbidding clause* is present rather than checking
+        // raw substrings (which would trip on the forbid-list itself).
+        for forbidden_word in [
+            "you should",
+            "consider",
+            "try",
+            "maybe you could",
+            "I think you",
+            "as an AI",
+        ] {
+            assert!(
+                fragment.contains(&format!("\"{forbidden_word}\"")),
+                "Cartographer voice must explicitly forbid {forbidden_word:?}: {fragment}"
+            );
+        }
+        assert!(
+            fragment.contains("never instruct") || fragment.contains("not advise") || fragment.contains("do not advise"),
+            "Cartographer voice must explicitly disclaim instruction: {fragment}"
+        );
+    }
 }
