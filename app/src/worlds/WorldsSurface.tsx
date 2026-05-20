@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { WorldIndex } from "./WorldIndex";
 import { WorldSegmentView } from "./WorldSegmentView";
+import { WorldEntrySheet } from "./WorldEntrySheet";
 
 /**
  * Worlds surface router (M4 T20, spec § 10).
@@ -78,7 +79,10 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
       {view.kind === "entry" && (
         <div>
           <button onClick={() => goToSegment(view.segmentId)}>← Back</button>
-          <div data-testid="entry-placeholder">entry: {view.entryId}</div>
+          <WorldEntrySheet
+            segmentId={view.segmentId}
+            entryId={view.entryId}
+          />
         </div>
       )}
       {view.kind === "entry-intake" && (
