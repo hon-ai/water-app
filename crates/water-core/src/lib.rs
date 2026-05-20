@@ -53,6 +53,9 @@ pub use character::{
 pub mod world;
 pub use world::{WorldSegmentRow, WorldStore};
 
+pub mod heat;
+pub use heat::{HeatMetricKind, HeatRow};
+
 pub mod snapshot;
 pub use snapshot::{SnapshotRow, SnapshotStore, SnapshotTrigger};
 
