@@ -6,6 +6,7 @@ import { ProjectMenu } from "./chrome/ProjectMenu";
 import { EditorCanvas } from "./chrome/EditorCanvas";
 import { EmptyState } from "./chrome/EmptyState";
 import { CharactersSurface } from "./chrome/CharactersSurface";
+import { WorldsSurface } from "./worlds/WorldsSurface";
 import { CreateProjectSheet } from "./sheets/CreateProjectSheet";
 import { SettingsSheet } from "./sheets/SettingsSheet";
 import { SceneMetadataSheet } from "./scenes/SceneMetadataSheet";
@@ -131,6 +132,8 @@ export default function App() {
           />
         ) : activeNav === "characters" ? (
           <CharactersSurface />
+        ) : activeNav === "world" ? (
+          <WorldsSurface projectId={projectRoot ?? ""} />
         ) : (
           <>
             <div style={{ position: "relative", display: "flex" }}>
