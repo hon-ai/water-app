@@ -306,15 +306,20 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
       </div>
       <div
         style={{
-          maxWidth: "var(--water-canvas-max)",
+          // Wide backdrop that fades horizontally into the stream on
+          // either side of the prose. Centered with margin: 0 auto;
+          // a soft linear gradient transitions from transparent at
+          // the very edges to opaque bg-paper across the prose area
+          // and back. Result: stream visible at shoulders, gentle
+          // halo around the writing column — no hard cut-off.
+          maxWidth: "calc(var(--water-canvas-max) + 240px)",
           margin: "0 auto",
-          padding: "72px 24px 96px 24px",
+          padding: "72px 144px 96px 144px",
           display: "flex",
           flexDirection: "column",
           gap: 4,
-          // Opaque paper for prose readability. Stream flows on the
-          // shoulders outside this column.
-          background: "var(--water-bg-paper)",
+          background:
+            "linear-gradient(90deg, transparent 0%, var(--water-bg-paper) 18%, var(--water-bg-paper) 82%, transparent 100%)",
         }}
       >
         <HeatmapStrip sceneId={sceneId} />

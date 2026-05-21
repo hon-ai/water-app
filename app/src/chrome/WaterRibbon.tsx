@@ -81,6 +81,13 @@ function kernelY(
 /** Local width bump near a scene so the strand visibly touches it.
  *  At the anchor's X the bump pushes the half-thickness to within
  *  TOUCH_RADIUS of the anchor's Y; falls off gaussian. */
+/** Cap on per-anchor width inflation. Without this an anchor far
+ *  from the centerline asked for ribbon-thickness several hundred
+ *  px wide, which read as a "blob" — the funky physics flagged by
+ *  the writer. Now any individual anchor contributes at most
+ *  ~MAX_BUMP px to the local width. */
+const MAX_BUMP = 160;
+
 function widthBump(
   anchors: Anchor[],
   x: number,
@@ -88,18 +95,23 @@ function widthBump(
 ): number {
   if (anchors.length === 0) return 0;
   let bump = 0;
-  const sigma2 = 2 * (KERNEL_SIGMA * 0.6) * (KERNEL_SIGMA * 0.6);
+  // Wider sigma than the centerline kernel: smoother width
+  // transitions between anchors, less peaky bubbling. KERNEL_SIGMA
+  // * 0.85 keeps the bump localized but soft.
+  const sigma2 = 2 * (KERNEL_SIGMA * 0.85) * (KERNEL_SIGMA * 0.85);
   for (const a of anchors) {
     const weight = a.weight ?? 1;
     if (weight <= 0) continue;
     const dx = x - a.x;
     const dy = Math.abs(a.y - centerY);
-    // Desired thickness so the half-extent reaches the anchor minus
-    // TOUCH_RADIUS slack.
-    const need = Math.max(0, dy - TOUCH_RADIUS);
+    // need: how much thickness is required to reach this anchor.
+    // Capped + softened with a sqrt curve so a very-far anchor
+    // doesn't drive an absurd local swell.
+    const rawNeed = Math.max(0, dy - TOUCH_RADIUS);
+    const need = Math.min(MAX_BUMP * 0.5, Math.sqrt(rawNeed * 14));
     if (need <= 0) continue;
     const f = Math.exp(-(dx * dx) / sigma2) * weight;
-    bump = Math.max(bump, 2 * need * f);
+    bump = Math.max(bump, Math.min(MAX_BUMP, 2 * need * f));
   }
   return bump;
 }
@@ -199,6 +211,23 @@ function buildStrand(
     widths.push(w);
     brightness.push(Math.max(0.3, Math.min(1, b)));
     alpha.push(Math.max(0.45, Math.min(1, a)));
+  }
+
+  // Low-pass smoothing on the widths array. A 5-tap symmetric filter
+  // applied twice flattens any sharp bump-discontinuities (the cause
+  // of the "funky bubbling" the writer flagged). The y-centerline
+  // already comes out of a wide gaussian kernel and doesn't need
+  // extra smoothing.
+  for (let pass = 0; pass < 2; pass++) {
+    const src = [...widths];
+    for (let i = 0; i <= samples; i++) {
+      const i0 = src[Math.max(0, i - 2)] ?? src[i]!;
+      const i1 = src[Math.max(0, i - 1)] ?? src[i]!;
+      const i2 = src[i]!;
+      const i3 = src[Math.min(samples, i + 1)] ?? src[i]!;
+      const i4 = src[Math.min(samples, i + 2)] ?? src[i]!;
+      widths[i] = (i0 + 2 * i1 + 4 * i2 + 2 * i3 + i4) / 10;
+    }
   }
 
   // Edges + path.

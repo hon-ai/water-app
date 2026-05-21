@@ -499,7 +499,10 @@ export function CanvasSurface({ onOpenScene }: Props) {
       style={{
         flex: 1,
         position: "relative",
-        background: "var(--water-bg-paper)",
+        // Transparent so the App-level stream flows through. Scene
+        // cards have their own bg-raised; empty canvas space lets
+        // the ribbon read past the lane labels.
+        background: "transparent",
         overflow: "hidden",
         touchAction: "none",
         cursor: panStartRef.current ? "grabbing" : "default",
