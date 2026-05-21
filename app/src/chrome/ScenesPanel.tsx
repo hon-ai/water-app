@@ -241,7 +241,10 @@ export function ScenesPanel({
                   alignItems: "baseline",
                   width: "calc(100% - 16px)",
                   margin: "2px 8px",
-                  padding: "6px 10px",
+                  // Reserve right space for the absolute-positioned
+                  // details (3-dots) button so the word count doesn't
+                  // collide with it on hover.
+                  padding: onOpenDetails ? "6px 32px 6px 10px" : "6px 10px",
                   border: "none",
                   background: isActive
                     ? "color-mix(in srgb, var(--water-hue-flow) 30%, transparent)"

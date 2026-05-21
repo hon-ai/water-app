@@ -146,8 +146,12 @@ function buildStrand(
     xs.push(sx);
     ys.push(cy);
     widths.push(Math.max(6, w));
-    brightness.push(Math.max(0.2, Math.min(1, b)));
-    alpha.push(Math.max(0.1, Math.min(1, a)));
+    brightness.push(Math.max(0.3, Math.min(1, b)));
+    // Alpha floor raised from 0.1 — the old floor let sections fade
+    // to nearly-invisible, which combined with the wide-halo
+    // gaussian blur made the whole ribbon read as absent on lighter
+    // surfaces. Floor of 0.4 keeps the ribbon legible at every point.
+    alpha.push(Math.max(0.4, Math.min(1, a)));
   }
 
   const top: { x: number; y: number }[] = [];
@@ -369,7 +373,7 @@ export function CanvasFlowRibbon({
                   stopColor={
                     s.b > 0.7 ? "var(--water-sea-glow)" : "var(--water-sea-300)"
                   }
-                  stopOpacity={(0.12 + s.b * 0.3) * s.a}
+                  stopOpacity={(0.3 + s.b * 0.55) * s.a}
                 />
               ))}
             </linearGradient>
@@ -384,9 +388,9 @@ export function CanvasFlowRibbon({
               ))}
             </linearGradient>
           </defs>
-          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.55} filter="url(#cf-glow-wide)" />
-          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.65} filter="url(#cf-glow-mid)" />
-          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.4} />
+          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.8} filter="url(#cf-glow-wide)" />
+          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.85} filter="url(#cf-glow-mid)" />
+          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.65} />
           <path
             d={strand.edge}
             fill="none"
