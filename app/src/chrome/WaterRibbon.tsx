@@ -26,24 +26,11 @@ interface Props {
 }
 
 /** Kernel bandwidth (px) for centerline smoothing. Larger ⇒ smoother
- *  curve, anchors influence further out. Smaller ⇒ tighter to each
- *  scene but riskier of sharp corners. ~220 reads as a meandering
- *  river that visibly bends through each scene without kinking. */
-const KERNEL_SIGMA = 220;
-/** Touch-radius (px) for the strand to "touch" a scene. The ribbon's
- *  width near a scene is bumped up so the half-thickness reaches the
- *  scene from whatever Y the smoothed curve passes at. */
-const TOUCH_RADIUS = 80;
-/** Cluster threshold (px) for detecting X-stacked scenes. Scenes
- *  within this X-distance and outside LANE_Y_TOLERANCE on Y get a
- *  local fork ribbon — only the segment around them splits. */
-const X_CLUSTER_DIST = 90;
-/** Anchors within this much Y are considered "same lane" — no fork. */
-const LANE_Y_TOLERANCE = 60;
-/** How wide the fork is around the stacked column. The branch curve
- *  starts diverging this far before the stack X and rejoins this far
- *  after. */
-const FORK_FLARE = 140;
+ *  curve, anchors influence further out. */
+const KERNEL_SIGMA = 200;
+/** Touch-radius (px) for the strand to "touch" a scene — the ribbon's
+ *  half-width gets local bumps so it visibly reaches each scene. */
+const TOUCH_RADIUS = 60;
 /** Anchor-easing factor per rAF frame. ~0.05 ≈ 1s convergence at 60fps. */
 const EASE = 0.05;
 
@@ -107,35 +94,6 @@ function widthBump(
  *  a list of forks: each entry describes one local split — the X
  *  position and the anchors involved. Non-stacked anchors don't
  *  trigger any forks. */
-interface Fork {
-  centerX: number;
-  members: Anchor[];
-}
-function detectForks(anchors: Anchor[]): Fork[] {
-  if (anchors.length < 2) return [];
-  const sortedX = [...anchors].sort((a, b) => a.x - b.x);
-  const groups: Anchor[][] = [[sortedX[0]!]];
-  for (let i = 1; i < sortedX.length; i++) {
-    const prev = sortedX[i - 1]!;
-    const curr = sortedX[i]!;
-    if (Math.abs(curr.x - prev.x) < X_CLUSTER_DIST) {
-      groups[groups.length - 1]!.push(curr);
-    } else {
-      groups.push([curr]);
-    }
-  }
-  const forks: Fork[] = [];
-  for (const g of groups) {
-    if (g.length < 2) continue;
-    const ys = g.map((a) => a.y);
-    const yMin = Math.min(...ys);
-    const yMax = Math.max(...ys);
-    if (yMax - yMin < LANE_Y_TOLERANCE) continue;
-    const meanX = g.reduce((s, a) => s + a.x, 0) / g.length;
-    forks.push({ centerX: meanX, members: g });
-  }
-  return forks;
-}
 
 interface StrandShape {
   d: string;
@@ -154,75 +112,15 @@ interface StrandShape {
   }[];
 }
 
-/** Filter the anchor list to ones relevant to a specific lane.
- *  Non-fork anchors (i.e., the single-scene flow points) are
- *  relevant to every lane. Fork members are relevant only to the
- *  lane that's assigned to them — otherwise every lane would bump
- *  its width up toward every member of every fork. */
-function relevantAnchorsForLane(
-  _x: number,
-  laneIx: number,
+/** Single ribbon strand. Centerline is kernel-smoothed Y over every
+ *  anchor — one curve that bends gently through scenes. Width gets a
+ *  local bump near each anchor (widthBump) so the strand visibly
+ *  touches each scene even when the smoothed centerline doesn't
+ *  pass through its center. No lanes, no fork divergence: a single
+ *  flowing ribbon that adapts its thickness to embrace scene
+ *  clusters where it needs to. */
+function buildMainStrand(
   anchors: Anchor[],
-  forks: Fork[],
-): Anchor[] {
-  const allForkMemberIds = new Set<string>();
-  for (const f of forks) {
-    for (const m of f.members) allForkMemberIds.add(m.id);
-  }
-  const myMemberIds = new Set<string>();
-  for (const f of forks) {
-    const sortedMembers = [...f.members].sort((a, b) => a.y - b.y);
-    const member = sortedMembers[laneIx];
-    if (member) myMemberIds.add(member.id);
-  }
-  return anchors.filter((a) => {
-    if (!allForkMemberIds.has(a.id)) return true;
-    return myMemberIds.has(a.id);
-  });
-}
-
-/** Compute lane-specific Y at sample x. Outside any fork, every lane
- *  collapses to the kernel-smoothed centerline (so multiple lanes
- *  overlap visually as one ribbon). At each fork, this lane bends
- *  smoothly toward its assigned member's Y across the FORK_FLARE
- *  region — like a river dividing around an island and merging.
- *
- *  Lane assignments are deterministic: members of each fork are
- *  sorted top-to-bottom by Y, and lane `laneIx` takes the member
- *  at that index (or null if the fork has fewer members than lanes).
- *  When this lane has no member in a given fork, it stays at the
- *  smoothed centerline through that fork. */
-function laneY(
-  x: number,
-  laneIx: number,
-  forks: Fork[],
-  anchors: Anchor[],
-  fallbackY: number,
-): number {
-  const base = kernelY(anchors, x, fallbackY);
-  let y = base;
-  for (const f of forks) {
-    const sortedMembers = [...f.members].sort((a, b) => a.y - b.y);
-    const member = sortedMembers[laneIx];
-    if (!member) continue;
-    const dx = x - f.centerX;
-    if (Math.abs(dx) > FORK_FLARE) continue;
-    // Cosine envelope: 1 at fork center, 0 at +/- FORK_FLARE. Smooth
-    // C1-continuous deflection so the lane fans out and reconverges
-    // without any visible kink.
-    const env = Math.cos((dx / FORK_FLARE) * (Math.PI / 2));
-    y = y + (member.y - base) * env;
-  }
-  return y;
-}
-
-/** Build one lane's strand. Multiple lanes overlap visually outside
- *  fork regions (all at kernelY) and split apart inside forks where
- *  they each pull toward their assigned member. */
-function buildLaneStrand(
-  laneIx: number,
-  anchors: Anchor[],
-  forks: Fork[],
   parentWidth: number,
   baseY: number,
   baseThickness: number,
@@ -244,45 +142,24 @@ function buildLaneStrand(
   const brightness: number[] = [];
   const alpha: number[] = [];
 
-  // Per-lane phase offset so multiple lanes (when they overlap
-  // outside forks) don't move in perfect lockstep. Tiny offset
-  // keeps each lane's noise a touch out of phase from siblings.
-  const laneOffset = laneIx * 0.6;
-
   for (let i = 0; i <= samples; i++) {
     const x = (i / samples) * W;
-    // Lane-specific centerline: kernel-smoothed flow + per-fork
-    // deflection toward this lane's assigned member.
-    const center = laneY(x, laneIx, forks, anchors, baseY);
-    // Noise overlay — subordinate to the centerline but not uniform.
+    const center = kernelY(anchors, x, baseY);
     const noiseY =
-      14 * Math.sin(tau * x * 1.6 + omegaY1 * t + laneOffset) +
-      8 * Math.sin(tau * x * 3.7 + omegaY2 * t + 1.2 + laneOffset);
+      14 * Math.sin(tau * x * 1.6 + omegaY1 * t) +
+      8 * Math.sin(tau * x * 3.7 + omegaY2 * t + 1.2);
     const y = center + noiseY;
     const swell =
       0.55 +
-      0.35 * Math.sin(tau * x * 1.4 + omegaW1 * t + laneOffset * 0.4) +
-      0.22 * Math.sin(tau * x * 3.8 + omegaW2 * t + 0.6 + laneOffset);
-    // Touch bump only for anchors that belong to this lane's
-    // trajectory. For non-fork anchors, all lanes share them; for
-    // fork members, only the assigned lane's member contributes.
-    const laneAnchors = relevantAnchorsForLane(
-      x,
-      laneIx,
-      anchors,
-      forks,
-    );
-    const bump = laneAnchors.length > 0
-      ? widthBump(laneAnchors, x, center)
-      : 0;
+      0.35 * Math.sin(tau * x * 1.4 + omegaW1 * t) +
+      0.22 * Math.sin(tau * x * 3.8 + omegaW2 * t + 0.6);
+    const bump = anchors.length > 0 ? widthBump(anchors, x, center) : 0;
     const w = Math.max(8, baseThickness * swell + bump);
     const b =
       0.5 +
-      0.34 * Math.sin(tau * x * 1.7 + omegaB1 * t + laneOffset * 0.7) +
+      0.34 * Math.sin(tau * x * 1.7 + omegaB1 * t) +
       0.18 * Math.sin(tau * x * 3.3 + omegaB1 * 1.6 * t);
-    const a =
-      0.6 +
-      0.25 * Math.sin(tau * x * 1.3 + omegaA1 * t + laneOffset * 0.5);
+    const a = 0.6 + 0.25 * Math.sin(tau * x * 1.3 + omegaA1 * t);
     xs.push(x);
     ys.push(y);
     widths.push(w);
@@ -333,28 +210,25 @@ function buildLaneStrand(
     });
   }
 
-  // Droplets only on the first lane (laneIx === 0) so multiple
-  // overlapping lanes don't multiply the spray density. Lifecycle
-  // envelope (fade in / hold / fade out) carries the organic feel.
+  // Droplets along the strand with the lifecycle envelope (fade in /
+  // hold / fade out) for organic spray.
+  const NUM_DROPS = 26;
   const drops: StrandShape["drops"] = [];
-  if (laneIx === 0) {
-    const NUM_DROPS = 26;
-    for (let i = 0; i < NUM_DROPS; i++) {
-      const xFrac = prand(i, 1);
-      const dx = xFrac * W;
-      const sampleIx = Math.min(samples, Math.floor(xFrac * samples));
-      const yCenter = ys[sampleIx]!;
-      const perpFrac = prand(i, 2) - 0.5;
-      const perpScale = 30 + prand(i, 5) * 100;
-      const cy = yCenter + perpFrac * perpScale;
-      const sizeRand = prand(i, 3);
-      const r =
-        sizeRand < 0.88 ? 0.4 + sizeRand * 1.0 : 1.3 + (sizeRand - 0.88) * 8;
-      const opacityBase = 0.16 + prand(i, 4) * 0.24;
-      const lifetime = 6 + prand(i, 8) * 10;
-      const birthOffset = prand(i, 9) * lifetime;
-      drops.push({ cx: dx, cy, r, opacityBase, birthOffset, lifetime });
-    }
+  for (let i = 0; i < NUM_DROPS; i++) {
+    const xFrac = prand(i, 1);
+    const dx = xFrac * W;
+    const sampleIx = Math.min(samples, Math.floor(xFrac * samples));
+    const yCenter = ys[sampleIx]!;
+    const perpFrac = prand(i, 2) - 0.5;
+    const perpScale = 30 + prand(i, 5) * 100;
+    const cy = yCenter + perpFrac * perpScale;
+    const sizeRand = prand(i, 3);
+    const r =
+      sizeRand < 0.88 ? 0.4 + sizeRand * 1.0 : 1.3 + (sizeRand - 0.88) * 8;
+    const opacityBase = 0.16 + prand(i, 4) * 0.24;
+    const lifetime = 6 + prand(i, 8) * 10;
+    const birthOffset = prand(i, 9) * lifetime;
+    drops.push({ cx: dx, cy, r, opacityBase, birthOffset, lifetime });
   }
 
   return { d, edge, stopValues, drops };
@@ -546,32 +420,22 @@ export function WaterRibbon({
   const strands: StrandShape[] = [];
 
   if (mainMode) {
-    // Number of lanes equals the largest fork's member count, or 1
-    // if there are no forks. Each lane renders as a full-length
-    // strand: outside forks it coincides with the kernel-smoothed
-    // centerline (so multiple lanes overlap visually as ONE river);
-    // inside a fork it bends toward its assigned member and
-    // smoothly rejoins. This is what makes the river "divide and
-    // reunite" at stack columns instead of growing tributaries.
-    const forks = detectForks(displayedAnchors);
-    const laneCount =
-      forks.length === 0
-        ? 1
-        : Math.max(...forks.map((f) => f.members.length));
-    for (let lane = 0; lane < laneCount; lane++) {
-      strands.push(
-        buildLaneStrand(
-          lane,
-          displayedAnchors,
-          forks,
-          W,
-          baseY,
-          baseThickness,
-          samplesPerPeriod,
-          t,
-        ),
-      );
-    }
+    // One river. Kernel smoothing gives a single smooth centerline
+    // through every anchor; width swells locally where the curve
+    // needs reach to touch nearby scenes. No lanes, no fork
+    // divergence — that approach didn't survive zoom transforms
+    // (lanes stacked into a blob when zoomed out) and read as
+    // multiple appended streams.
+    strands.push(
+      buildMainStrand(
+        displayedAnchors,
+        W,
+        baseY,
+        baseThickness,
+        samplesPerPeriod,
+        t,
+      ),
+    );
   } else {
     strands.push(
       buildWaveStrand(W, baseY, baseThickness, samplesPerPeriod * 3, t),
