@@ -30,6 +30,7 @@ fn main() {
             commands::scene::scene_rename,
             commands::scene::scene_read_metadata,
             commands::scene::scene_set_location,
+            commands::scene::scene_set_summary,
             commands::character::character_create,
             commands::character::character_read,
             commands::character::character_list,

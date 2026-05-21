@@ -44,6 +44,10 @@ pub struct SceneCanvasRow {
     pub location_id: Option<String>,
     /// Display name of the primary location entry.
     pub location_name: Option<String>,
+    /// Writer-supplied brief summary of what happens in the scene
+    /// (from `scene.scene_goal`). Surfaces on the SceneCard so the
+    /// writer sees event order at a glance when rearranging.
+    pub summary: Option<String>,
     /// All characters present in the scene (from
     /// `scene_character_presence`). The POV character is included
     /// when present; the renderer dedupes against `pov_character_id`.
@@ -81,7 +85,8 @@ pub async fn scene_canvas_list_core(
                     scene.canvas_x, scene.canvas_y, scene.canvas_group,
                     scene.word_count,
                     scene.pov_character_id, character.name,
-                    scene.location_id, world_entry.name
+                    scene.location_id, world_entry.name,
+                    scene.scene_goal
              FROM scene
              JOIN manuscript ON manuscript.id = scene.manuscript_id
              LEFT JOIN character ON character.id = scene.pov_character_id
@@ -105,6 +110,7 @@ pub async fn scene_canvas_list_core(
                 pov_character_name: r.get::<_, Option<String>>(8)?,
                 location_id: r.get::<_, Option<String>>(9)?,
                 location_name: r.get::<_, Option<String>>(10)?,
+                summary: r.get::<_, Option<String>>(11)?,
                 character_presences: Vec::new(),
                 location_presences: Vec::new(),
             })

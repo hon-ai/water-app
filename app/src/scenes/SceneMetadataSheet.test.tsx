@@ -61,6 +61,7 @@ const mockMeta: SceneMetadata = {
   characters_present: ["c1"],
   pov_character_id: "c1",
   location: null,
+  summary: null,
 };
 
 function mockIpcDefaults() {
@@ -251,6 +252,7 @@ describe("SceneMetadataSheet", () => {
       characters_present: ["c1", "c2"],
       pov_character_id: "c1",
       location: null,
+      summary: null,
     } satisfies SceneMetadata);
     fireEvent.click(chipBtn);
     await waitFor(() => {
@@ -297,6 +299,7 @@ describe("SceneMetadataSheet", () => {
         name: "The Pell Library",
         segment_slug: "locations",
       },
+      summary: null,
     } satisfies SceneMetadata);
     render(
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
@@ -398,6 +401,7 @@ describe("SceneMetadataSheet", () => {
       characters_present: ["c1"],
       pov_character_id: "c1",
       location: { id: "loc-1", name: "The Pell Library", segment_slug: "locations" },
+      summary: null,
     } satisfies SceneMetadata);
     render(
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
