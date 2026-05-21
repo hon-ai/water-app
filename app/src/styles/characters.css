@@ -41,13 +41,18 @@
   max-width: 260px;
   min-width: 160px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--water-hairline) 65%, transparent);
   border-radius: var(--water-r-8);
-  background: var(--water-bg-canvas);
+  background: color-mix(in srgb, var(--water-bg-paper) 75%, transparent);
+  backdrop-filter: blur(20px) saturate(160%) contrast(104%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%) contrast(104%);
   color: var(--water-fg-default);
   font-family: var(--water-font-sans);
   font-size: var(--water-fs-ui);
   outline: none;
+  box-shadow:
+    var(--water-elev-1),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
   transition: border-color var(--water-dur-tiny) var(--water-ease-out-soft);
 }
 
@@ -66,31 +71,55 @@
 
 .water-character-index header select {
   padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--water-hairline) 65%, transparent);
   border-radius: var(--water-r-8);
-  background: var(--water-bg-canvas);
+  background: color-mix(in srgb, var(--water-bg-paper) 75%, transparent);
+  backdrop-filter: blur(20px) saturate(160%) contrast(104%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%) contrast(104%);
   color: var(--water-fg-default);
   font-family: var(--water-font-sans);
   font-size: var(--water-fs-ui);
   cursor: pointer;
+  box-shadow:
+    var(--water-elev-1),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 }
 
 .water-character-index header button {
   padding: 8px 14px;
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--water-hairline) 65%, transparent);
   border-radius: var(--water-r-8);
-  background: color-mix(in srgb, var(--water-hue-flow) 22%, transparent);
+  /* Gradient laid over translucent paper so the brand tint reads
+     against the live stream behind. */
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--water-sea-300) 28%, transparent),
+      color-mix(in srgb, var(--water-sea-glow) 14%, transparent)
+    ),
+    color-mix(in srgb, var(--water-bg-paper) 70%, transparent);
+  backdrop-filter: blur(20px) saturate(160%) contrast(104%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%) contrast(104%);
   color: var(--water-fg-default);
   font-family: var(--water-font-sans);
   font-size: var(--water-fs-ui);
   font-weight: 500;
   cursor: pointer;
+  box-shadow:
+    var(--water-elev-1),
+    inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
   transition:
-    background-color var(--water-dur-tiny) var(--water-ease-out-soft);
+    background var(--water-dur-tiny) var(--water-ease-out-soft);
 }
 
 .water-character-index header button:hover {
-  background: color-mix(in srgb, var(--water-hue-flow) 36%, transparent);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--water-sea-300) 42%, transparent),
+      color-mix(in srgb, var(--water-sea-glow) 22%, transparent)
+    ),
+    color-mix(in srgb, var(--water-bg-paper) 70%, transparent);
 }
 
 .water-character-index > [role="status"] {
@@ -122,16 +151,22 @@
   gap: 6px;
   padding: 16px 18px 14px 22px;
   min-height: 116px;
+  /* Card-hue radial wash kept on top of translucent paper — gradient
+     reads through to the live stream behind the surface. */
   background:
-    radial-gradient(at top right, color-mix(in oklch, var(--card-hue, var(--water-hue-character-1)) 16%, transparent), transparent 70%),
-    var(--water-bg-raised);
-  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent);
+    radial-gradient(at top right, color-mix(in oklch, var(--card-hue, var(--water-hue-character-1)) 18%, transparent), transparent 70%),
+    color-mix(in srgb, var(--water-bg-paper) 78%, transparent);
+  backdrop-filter: blur(22px) saturate(165%) contrast(105%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%) contrast(105%);
+  border: 1px solid color-mix(in srgb, var(--water-hairline) 60%, transparent);
   border-radius: var(--water-r-16);
   color: var(--water-fg-default);
   text-align: left;
   cursor: pointer;
   font-family: var(--water-font-sans);
-  box-shadow: var(--water-elev-1);
+  box-shadow:
+    var(--water-elev-1),
+    inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
   transition:
     transform var(--water-dur-tiny) var(--water-ease-out-soft),
     border-color var(--water-dur-tiny) var(--water-ease-out-soft),
