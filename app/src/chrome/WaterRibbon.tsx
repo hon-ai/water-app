@@ -1,6 +1,16 @@
 import { useEffect, useReducer } from "react";
 import type { CSSProperties } from "react";
 
+interface Influence {
+  /** Parent-x coordinate (CSS px from the left edge of the parent
+   *  container) where the influence is anchored. The ribbon's local
+   *  centerline bulges toward this point and the local width
+   *  thickens, with a gaussian falloff over INFLUENCE_SIGMA. */
+  x: number;
+  /** Relative weight, typically 0..1. Scales the local warp. */
+  weight: number;
+}
+
 interface Props {
   parentWidth: number;
   /** Vertical center of the ribbon's resting line. */
@@ -19,7 +29,16 @@ interface Props {
   /** Render order. The component sets a small inline z-index so a
    *  caller doesn't need wrapper styling to put it behind content. */
   zIndex?: number;
+  /** Optional list of influence anchors (e.g., scene positions on
+   *  the canvas). The ribbon warps gently toward each anchor with
+   *  the same time modulation rate as its base harmonics — so the
+   *  ribbon visibly "touches" each scene as it flows past, and the
+   *  warps shift gradually when scenes move. Pass an empty array
+   *  (or omit) for surfaces without scene state. */
+  influences?: Influence[];
 }
+
+const INFLUENCE_SIGMA = 140;
 
 function prand(i: number, salt: number): number {
   const x = Math.sin(i * 9301 + salt * 49297) * 233280;
@@ -46,6 +65,7 @@ export function WaterRibbon({
   samplesPerPeriod = 96,
   columnMaxWidth = 0,
   zIndex = 0,
+  influences = [],
 }: Props) {
   // rAF forces a re-render each frame; the actual time value comes
   // from performance.now() inside render so the shape is computed
@@ -80,17 +100,66 @@ export function WaterRibbon({
   const omegaA1 = 0.16;
   const omegaA2 = 0.31;
 
+  // Influences from the caller (e.g., scene positions on the canvas)
+  // get tiled three times so each influence affects all three
+  // periods of the path, keeping the loop seam invisible.
+  const tiled: { ix: number; weight: number; phaseOffset: number }[] = [];
+  for (const inf of influences) {
+    // Per-anchor phase offset so each scene's local warp breathes at
+    // a slightly different beat — derived deterministically from x
+    // so the same scene always has the same phase across renders.
+    const phaseOffset = (inf.x * 0.0123) % (2 * Math.PI);
+    for (let tile = 0; tile < 3; tile++) {
+      tiled.push({
+        ix: inf.x + tile * W,
+        weight: inf.weight,
+        phaseOffset,
+      });
+    }
+  }
+  const sigma2 = 2 * INFLUENCE_SIGMA * INFLUENCE_SIGMA;
+  const influenceY = (x: number) => {
+    if (tiled.length === 0) return 0;
+    let sum = 0;
+    // Same modulation rate as the base harmonics (omegaY1) so the
+    // warps shift at the same pace as the ribbon already breathes.
+    for (const { ix, weight, phaseOffset } of tiled) {
+      const dx = x - ix;
+      const bump = Math.exp(-(dx * dx) / sigma2);
+      sum += weight * 26 * Math.sin(omegaY1 * t + phaseOffset) * bump;
+    }
+    return sum;
+  };
+  const influenceW = (x: number) => {
+    if (tiled.length === 0) return 0;
+    let sum = 0;
+    for (const { ix, weight, phaseOffset } of tiled) {
+      const dx = x - ix;
+      const bump = Math.exp(-(dx * dx) / sigma2);
+      // Width is bumped *up* by a positive offset modulated by an
+      // independent sin so the thickness pulse desyncs from the y
+      // pulse — feels like local water turbulence near each scene.
+      sum +=
+        weight *
+        18 *
+        (0.6 + 0.4 * Math.sin(omegaW1 * t + phaseOffset * 1.3)) *
+        bump;
+    }
+    return sum;
+  };
+
   const yAt = (x: number) =>
     baseY +
     52 * Math.sin(tau * x + 0.0 + omegaY1 * t) +
     24 * Math.sin(2 * tau * x + 1.05 + omegaY2 * t) +
-    14 * Math.sin(3 * tau * x + 0.4 + omegaY3 * t);
+    14 * Math.sin(3 * tau * x + 0.4 + omegaY3 * t) +
+    influenceY(x);
   const widthAt = (x: number) => {
     const swell =
       0.55 +
       0.35 * Math.sin(tau * x + 0.6 + omegaW1 * t) +
       0.18 * Math.sin(3 * tau * x + 1.4 + omegaW2 * t);
-    return Math.max(8, baseThickness * swell);
+    return Math.max(8, baseThickness * swell + influenceW(x));
   };
   const brightAt = (x: number) =>
     Math.max(
@@ -249,15 +318,21 @@ export function WaterRibbon({
           <filter id="wr-drop-glow" x="-300%" y="-300%" width="700%" height="700%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
           </filter>
+          {/* Smooth gradient: stop color is a continuous color-mix
+              between sea-300 and sea-glow driven by brightness. The
+              previous binary threshold (b > 0.7) flipped stops
+              between two colors as the brightness modulator crossed
+              the line, which the writer perceived as light/dark
+              glitching. With color-mix the transition is continuous. */}
           <linearGradient id="wr-grad" x1="0" y1="0" x2="1" y2="0">
             {stopValues.map((s, ix) => (
               <stop
                 key={ix}
                 offset={`${(ix / (stopValues.length - 1)) * 100}%`}
-                stopColor={
-                  s.b > 0.7 ? "var(--water-sea-glow)" : "var(--water-sea-300)"
-                }
-                stopOpacity={(0.18 + s.b * 0.45) * s.a}
+                stopColor={`color-mix(in oklch, var(--water-sea-300), var(--water-sea-glow) ${Math.round(
+                  s.b * 60,
+                )}%)`}
+                stopOpacity={(0.22 + s.b * 0.35) * s.a}
               />
             ))}
           </linearGradient>
@@ -267,7 +342,7 @@ export function WaterRibbon({
                 key={ix}
                 offset={`${(ix / (stopValues.length - 1)) * 100}%`}
                 stopColor="var(--water-sea-glow)"
-                stopOpacity={(0.0 + s.b * 0.6) * s.a}
+                stopOpacity={(0.05 + s.b * 0.45) * s.a}
               />
             ))}
           </linearGradient>

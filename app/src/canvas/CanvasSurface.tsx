@@ -200,12 +200,18 @@ export function CanvasSurface({ onOpenScene }: Props) {
     centeredOnce.current = false; // re-center when layout changes shape
   }, [laneMode, presenceMode]);
 
-  // Track container size for viewport-extent calculations (the flow
-  // ribbon needs to span the full visible canvas, not just the
-  // scene bounding box).
+  // Track container size for the ambient WaterRibbon. The effect
+  // depends on `cards` because the containerRef is attached only
+  // after the loading-state early-return clears (cards !== null).
+  // Mounting-once with [] deps left containerRef.current null and
+  // the observer never fired — which manifested as the ribbon being
+  // invisible on the canvas surface.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    // Seed immediately so the first frame already has a size.
+    const rect = el.getBoundingClientRect();
+    setContainerSize({ width: rect.width, height: rect.height });
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -216,7 +222,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [cards]);
 
   // Heat refetch on heat:updated.
   useEffect(() => {
@@ -473,8 +479,19 @@ export function CanvasSurface({ onOpenScene }: Props) {
           all instances share a performance.now()-driven clock so the
           flow appears continuous when navigating between surfaces.
           Rendered OUTSIDE the pan/zoom-transformed wrapper so it
-          isn't scaled or panned with the canvas content. */}
-      <WaterRibbon parentWidth={containerSize.width} />
+          isn't scaled or panned with the canvas content. Scene
+          positions are passed as 'influences' so the ribbon warps
+          to touch each scene as it flows past — and shifts
+          gradually when scenes move. */}
+      <WaterRibbon
+        parentWidth={containerSize.width}
+        influences={cards
+          .filter((c) => c.isPrimary)
+          .map((c) => ({
+            x: (c.x + CARD_W / 2) * zoom + pan.x,
+            weight: 1,
+          }))}
+      />
       {/* Pan/zoom wrapper. Cards are absolutely positioned in this
           space using the persisted canvas_x / canvas_y. */}
       <div
