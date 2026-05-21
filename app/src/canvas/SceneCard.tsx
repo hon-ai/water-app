@@ -1,9 +1,27 @@
 import type { HeatMetricKind, HeatReadResponse } from "../ipc/commands";
-import { HeatmapStripView } from "../heat/HeatmapStripView";
+import { HeatmapStripView, metricHue } from "../heat/HeatmapStripView";
 import type { CanvasCard } from "./CanvasSurface";
 
 export const CARD_W = 200;
 export const CARD_H = 100;
+
+/**
+ * Scene-level intensity for one metric. Used as the card's overall
+ * hue tint so the canvas reads at a glance — bright pacing here,
+ * dim pacing there. Returns 0 when there's no data; the card stays
+ * neutral until heat compute runs.
+ */
+function avgMetricIntensity(
+  metrics: HeatReadResponse["metrics"] | null,
+  kind: HeatMetricKind,
+): number {
+  if (!metrics) return 0;
+  const rows = metrics[kind];
+  if (!rows || rows.length === 0) return 0;
+  const mean = rows.reduce((acc, r) => acc + r.value, 0) / rows.length;
+  if (kind === "valence") return Math.min(1, Math.abs(mean));
+  return Math.max(0, Math.min(1, mean));
+}
 
 interface Props {
   card: CanvasCard;
@@ -31,6 +49,12 @@ export function SceneCard({
   onOpen,
 }: Props) {
   const displayName = card.name.trim() === "" ? "(untitled)" : card.name;
+  // Card-level hue tint: cards with high active-metric values feel
+  // heavier; quiet scenes recede. Mixed against bg-raised at up to
+  // ~24% intensity so the card stays readable.
+  const intensity = avgMetricIntensity(metrics, activeMetric);
+  const hue = metricHue(activeMetric);
+  const tintPct = Math.round(intensity * 28); // 0..28%
   return (
     <div
       data-testid={`scene-card-${card.id}`}
@@ -49,7 +73,7 @@ export function SceneCard({
         top: card.y,
         width: CARD_W,
         height: CARD_H,
-        background: "var(--water-bg-raised)",
+        background: `color-mix(in oklch, var(${hue}) ${tintPct}%, var(--water-bg-raised))`,
         border:
           "1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent)",
         borderRadius: "var(--water-r-16)",
