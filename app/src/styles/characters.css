@@ -4,7 +4,11 @@
 
 .water-character-index {
   flex: 1;
-  background: var(--water-bg-paper);
+  /* Transparent — the App-level stream flows through. In dark mode
+     the previous bg-paper read as a black rectangle (hsl(0, 9%, 7%))
+     occluding the ribbon. Character cards have their own bg-canvas
+     so individual cards still pop against the substrate. */
+  background: transparent;
   overflow: auto;
   padding: 32px 32px 64px 32px;
   max-width: 1080px;
@@ -197,7 +201,7 @@
 .water-character-sheet {
   --card-hue: var(--water-hue-character-1);
   flex: 1;
-  background: var(--water-bg-paper);
+  background: transparent;
   overflow: auto;
   padding: 28px 32px 80px 32px;
   max-width: 760px;
