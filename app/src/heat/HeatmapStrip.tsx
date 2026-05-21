@@ -6,6 +6,7 @@ import {
 } from "../ipc/commands";
 import { onWaterEvent } from "../ipc/events";
 import { HeatmapMetricPicker } from "./HeatmapMetricPicker";
+import { cellOpacity, metricHue } from "./HeatmapStripView";
 import { phraseFor } from "./phrasebank";
 
 const INTRO_SEEN_KEY = "water:heatmap-intro-seen";
@@ -557,30 +558,5 @@ const METRIC_LABEL: Record<HeatMetricKind, string> = {
   world_refs: "world refs",
 };
 
-function metricHue(kind: HeatMetricKind): string {
-  switch (kind) {
-    case "pacing":
-      return "--water-hue-pace";
-    case "valence":
-      return "--water-hue-valence-pos";
-    case "coherence":
-      return "--water-hue-coherence";
-    case "presence":
-      return "--water-hue-character-default";
-    case "world_refs":
-      return "--water-hue-cartographer";
-  }
-}
-
-/**
- * Map a metric's raw value into a 0..1 opacity for the cell. Most
- * metrics are already 0..1; Valence is -1..1 and uses |v| so cold
- * AND warm paragraphs both render visibly (the hue token shifts
- * when we ship the cold variant in a future iteration).
- */
-function cellOpacity(kind: HeatMetricKind, value: number): number {
-  if (kind === "valence") {
-    return Math.min(1, Math.abs(value));
-  }
-  return Math.max(0, Math.min(1, value));
-}
+// metricHue + cellOpacity moved to HeatmapStripView so SceneCard can
+// reuse them. Imported at top.

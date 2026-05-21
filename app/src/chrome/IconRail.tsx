@@ -1,17 +1,17 @@
-import { Droplet, FileText, User, Globe, Settings } from "lucide-react";
+import { Droplet, FileText, User, Globe, Map, Settings } from "lucide-react";
 
-export type NavTarget = "scenes" | "characters" | "world";
+export type NavTarget = "scenes" | "characters" | "world" | "canvas";
 
 interface Props {
   active: NavTarget;
   onSelect: (target: NavTarget) => void;
   onOpenSettings: () => void;
   /**
-   * Hides the Scenes / Characters / World nav buttons when there is no
-   * open project. They would otherwise be visible-but-dead — clicking
-   * one sets `activeNav` but the right-side surface always renders
-   * `<EmptyState>` while `projectOpen === false`, so the writer
-   * perceives them as broken.
+   * Hides the Scenes / Characters / World / Canvas nav buttons when
+   * there is no open project. They would otherwise be
+   * visible-but-dead — clicking one sets `activeNav` but the
+   * right-side surface always renders `<EmptyState>` while
+   * `projectOpen === false`, so the writer perceives them as broken.
    */
   projectOpen: boolean;
 }
@@ -20,6 +20,7 @@ const NAV: { id: NavTarget; label: string; Icon: typeof FileText }[] = [
   { id: "scenes", label: "Scenes", Icon: FileText },
   { id: "characters", label: "Characters", Icon: User },
   { id: "world", label: "World", Icon: Globe },
+  { id: "canvas", label: "Canvas", Icon: Map },
 ];
 
 export function IconRail({ active, onSelect, onOpenSettings, projectOpen }: Props) {
