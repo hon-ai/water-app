@@ -13,6 +13,22 @@ import { SettingsSheet } from "./sheets/SettingsSheet";
 import { SceneMetadataSheet } from "./scenes/SceneMetadataSheet";
 import { ipc, type SceneInfo } from "./ipc/commands";
 import { dialog } from "./ipc/dialog";
+import { WaterRibbon } from "./chrome/WaterRibbon";
+
+/** Track viewport dimensions for the App-level WaterRibbon. */
+function useWindowSize() {
+  const [size, setSize] = useState({
+    width: typeof window === "undefined" ? 0 : window.innerWidth,
+    height: typeof window === "undefined" ? 0 : window.innerHeight,
+  });
+  useEffect(() => {
+    const onResize = () =>
+      setSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
+}
 
 const COLLAPSED_KEY = "water:scenes-collapsed";
 
@@ -107,11 +123,20 @@ export default function App() {
     setScenesReloadKey((k) => k + 1);
   }, []);
 
+  const { width: windowWidth, height: windowHeight } = useWindowSize();
+  // Begin-a-scene = project open, no active scene, scenes nav. Narrow
+  // stream margins for that page; open everywhere else.
+  const streamMode: "open" | "narrow" =
+    projectOpen && !activeSceneId && activeNav === "scenes"
+      ? "narrow"
+      : "open";
+
   return (
     <ThemeProvider>
       <div
         className="water-shell"
         style={{
+          position: "relative",
           display: "flex",
           height: "100vh",
           width: "100vw",
@@ -121,6 +146,16 @@ export default function App() {
           overflow: "hidden",
         }}
       >
+        {/* App-level water ribbon. Renders behind everything; the
+            IconRail's glass surface shows it (blurred) through the
+            backdrop-filter. Surfaces with bg-paper backgrounds occlude
+            the ribbon in their body; surfaces that go transparent
+            (EmptyState, Begin-a-scene main) let it through. */}
+        <WaterRibbon
+          parentWidth={windowWidth}
+          baseY={Math.max(180, Math.floor(windowHeight * 0.42))}
+          streamMode={streamMode}
+        />
         <IconRail
           active={activeNav}
           onSelect={setActiveNav}
@@ -200,7 +235,10 @@ export default function App() {
               <main
                 style={{
                   flex: 1,
-                  background: "var(--water-bg-paper)",
+                  // Transparent so the App-level stream flows through.
+                  // The narrow streamMode mask keeps the visible band
+                  // tucked against the centered text.
+                  background: "transparent",
                   display: "grid",
                   placeItems: "center",
                   fontFamily: "var(--water-font-sans)",
@@ -219,19 +257,6 @@ export default function App() {
                       "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
                   }}
                 >
-                  <div
-                    style={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: "50%",
-                      margin: "0 auto",
-                      background:
-                        "color-mix(in srgb, var(--water-hue-flow) 22%, transparent)",
-                      boxShadow:
-                        "0 0 32px color-mix(in srgb, var(--water-hue-flow) 35%, transparent)",
-                    }}
-                    aria-hidden
-                  />
                   <h2
                     style={{
                       margin: 0,

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ipc, type SceneInfo } from "../ipc/commands";
 import { Editor } from "../editor/Editor";
-import { WaterRibbon } from "./WaterRibbon";
 import { PillLayer } from "../pill/PillLayer";
 import { HeatmapStrip } from "../heat/HeatmapStrip";
 import { PinnedColumn } from "../pill/PinnedColumn";
@@ -267,10 +266,6 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
         overflow: "auto",
       }}
     >
-      {/* Ambient water-ribbon — flows L→R behind the text column,
-          fades around the central writing area, naturally occluded
-          by pills + pinned column on z-index. */}
-      <WaterRibbon parentWidth={mainWidth} />
       <div
         style={{
           position: "absolute",

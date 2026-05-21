@@ -28,6 +28,15 @@ interface Props {
   columnMaxWidth?: number;
   zIndex?: number;
   anchors?: Anchor[];
+  /**
+   * Visual extent of the stream. "open" (default): the ribbon spans
+   * the full parent width. "narrow": clipped to roughly the left
+   * ~55%, which matches the writing-text column margins on the
+   * "Begin a scene" page. CSS transitions on mask-size animate
+   * between modes when the prop changes — the stream "gradually
+   * expands" as the writer moves between pages.
+   */
+  streamMode?: "open" | "narrow";
 }
 
 /** Kernel bandwidth (px) for centerline smoothing. Larger ⇒ smoother
@@ -272,6 +281,7 @@ export function WaterRibbon({
   columnMaxWidth = 0,
   zIndex = 0,
   anchors = [],
+  streamMode = "open",
 }: Props) {
   // Sync the module store's target with this instance's anchors prop.
   // Each WaterRibbon instance writes the same target; the module's
@@ -338,16 +348,52 @@ export function WaterRibbon({
         )`
       : undefined;
 
+  // Mask geometry. Three cases compose:
+  //   - columnMaxWidth > 0: cut the central text column (editor surface)
+  //   - streamMode === "narrow": clip the visible region to the left
+  //     ~55% so the stream tucks against the centered text on the
+  //     Begin-a-scene page.
+  //   - "open": no horizontal clipping; mask-size 100% × 100%.
+  // Transitioning between modes works because mask-size is animatable —
+  // a CSS transition on it makes the visible band grow / shrink.
+  const useNarrow = streamMode === "narrow";
+  const narrowOrColumn = useNarrow ? undefined : maskImage;
+  // The narrow mask uses a single full-extent gradient; the visible
+  // extent is then driven by mask-size, which CSS can transition.
+  const narrowGradient =
+    "linear-gradient(90deg, black 0%, black 88%, transparent 100%)";
+
   const wrapperStyle: CSSProperties = {
     position: "absolute",
     inset: 0,
     pointerEvents: "none",
     overflow: "hidden",
     zIndex,
-    ...(maskImage && {
-      maskImage,
-      WebkitMaskImage: maskImage,
-    }),
+    transition:
+      "mask-size var(--water-dur-medium) var(--water-ease-in-out-water), -webkit-mask-size var(--water-dur-medium) var(--water-ease-in-out-water)",
+    ...(useNarrow
+      ? {
+          maskImage: narrowGradient,
+          WebkitMaskImage: narrowGradient,
+          maskRepeat: "no-repeat",
+          WebkitMaskRepeat: "no-repeat",
+          maskPosition: "0 0",
+          WebkitMaskPosition: "0 0",
+          maskSize: "60% 100%",
+          WebkitMaskSize: "60% 100%",
+        }
+      : narrowOrColumn
+        ? {
+            maskImage: narrowOrColumn,
+            WebkitMaskImage: narrowOrColumn,
+          }
+        : {
+            // Open: fully visible. Set explicit mask-size 100% so the
+            // CSS transition has a stable target if the writer
+            // navigates back to a narrow page later.
+            maskSize: "100% 100%",
+            WebkitMaskSize: "100% 100%",
+          }),
   };
 
   const renderStrand = (strand: StrandShape, ix: number, dropsEnabled: boolean) => (
