@@ -7,6 +7,7 @@ import { EditorCanvas } from "./chrome/EditorCanvas";
 import { EmptyState } from "./chrome/EmptyState";
 import { CharactersSurface } from "./chrome/CharactersSurface";
 import { WorldsSurface } from "./worlds/WorldsSurface";
+import { CanvasSurface } from "./canvas/CanvasSurface";
 import { CreateProjectSheet } from "./sheets/CreateProjectSheet";
 import { SettingsSheet } from "./sheets/SettingsSheet";
 import { SceneMetadataSheet } from "./scenes/SceneMetadataSheet";
@@ -144,6 +145,18 @@ export default function App() {
             style={{ flex: 1, display: "flex", animation: "water-surface-fade var(--water-dur-medium) var(--water-ease-out-soft) both" }}
           >
             <WorldsSurface projectId={projectRoot ?? ""} />
+          </div>
+        ) : activeNav === "canvas" ? (
+          <div
+            key="surface-canvas"
+            style={{ flex: 1, display: "flex", animation: "water-surface-fade var(--water-dur-medium) var(--water-ease-out-soft) both" }}
+          >
+            <CanvasSurface
+              onOpenScene={(id) => {
+                setActiveSceneId(id);
+                setActiveNav("scenes");
+              }}
+            />
           </div>
         ) : (
           <div
