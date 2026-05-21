@@ -41,6 +41,9 @@ pub struct SceneMetadata {
     pub characters_present: Vec<String>,
     pub pov_character_id: Option<String>,
     pub location: Option<SceneLocationPayload>,
+    /// Brief writer-supplied summary of what happens in the scene.
+    /// Sourced from `scene.scene_goal`. `None` when unset.
+    pub summary: Option<String>,
 }
 
 async fn scene_read_metadata_core(
@@ -53,12 +56,12 @@ async fn scene_read_metadata_core(
     let db_guard = db.lock().await;
     let conn = db_guard.conn();
 
-    // POV is nullable (SQLite NULL → Option::None).
-    let pov_character_id: Option<String> = conn
+    // POV + summary in one round trip.
+    let (pov_character_id, summary): (Option<String>, Option<String>) = conn
         .query_row(
-            "SELECT pov_character_id FROM scene WHERE id = ?1",
+            "SELECT pov_character_id, scene_goal FROM scene WHERE id = ?1",
             [scene_id.as_str()],
-            |r| r.get::<_, Option<String>>(0),
+            |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
         )
         .map_err(|e| e.to_string())?;
 
@@ -107,7 +110,30 @@ async fn scene_read_metadata_core(
         characters_present,
         pov_character_id,
         location,
+        summary,
     })
+}
+
+/// Persist a scene's summary. `None` / empty string clears it.
+#[tauri::command]
+pub async fn scene_set_summary(
+    state: State<'_, AppState>,
+    scene_id: String,
+    summary: Option<String>,
+) -> Result<(), String> {
+    let (db, root) = {
+        let proj = state.project.lock().await;
+        let p = proj.as_ref().ok_or("no project open")?;
+        (p.db.clone(), p.root.clone())
+    };
+    let scene_id: Id = scene_id
+        .parse()
+        .map_err(|e: water_core::Error| e.to_string())?;
+    let g = db.lock().await;
+    let store = SceneStore::new(&g, root);
+    store
+        .set_summary(&scene_id, summary.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

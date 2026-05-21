@@ -190,6 +190,23 @@ export function SceneCard({
             "color-mix(in srgb, var(--water-fg-faint) 35%, transparent)",
         }}
       />
+      {/* Brief summary — what happens in the scene. Lets the writer
+          gauge event order at a glance when rearranging cards. */}
+      {card.summary && card.summary.trim() && (
+        <div
+          style={{
+            fontSize: 11,
+            lineHeight: 1.4,
+            color: "var(--water-fg-muted)",
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+          }}
+        >
+          {card.summary}
+        </div>
+      )}
       <div style={{ height: 8 }}>
         {metrics && (
           <HeatmapStripView

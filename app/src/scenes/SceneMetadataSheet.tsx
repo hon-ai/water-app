@@ -151,6 +151,15 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
   // list keeps the UI from offering invalid choices in the first place.
   const povOptions = allChars.filter((c) => linkedIds.has(c.id));
 
+  const saveSummary = async (next: string) => {
+    try {
+      await ipc.sceneSetSummary(sceneId, next.trim() === "" ? null : next);
+      await reload();
+    } catch {
+      /* swallow */
+    }
+  };
+
   return (
     <Sheet open={open} onClose={onClose} title="Scene details">
       <SceneAutosuggestChips
@@ -158,6 +167,10 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
         alreadyLinkedIds={linkedIds}
         currentLocationId={meta.location?.id ?? null}
         onLinked={() => void reload()}
+      />
+      <SummaryField
+        initial={meta.summary ?? ""}
+        onCommit={(s) => void saveSummary(s)}
       />
       <section style={{ marginBottom: 16 }}>
         <h3
@@ -275,5 +288,84 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
         </section>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * Brief-summary editor with debounced auto-save. Local state holds
+ * the textarea value; we commit on blur OR after 800ms of inactivity
+ * so the writer's typing stream isn't interrupted by IPC round-trips.
+ */
+function SummaryField({
+  initial,
+  onCommit,
+}: {
+  initial: string;
+  onCommit: (next: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const [lastCommitted, setLastCommitted] = useState(initial);
+
+  // Sync local state when the parent reloads (e.g., a different scene
+  // opens). Compare against lastCommitted so user-in-progress edits
+  // aren't clobbered by a stale reload.
+  useEffect(() => {
+    if (initial !== lastCommitted) {
+      setValue(initial);
+      setLastCommitted(initial);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
+
+  useEffect(() => {
+    if (value === lastCommitted) return;
+    const t = window.setTimeout(() => {
+      onCommit(value);
+      setLastCommitted(value);
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [value, lastCommitted, onCommit]);
+
+  return (
+    <section style={{ marginBottom: 16 }}>
+      <h3
+        style={{
+          margin: "0 0 8px 0",
+          fontFamily: "var(--water-font-sans)",
+          fontSize: "var(--water-fs-ui)",
+          fontWeight: 500,
+          color: "var(--water-fg-muted)",
+        }}
+      >
+        Brief summary
+      </h3>
+      <textarea
+        aria-label="Scene summary"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          if (value !== lastCommitted) {
+            onCommit(value);
+            setLastCommitted(value);
+          }
+        }}
+        placeholder="What happens here? (visible on the macro canvas while you rearrange)"
+        rows={3}
+        style={{
+          width: "100%",
+          padding: "8px 10px",
+          fontFamily: "var(--water-font-sans)",
+          fontSize: "var(--water-fs-ui)",
+          lineHeight: 1.5,
+          color: "var(--water-fg-default)",
+          background: "var(--water-bg-raised)",
+          border:
+            "1px solid color-mix(in srgb, var(--water-fg-faint) 18%, transparent)",
+          borderRadius: "var(--water-r-8)",
+          resize: "vertical",
+          outline: "none",
+        }}
+      />
+    </section>
   );
 }

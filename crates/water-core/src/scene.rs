@@ -247,6 +247,34 @@ impl<'a> SceneStore<'a> {
         Ok(())
     }
 
+    /// Persist a scene's brief summary (what happens in the scene).
+    /// Backed by the `scene.scene_goal` column from v1; surfaces in the
+    /// canvas SceneCard so the writer sees event order at a glance when
+    /// rearranging scenes. `None` / empty string clears.
+    ///
+    /// # Errors
+    /// Returns `Error::NotFound` if no scene exists with `id`; propagates
+    /// io / sqlite errors otherwise.
+    pub fn set_summary(&self, id: &Id, summary: Option<&str>) -> Result<()> {
+        let path = self.path_for(id)?;
+        let mut file = SceneFile::read(&path)?;
+        file.frontmatter.scene_goal = summary
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        file.frontmatter.updated_at = Utc::now().to_rfc3339();
+        file.write(&path)?;
+        self.db.conn().execute(
+            "UPDATE scene SET scene_goal = ?2, updated_at = ?3 WHERE id = ?1",
+            (
+                id.as_str(),
+                file.frontmatter.scene_goal.as_deref(),
+                &file.frontmatter.updated_at,
+            ),
+        )?;
+        Ok(())
+    }
+
     /// M6: clear every scene's canvas position in the given project.
     /// Used by the right-click "reset to manuscript order" action.
     /// Does NOT clear group labels — those are independent of position.

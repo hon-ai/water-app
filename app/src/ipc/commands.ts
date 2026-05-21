@@ -39,6 +39,8 @@ export interface SceneMetadata {
   characters_present: string[];
   pov_character_id: string | null;
   location: SceneLocationPayload | null;
+  /** Brief summary of what happens in the scene. */
+  summary: string | null;
 }
 
 export interface SidecarInfo {
@@ -310,6 +312,12 @@ export interface SceneCanvasRow {
   location_id: string | null;
   location_name: string | null;
   /**
+   * Writer-supplied brief summary (from scene.scene_goal) — shows on
+   * the SceneCard so event order is legible at a glance when
+   * rearranging scenes.
+   */
+  summary: string | null;
+  /**
    * All characters present in the scene (POV + any extras from
    * `scene_character_presence`). The first entry is the primary
    * (POV) when set; the renderer uses it as the primary lane.
@@ -372,6 +380,9 @@ export const ipc = {
       sceneId: req.sceneId,
       locationId: req.locationId,
     }),
+  /** Persist a scene's brief summary. Pass null to clear. */
+  sceneSetSummary: (sceneId: string, summary: string | null): Promise<void> =>
+    invoke("scene_set_summary", { sceneId, summary }),
 
   // Character CRUD (M3 T12). `characterUpdateField` is called once per
   // answer in the Conversational Intake flow; the Rust side serializes
