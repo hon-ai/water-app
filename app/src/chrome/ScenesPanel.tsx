@@ -107,14 +107,17 @@ export function ScenesPanel({
     <aside
       aria-label="scenes"
       data-collapsed="false"
+      className="water-floating-panel"
       style={{
         width: "var(--water-scenes-w)",
         flexShrink: 0,
         overflow: "hidden",
         transition: `width var(--water-dur-medium) var(--water-ease-out-soft)`,
-        background: "var(--water-bg-canvas)",
         display: "flex",
         flexDirection: "column",
+        // Buffer space so it floats like a glass card, not a fixed
+        // sidebar against the rail.
+        margin: "10px 0 10px 10px",
       }}
     >
       <div

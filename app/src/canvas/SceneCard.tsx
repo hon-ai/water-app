@@ -181,13 +181,15 @@ export function SceneCard({
       >
         {displayName}
       </div>
+      {/* Title accent — sea-300 so it reads as palette accent on
+          both light and dark themes, not as a brownish smudge. */}
       <div
         aria-hidden
         style={{
           height: 1,
           width: 32,
           background:
-            "color-mix(in srgb, var(--water-fg-faint) 35%, transparent)",
+            "color-mix(in srgb, var(--water-sea-300) 45%, transparent)",
         }}
       />
       {/* Brief summary — what happens in the scene. Lets the writer

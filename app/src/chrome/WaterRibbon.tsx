@@ -2,15 +2,16 @@ import { useEffect, useReducer, useRef } from "react";
 import type { CSSProperties } from "react";
 
 export interface Anchor {
-  /** Stable identity. Used for easing the displayed position when
-   *  this anchor's target x/y changes. */
+  /** Stable id used to ease this anchor's displayed position as the
+   *  prop target changes. */
   id: string;
   /** Parent-x (CSS px from the left edge of the WaterRibbon's host). */
   x: number;
-  /** Parent-y. The ribbon's centerline interpolates between adjacent
-   *  anchors so it actually passes through this point. */
+  /** Parent-y. The ribbon's centerline gets pulled toward this point
+   *  with a gaussian kernel; the strand "touches" the scene without
+   *  being forced through its center, so sharp corners are avoided. */
   y: number;
-  /** Optional weight, currently used only as a flag (>0 = active). */
+  /** Optional weight. Defaults to 1. */
   weight?: number;
 }
 
@@ -21,30 +22,29 @@ interface Props {
   samplesPerPeriod?: number;
   columnMaxWidth?: number;
   zIndex?: number;
-  /**
-   * Optional list of anchor points (e.g., scene positions on the
-   * canvas). When ≥2 anchors are provided the ribbon's centerline
-   * becomes a Catmull-Rom spline THROUGH every anchor — scenes are
-   * the bends of the river, noise is small modulation on top.
-   * Vertically-clustered anchors split the ribbon into multiple
-   * parallel strands.
-   *
-   * With 0 or 1 anchor the ribbon falls back to the periodic wave
-   * (editor / characters / worlds surfaces).
-   */
   anchors?: Anchor[];
 }
 
-/** Threshold for splitting anchors into separate lanes (strands).
- *  Anchors closer than this in Y go in one strand; further apart
- *  cluster into separate strands. ~half a card-row gap. */
-const LANE_GAP = 80;
-/** Noise overlay amplitude in spline mode — kept small so the
- *  scene-bound skeleton dominates and the noise reads as a living
- *  surface, not the primary shape. */
-const SPLINE_NOISE_Y_AMP = 9;
-/** Anchor-easing factor per rAF frame. ~0.05 ≈ 1s convergence at
- *  60fps. Gives the writer time to perceive the river adjusting. */
+/** Kernel bandwidth (px) for centerline smoothing. Larger ⇒ smoother
+ *  curve, anchors influence further out. Smaller ⇒ tighter to each
+ *  scene but riskier of sharp corners. ~220 reads as a meandering
+ *  river that visibly bends through each scene without kinking. */
+const KERNEL_SIGMA = 220;
+/** Touch-radius (px) for the strand to "touch" a scene. The ribbon's
+ *  width near a scene is bumped up so the half-thickness reaches the
+ *  scene from whatever Y the smoothed curve passes at. */
+const TOUCH_RADIUS = 80;
+/** Cluster threshold (px) for detecting X-stacked scenes. Scenes
+ *  within this X-distance and outside LANE_Y_TOLERANCE on Y get a
+ *  local fork ribbon — only the segment around them splits. */
+const X_CLUSTER_DIST = 90;
+/** Anchors within this much Y are considered "same lane" — no fork. */
+const LANE_Y_TOLERANCE = 60;
+/** How wide the fork is around the stacked column. The branch curve
+ *  starts diverging this far before the stack X and rejoins this far
+ *  after. */
+const FORK_FLARE = 140;
+/** Anchor-easing factor per rAF frame. ~0.05 ≈ 1s convergence at 60fps. */
 const EASE = 0.05;
 
 function prand(i: number, salt: number): number {
@@ -52,98 +52,125 @@ function prand(i: number, salt: number): number {
   return x - Math.floor(x);
 }
 
-/** Centripetal Catmull-Rom Y interpolation between four control
- *  points. p0/p3 frame the tangents; the curve passes through p1
- *  and p2 exactly at t=0 and t=1. */
-function catmullRomY(
-  p0: number,
-  p1: number,
-  p2: number,
-  p3: number,
-  t: number,
+/** smoothstep(0, 1) — used for fade envelopes on droplet lifetimes. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Kernel-smoothed Y at a given X. Each anchor contributes a gaussian
+ *  weight. Anchors that the curve has to bend "least" toward (close
+ *  to existing flow) end up dominating; the rest pull gently. */
+function kernelY(
+  anchors: Anchor[],
+  x: number,
+  fallbackY: number,
 ): number {
-  const t2 = t * t;
-  const t3 = t2 * t;
-  return (
-    0.5 *
-    (2 * p1 +
-      (-p0 + p2) * t +
-      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-      (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
-  );
-}
-
-function sampleSplineY(sortedByX: Anchor[], x: number): number {
-  const n = sortedByX.length;
-  if (n === 0) return 0;
-  if (n === 1) return sortedByX[0]!.y;
-  if (x <= sortedByX[0]!.x) return sortedByX[0]!.y;
-  if (x >= sortedByX[n - 1]!.x) return sortedByX[n - 1]!.y;
-  for (let i = 0; i < n - 1; i++) {
-    const a = sortedByX[i]!;
-    const b = sortedByX[i + 1]!;
-    if (x >= a.x && x <= b.x) {
-      const prev = i > 0 ? sortedByX[i - 1]! : a;
-      const next = i + 2 < n ? sortedByX[i + 2]! : b;
-      const span = b.x - a.x || 1;
-      const tParam = (x - a.x) / span;
-      return catmullRomY(prev.y, a.y, b.y, next.y, tParam);
-    }
+  if (anchors.length === 0) return fallbackY;
+  let wsum = 0.04; // baseline weight so far-from-any-anchor regions don't drift
+  let ysum = 0.04 * fallbackY;
+  const sigma2 = 2 * KERNEL_SIGMA * KERNEL_SIGMA;
+  for (const a of anchors) {
+    const dx = x - a.x;
+    const w = Math.exp(-(dx * dx) / sigma2) * (a.weight ?? 1);
+    wsum += w;
+    ysum += w * a.y;
   }
-  return sortedByX[n - 1]!.y;
+  return ysum / wsum;
 }
 
-/** Group anchors into lanes by Y gap. Anchors within LANE_GAP of
- *  each other (after sorting by Y) end up in the same lane. */
-function clusterByY(anchors: Anchor[]): Anchor[][] {
-  if (anchors.length === 0) return [];
-  const sorted = [...anchors].sort((a, b) => a.y - b.y);
-  const lanes: Anchor[][] = [[sorted[0]!]];
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1]!;
-    const curr = sorted[i]!;
-    if (curr.y - prev.y < LANE_GAP) {
-      lanes[lanes.length - 1]!.push(curr);
+/** Local width bump near a scene so the strand visibly touches it.
+ *  At the anchor's X the bump pushes the half-thickness to within
+ *  TOUCH_RADIUS of the anchor's Y; falls off gaussian. */
+function widthBump(
+  anchors: Anchor[],
+  x: number,
+  centerY: number,
+): number {
+  if (anchors.length === 0) return 0;
+  let bump = 0;
+  const sigma2 = 2 * (KERNEL_SIGMA * 0.6) * (KERNEL_SIGMA * 0.6);
+  for (const a of anchors) {
+    const dx = x - a.x;
+    const dy = Math.abs(a.y - centerY);
+    // Desired thickness so the half-extent reaches the anchor minus
+    // TOUCH_RADIUS slack.
+    const need = Math.max(0, dy - TOUCH_RADIUS);
+    if (need <= 0) continue;
+    const f = Math.exp(-(dx * dx) / sigma2);
+    bump = Math.max(bump, 2 * need * f);
+  }
+  return bump;
+}
+
+/** Detect X-clusters of anchors that are stacked vertically. Returns
+ *  a list of forks: each entry describes one local split — the X
+ *  position and the anchors involved. Non-stacked anchors don't
+ *  trigger any forks. */
+interface Fork {
+  centerX: number;
+  members: Anchor[];
+}
+function detectForks(anchors: Anchor[]): Fork[] {
+  if (anchors.length < 2) return [];
+  const sortedX = [...anchors].sort((a, b) => a.x - b.x);
+  const groups: Anchor[][] = [[sortedX[0]!]];
+  for (let i = 1; i < sortedX.length; i++) {
+    const prev = sortedX[i - 1]!;
+    const curr = sortedX[i]!;
+    if (Math.abs(curr.x - prev.x) < X_CLUSTER_DIST) {
+      groups[groups.length - 1]!.push(curr);
     } else {
-      lanes.push([curr]);
+      groups.push([curr]);
     }
   }
-  return lanes;
+  const forks: Fork[] = [];
+  for (const g of groups) {
+    if (g.length < 2) continue;
+    const ys = g.map((a) => a.y);
+    const yMin = Math.min(...ys);
+    const yMax = Math.max(...ys);
+    if (yMax - yMin < LANE_Y_TOLERANCE) continue;
+    const meanX = g.reduce((s, a) => s + a.x, 0) / g.length;
+    forks.push({ centerX: meanX, members: g });
+  }
+  return forks;
 }
 
 interface StrandShape {
   d: string;
   edge: string;
   stopValues: { b: number; a: number }[];
-  drops: { cx: number; cy: number; r: number; opacity: number }[];
+  drops: {
+    cx: number;
+    cy: number;
+    r: number;
+    /** Final opacity is `opacity * lifecycleEnvelope(t)`. */
+    opacityBase: number;
+    /** Birth time offset (seconds) within the dot's own lifetime. */
+    birthOffset: number;
+    /** Total lifetime (seconds). Each dot has its own randomly. */
+    lifetime: number;
+  }[];
 }
 
-/**
- * Build one strand's geometry for spline mode. The centerline is the
- * Catmull-Rom spline through this lane's anchors (sorted by X). On
- * top of that goes a small time-modulated noise, plus width swells
- * and brightness/alpha envelopes for the 3D look.
- */
-function buildSplineStrand(
-  laneAnchors: Anchor[],
+/** Main river path — one strand through the smoothed centerline. */
+function buildMainStrand(
+  anchors: Anchor[],
   parentWidth: number,
+  baseY: number,
   baseThickness: number,
   samples: number,
   t: number,
-  laneIx: number,
 ): StrandShape {
   const W = parentWidth;
-  const sortedX = [...laneAnchors].sort((a, b) => a.x - b.x);
-
-  // Frequencies (rad/s) for the small noise overlay. Match the
-  // existing wave-mode pace so a writer who watches both modes feels
-  // the same breathing tempo.
-  const omegaY1 = 0.16 + laneIx * 0.04;
-  const omegaY2 = 0.27 + laneIx * 0.03;
-  const omegaW1 = 0.22 + laneIx * 0.05;
+  const tau = (2 * Math.PI) / W;
+  const omegaY1 = 0.16;
+  const omegaY2 = 0.27;
+  const omegaW1 = 0.22;
+  const omegaW2 = 0.39;
   const omegaB1 = 0.31;
   const omegaA1 = 0.21;
-  const tau = (2 * Math.PI) / W;
 
   const xs: number[] = [];
   const ys: number[] = [];
@@ -153,23 +180,32 @@ function buildSplineStrand(
 
   for (let i = 0; i <= samples; i++) {
     const x = (i / samples) * W;
-    const splineY = sampleSplineY(sortedX, x);
+    // Smoothed scene-driven centerline.
+    const splineY = kernelY(anchors, x, baseY);
+    // Noise overlay — subordinate to the spline but not uniform.
+    // Two harmonics with very different frequencies + phase offset
+    // produce variable thickness and meander, while staying small
+    // enough not to override the scene-defined skeleton.
     const noiseY =
-      SPLINE_NOISE_Y_AMP * Math.sin(tau * x * 2 + omegaY1 * t + laneIx * 0.7) +
-      0.5 *
-        SPLINE_NOISE_Y_AMP *
-        Math.sin(tau * x * 4 + omegaY2 * t + laneIx * 1.3);
+      14 * Math.sin(tau * x * 1.6 + omegaY1 * t) +
+      8 * Math.sin(tau * x * 3.7 + omegaY2 * t + 1.2);
     const y = splineY + noiseY;
+    // Width: more variable than before (writer asked for more
+    // variance) — base swell + a higher-frequency wobble.
     const swell =
-      0.78 + 0.18 * Math.sin(tau * x * 1.5 + omegaW1 * t + laneIx * 0.4);
-    const w = Math.max(10, baseThickness * swell);
-    const b =
       0.55 +
-      0.35 * Math.sin(tau * x * 1.7 + omegaB1 * t + laneIx * 0.9) +
-      0.12 * Math.sin(tau * x * 3.3 + omegaB1 * 1.7 * t);
+      0.35 * Math.sin(tau * x * 1.4 + omegaW1 * t) +
+      0.22 * Math.sin(tau * x * 3.8 + omegaW2 * t + 0.6);
+    // Touch bump near each scene so the ribbon actually reaches it.
+    const bump = anchors.length > 0 ? widthBump(anchors, x, splineY) : 0;
+    const w = Math.max(8, baseThickness * swell + bump);
+    const b =
+      0.5 +
+      0.34 * Math.sin(tau * x * 1.7 + omegaB1 * t) +
+      0.18 * Math.sin(tau * x * 3.3 + omegaB1 * 1.6 * t);
     const a =
       0.6 +
-      0.3 * Math.sin(tau * x * 1.3 + omegaA1 * t + laneIx * 0.5);
+      0.25 * Math.sin(tau * x * 1.3 + omegaA1 * t);
     xs.push(x);
     ys.push(y);
     widths.push(w);
@@ -177,7 +213,7 @@ function buildSplineStrand(
     alpha.push(Math.max(0.45, Math.min(1, a)));
   }
 
-  // Top/bot edges via perpendicular tangent.
+  // Edges + path.
   const top: { x: number; y: number }[] = [];
   const bot: { x: number; y: number }[] = [];
   for (let i = 0; i <= samples; i++) {
@@ -192,13 +228,11 @@ function buildSplineStrand(
     top.push({ x: xs[i]! + nx * half, y: ys[i]! + ny * half });
     bot.push({ x: xs[i]! - nx * half, y: ys[i]! - ny * half });
   }
-
   let d = `M ${top[0]!.x} ${top[0]!.y}`;
   for (let i = 1; i < top.length; i++) d += ` L ${top[i]!.x} ${top[i]!.y}`;
   for (let i = bot.length - 1; i >= 0; i--)
     d += ` L ${bot[i]!.x} ${bot[i]!.y}`;
   d += " Z";
-
   let edge = `M ${top[0]!.x} ${top[0]!.y}`;
   for (let i = 1; i < top.length; i++) edge += ` L ${top[i]!.x} ${top[i]!.y}`;
 
@@ -222,39 +256,122 @@ function buildSplineStrand(
     });
   }
 
-  // Droplets along this strand. Anchored to a few random samples
-  // of the strand's own centerline.
-  const NUM_DROPS = 22;
-  const drops: { cx: number; cy: number; r: number; opacity: number }[] = [];
+  // Droplets: stable pool with lifecycle. Each dot has its own
+  // lifetime and birth offset; opacity envelopes in over the first
+  // 20% of life, holds, and out over the last 20%. After death the
+  // dot is reborn at a new position via the same prand seed family,
+  // so the surface always has roughly the same density of spray but
+  // each dot's appearance is staggered.
+  const NUM_DROPS = 26;
+  const drops: StrandShape["drops"] = [];
   for (let i = 0; i < NUM_DROPS; i++) {
-    const seedOffset = laneIx * 100;
-    const xFrac = prand(i + seedOffset, 1);
+    const xFrac = prand(i, 1);
     const dx = xFrac * W;
-    // Look up the strand's y at this x via the samples we already
-    // generated (linear interpolation in xs/ys).
     const sampleIx = Math.min(samples, Math.floor(xFrac * samples));
     const yCenter = ys[sampleIx]!;
-    const perpFrac = prand(i + seedOffset, 2) - 0.5;
-    const perpScale = 30 + prand(i + seedOffset, 5) * 90;
-    const driftPerp =
-      10 * Math.sin(0.6 * t + prand(i + seedOffset, 6) * 6.28);
-    const cy = yCenter + perpFrac * perpScale + driftPerp;
-    const sizeRand = prand(i + seedOffset, 3);
+    const perpFrac = prand(i, 2) - 0.5;
+    const perpScale = 30 + prand(i, 5) * 100;
+    const cy = yCenter + perpFrac * perpScale;
+    const sizeRand = prand(i, 3);
     const r =
-      sizeRand < 0.85 ? 0.5 + sizeRand * 1.1 : 1.5 + (sizeRand - 0.85) * 10;
-    const opacity =
-      (0.25 + prand(i + seedOffset, 4) * 0.5) *
-      (0.7 + 0.3 * Math.sin(0.9 * t + prand(i + seedOffset, 7) * 6.28));
-    drops.push({ cx: dx, cy, r, opacity });
+      sizeRand < 0.88 ? 0.4 + sizeRand * 1.0 : 1.3 + (sizeRand - 0.88) * 8;
+    // Cap max brightness lower than before so spray doesn't draw the
+    // writer's eye away from the prose.
+    const opacityBase = 0.16 + prand(i, 4) * 0.24;
+    const lifetime = 6 + prand(i, 8) * 10;
+    const birthOffset = prand(i, 9) * lifetime;
+    drops.push({ cx: dx, cy, r, opacityBase, birthOffset, lifetime });
   }
 
   return { d, edge, stopValues, drops };
 }
 
-/**
- * Wave-mode strand (no anchors). Periodic harmonics — the original
- * "free flow" used by editor, characters, worlds, splash.
- */
+/** Build a fork branch — a short ribbon segment that curves from the
+ *  main river's centerline (at fork entry) up/down through a
+ *  stacked-scene anchor and back to the main river (at fork exit).
+ *  Renders as a separate filled polygon. */
+function buildForkBranch(
+  fork: Fork,
+  member: Anchor,
+  anchors: Anchor[],
+  parentWidth: number,
+  baseY: number,
+  baseThickness: number,
+  t: number,
+): StrandShape {
+  const W = parentWidth;
+  const tau = (2 * Math.PI) / W;
+  const samples = 32;
+  const entryX = fork.centerX - FORK_FLARE;
+  const exitX = fork.centerX + FORK_FLARE;
+  // Main river y at entry & exit (same kernel logic).
+  const yEntry = kernelY(anchors, entryX, baseY);
+  const yExit = kernelY(anchors, exitX, baseY);
+
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const widths: number[] = [];
+  const brightness: number[] = [];
+  const alpha: number[] = [];
+
+  for (let i = 0; i <= samples; i++) {
+    const p = i / samples;
+    const x = entryX + p * (exitX - entryX);
+    // Smooth deflection from main river to member, then back.
+    // Sine-like envelope: 0 at p=0, 1 at p=0.5, 0 at p=1.
+    const env = Math.sin(p * Math.PI);
+    const mainY = yEntry + (yExit - yEntry) * p;
+    const y = mainY + env * (member.y - mainY) + env * (member.y - (yEntry + (yExit - yEntry) * 0.5));
+    // Width tapers in and out so branches feel like tributaries.
+    const swell = 0.5 + 0.3 * Math.sin(tau * x * 2 + 0.4 * t);
+    const w = (baseThickness * 0.65) * swell * (0.4 + 0.6 * env);
+    xs.push(x);
+    ys.push(y);
+    widths.push(Math.max(6, w));
+    brightness.push(0.55 + 0.25 * Math.sin(tau * x * 1.5 + 0.3 * t));
+    alpha.push(0.55 + 0.2 * env);
+  }
+
+  const top: { x: number; y: number }[] = [];
+  const bot: { x: number; y: number }[] = [];
+  for (let i = 0; i <= samples; i++) {
+    const prev = i > 0 ? i - 1 : i;
+    const next = i < samples ? i + 1 : i;
+    const dx = xs[next]! - xs[prev]!;
+    const dy = ys[next]! - ys[prev]!;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const half = widths[i]! * 0.5;
+    top.push({ x: xs[i]! + nx * half, y: ys[i]! + ny * half });
+    bot.push({ x: xs[i]! - nx * half, y: ys[i]! - ny * half });
+  }
+  let d = `M ${top[0]!.x} ${top[0]!.y}`;
+  for (let i = 1; i < top.length; i++) d += ` L ${top[i]!.x} ${top[i]!.y}`;
+  for (let i = bot.length - 1; i >= 0; i--) d += ` L ${bot[i]!.x} ${bot[i]!.y}`;
+  d += " Z";
+  let edge = `M ${top[0]!.x} ${top[0]!.y}`;
+  for (let i = 1; i < top.length; i++) edge += ` L ${top[i]!.x} ${top[i]!.y}`;
+
+  const STOPS = 6;
+  const stopValues: { b: number; a: number }[] = [];
+  for (let s = 0; s < STOPS; s++) {
+    const start = Math.floor((s / STOPS) * samples);
+    const end = Math.floor(((s + 1) / STOPS) * samples);
+    let bSum = 0;
+    let aSum = 0;
+    let n = 0;
+    for (let i = start; i <= end; i++) {
+      bSum += brightness[i] ?? 0.5;
+      aSum += alpha[i] ?? 0.5;
+      n += 1;
+    }
+    stopValues.push({ b: bSum / Math.max(1, n), a: aSum / Math.max(1, n) });
+  }
+
+  return { d, edge, stopValues, drops: [] };
+}
+
 function buildWaveStrand(
   parentWidth: number,
   baseY: number,
@@ -333,13 +450,10 @@ function buildWaveStrand(
     top.push({ x: xs[i]! + nx * half, y: ys[i]! + ny * half });
     bot.push({ x: xs[i]! - nx * half, y: ys[i]! - ny * half });
   }
-
   let d = `M ${top[0]!.x} ${top[0]!.y}`;
   for (let i = 1; i < top.length; i++) d += ` L ${top[i]!.x} ${top[i]!.y}`;
-  for (let i = bot.length - 1; i >= 0; i--)
-    d += ` L ${bot[i]!.x} ${bot[i]!.y}`;
+  for (let i = bot.length - 1; i >= 0; i--) d += ` L ${bot[i]!.x} ${bot[i]!.y}`;
   d += " Z";
-
   let edge = `M ${top[0]!.x} ${top[0]!.y}`;
   for (let i = 1; i < top.length; i++) edge += ` L ${top[i]!.x} ${top[i]!.y}`;
 
@@ -362,29 +476,36 @@ function buildWaveStrand(
     });
   }
 
-  const DROPS_PER_PERIOD = 28;
-  const drops: { cx: number; cy: number; r: number; opacity: number }[] = [];
+  // Wave-mode droplets — same lifecycle as main strand.
+  const DROPS_PER_PERIOD = 26;
+  const drops: StrandShape["drops"] = [];
   for (let tile = 0; tile < 3; tile++) {
     for (let i = 0; i < DROPS_PER_PERIOD; i++) {
       const xFrac = prand(i, 1);
       const x = xFrac * W + tile * W;
       const perpFrac = prand(i, 2) - 0.5;
       const perpScale = 60 + prand(i, 5) * 100;
-      const driftPerp = 12 * Math.sin(0.6 * t + prand(i, 6) * 6.28);
-      const cy = yAt(x) + perpFrac * perpScale + driftPerp;
+      const cy = yAt(x) + perpFrac * perpScale;
       const sizeRand = prand(i, 3);
       const r =
-        sizeRand < 0.85
-          ? 0.5 + sizeRand * 1.1
-          : 1.5 + (sizeRand - 0.85) * 10;
-      const opacity =
-        (0.25 + prand(i, 4) * 0.5) *
-        (0.7 + 0.3 * Math.sin(0.9 * t + prand(i, 7) * 6.28));
-      drops.push({ cx: x, cy, r, opacity });
+        sizeRand < 0.88 ? 0.4 + sizeRand * 1.0 : 1.3 + (sizeRand - 0.88) * 8;
+      const opacityBase = 0.16 + prand(i, 4) * 0.24;
+      const lifetime = 6 + prand(i, 8) * 10;
+      const birthOffset = prand(i, 9) * lifetime;
+      drops.push({ cx: x, cy, r, opacityBase, birthOffset, lifetime });
     }
   }
 
   return { d, edge, stopValues, drops };
+}
+
+/** Opacity envelope for a droplet given its lifetime + birth offset.
+ *  Fades in over the first 20% of life, holds, fades out over the
+ *  last 20%. After death loops to a new cycle. */
+function lifecycleEnv(t: number, birthOffset: number, lifetime: number): number {
+  const phase = ((t + birthOffset) % lifetime) / lifetime;
+  // Fade in 0..0.2, hold 0.2..0.8, fade out 0.8..1
+  return smoothstep(0, 0.2, phase) * (1 - smoothstep(0.8, 1, phase));
 }
 
 export function WaterRibbon({
@@ -396,14 +517,9 @@ export function WaterRibbon({
   zIndex = 0,
   anchors = [],
 }: Props) {
-  // rAF: forces re-render each frame AND eases displayed anchors
-  // toward the prop targets. Targets live in a ref so the loop
-  // sees the latest without restarting.
   const [, force] = useReducer((x: number) => x + 1, 0);
   const targetAnchorsRef = useRef<Anchor[]>(anchors);
   const displayedAnchorsRef = useRef<Anchor[]>(anchors);
-  // Keep the target ref synced — render-time write is fine because
-  // it's reading from props which React already memoized.
   targetAnchorsRef.current = anchors;
 
   useEffect(() => {
@@ -414,7 +530,7 @@ export function WaterRibbon({
       const byId = new Map(current.map((a) => [a.id, a]));
       const next: Anchor[] = targets.map((t) => {
         const c = byId.get(t.id);
-        if (!c) return { ...t }; // new anchor: snap
+        if (!c) return { ...t };
         return {
           id: t.id,
           x: c.x + (t.x - c.x) * EASE,
@@ -436,39 +552,69 @@ export function WaterRibbon({
   const W = parentWidth;
   const displayedAnchors = displayedAnchorsRef.current;
 
-  // Spline mode triggers at 2+ anchors. With 1 or 0, the ribbon
-  // doesn't have enough info to build a meaningful skeleton — fall
-  // back to the periodic wave so the surface stays alive.
-  const splineMode = displayedAnchors.length >= 2;
-
+  // ONE river always. anchors >= 1 enters main-strand mode. With 0
+  // anchors fall back to the periodic wave.
+  const mainMode = displayedAnchors.length >= 1;
   const strands: StrandShape[] = [];
-  if (splineMode) {
-    const lanes = clusterByY(displayedAnchors);
-    lanes.forEach((lane, ix) => {
-      strands.push(
-        buildSplineStrand(lane, W, baseThickness, samplesPerPeriod, t, ix),
-      );
-    });
+  let forkBranches: StrandShape[] = [];
+
+  if (mainMode) {
+    strands.push(
+      buildMainStrand(
+        displayedAnchors,
+        W,
+        baseY,
+        baseThickness,
+        samplesPerPeriod,
+        t,
+      ),
+    );
+    const forks = detectForks(displayedAnchors);
+    for (const f of forks) {
+      // Determine which member is closest to the main river's
+      // centerline at the fork — that one's path is handled by the
+      // main strand naturally; the others become branches.
+      const mainY = kernelY(displayedAnchors, f.centerX, baseY);
+      let closestMember = f.members[0]!;
+      let closestDy = Math.abs(f.members[0]!.y - mainY);
+      for (const m of f.members) {
+        const dy = Math.abs(m.y - mainY);
+        if (dy < closestDy) {
+          closestDy = dy;
+          closestMember = m;
+        }
+      }
+      for (const m of f.members) {
+        if (m.id === closestMember.id) continue;
+        forkBranches.push(
+          buildForkBranch(
+            f,
+            m,
+            displayedAnchors,
+            W,
+            baseY,
+            baseThickness,
+            t,
+          ),
+        );
+      }
+    }
   } else {
-    strands.push(buildWaveStrand(W, baseY, baseThickness, samplesPerPeriod * 3, t));
+    strands.push(
+      buildWaveStrand(W, baseY, baseThickness, samplesPerPeriod * 3, t),
+    );
   }
 
-  // SVG sizing. Spline mode uses parent width directly (no triple
-  // tiling) because the ribbon's domain matches anchor extents.
-  // Wave mode uses 3× parentWidth for the loop-tile trick (legacy).
-  const svgW = splineMode ? W : W * 3;
-  const svgLeft = splineMode ? 0 : -W;
-  const ys = splineMode
+  const svgW = mainMode ? W : W * 3;
+  const svgLeft = mainMode ? 0 : -W;
+  const ys = mainMode
     ? displayedAnchors.map((a) => a.y)
     : [baseY];
-  const yMin = Math.min(...ys);
-  const yMax = Math.max(...ys);
-  const svgH = Math.max(yMax + 200, baseY + 200);
-  // For spline mode the SVG can start at min(0, yMin - 100) so
-  // anchors near the top aren't clipped.
-  const svgTop = splineMode ? Math.min(0, yMin - 100) : 0;
+  const yMin = ys.length > 0 ? Math.min(...ys) : baseY;
+  const yMax = ys.length > 0 ? Math.max(...ys) : baseY;
+  const svgTop = mainMode ? Math.min(0, yMin - 200) : 0;
+  const svgH = Math.max(yMax + 200, baseY + 200) - svgTop;
 
-  // Mask.
   const columnWidth =
     columnMaxWidth > 0
       ? Math.min(columnMaxWidth, Math.max(0, parentWidth - 48))
@@ -501,11 +647,75 @@ export function WaterRibbon({
     }),
   };
 
+  const renderStrand = (strand: StrandShape, ix: number, dropsEnabled: boolean) => (
+    <g key={ix}>
+      <defs>
+        <linearGradient id={`wr-grad-${ix}`} x1="0" y1="0" x2="1" y2="0">
+          {strand.stopValues.map((s, six) => (
+            <stop
+              key={six}
+              offset={`${(six / (strand.stopValues.length - 1)) * 100}%`}
+              stopColor={`color-mix(in oklch, var(--water-sea-300), var(--water-sea-glow) ${Math.round(
+                s.b * 60,
+              )}%)`}
+              stopOpacity={(0.22 + s.b * 0.35) * s.a}
+            />
+          ))}
+        </linearGradient>
+        <linearGradient id={`wr-edge-grad-${ix}`} x1="0" y1="0" x2="1" y2="0">
+          {strand.stopValues.map((s, six) => (
+            <stop
+              key={six}
+              offset={`${(six / (strand.stopValues.length - 1)) * 100}%`}
+              stopColor="var(--water-sea-glow)"
+              stopOpacity={(0.05 + s.b * 0.45) * s.a}
+            />
+          ))}
+        </linearGradient>
+      </defs>
+      <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.6} filter="url(#wr-glow-wide)" />
+      <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.75} filter="url(#wr-glow-mid)" />
+      <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.5} />
+      <path
+        d={strand.edge}
+        fill="none"
+        stroke={`url(#wr-edge-grad-${ix})`}
+        strokeWidth={1.2}
+        strokeLinecap="round"
+      />
+      {dropsEnabled &&
+        strand.drops.map((dr, di) => {
+          const env = lifecycleEnv(t, dr.birthOffset, dr.lifetime);
+          const finalOpacity = dr.opacityBase * env;
+          if (finalOpacity < 0.005) return null;
+          return (
+            <g key={di}>
+              <circle
+                cx={dr.cx}
+                cy={dr.cy}
+                r={dr.r * 2.2}
+                fill="var(--water-sea-glow)"
+                opacity={finalOpacity * 0.5}
+                filter="url(#wr-drop-glow)"
+              />
+              <circle
+                cx={dr.cx}
+                cy={dr.cy}
+                r={dr.r}
+                fill="var(--water-sea-glow)"
+                opacity={finalOpacity}
+              />
+            </g>
+          );
+        })}
+    </g>
+  );
+
   return (
     <div data-testid="water-ribbon" style={wrapperStyle} aria-hidden>
       <svg
         width={svgW}
-        height={svgH - svgTop}
+        height={svgH}
         style={{
           position: "absolute",
           left: svgLeft,
@@ -525,89 +735,11 @@ export function WaterRibbon({
             <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
           </filter>
         </defs>
-        {strands.map((strand, ix) => (
-          <g key={ix}>
-            <defs>
-              <linearGradient
-                id={`wr-grad-${ix}`}
-                x1="0"
-                y1="0"
-                x2="1"
-                y2="0"
-              >
-                {strand.stopValues.map((s, six) => (
-                  <stop
-                    key={six}
-                    offset={`${
-                      (six / (strand.stopValues.length - 1)) * 100
-                    }%`}
-                    stopColor={`color-mix(in oklch, var(--water-sea-300), var(--water-sea-glow) ${Math.round(
-                      s.b * 60,
-                    )}%)`}
-                    stopOpacity={(0.22 + s.b * 0.35) * s.a}
-                  />
-                ))}
-              </linearGradient>
-              <linearGradient
-                id={`wr-edge-grad-${ix}`}
-                x1="0"
-                y1="0"
-                x2="1"
-                y2="0"
-              >
-                {strand.stopValues.map((s, six) => (
-                  <stop
-                    key={six}
-                    offset={`${
-                      (six / (strand.stopValues.length - 1)) * 100
-                    }%`}
-                    stopColor="var(--water-sea-glow)"
-                    stopOpacity={(0.05 + s.b * 0.45) * s.a}
-                  />
-                ))}
-              </linearGradient>
-            </defs>
-            <path
-              d={strand.d}
-              fill={`url(#wr-grad-${ix})`}
-              opacity={0.6}
-              filter="url(#wr-glow-wide)"
-            />
-            <path
-              d={strand.d}
-              fill={`url(#wr-grad-${ix})`}
-              opacity={0.75}
-              filter="url(#wr-glow-mid)"
-            />
-            <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.5} />
-            <path
-              d={strand.edge}
-              fill="none"
-              stroke={`url(#wr-edge-grad-${ix})`}
-              strokeWidth={1.2}
-              strokeLinecap="round"
-            />
-            {strand.drops.map((dr, di) => (
-              <g key={di}>
-                <circle
-                  cx={dr.cx}
-                  cy={dr.cy}
-                  r={dr.r * 2.2}
-                  fill="var(--water-sea-glow)"
-                  opacity={dr.opacity * 0.5}
-                  filter="url(#wr-drop-glow)"
-                />
-                <circle
-                  cx={dr.cx}
-                  cy={dr.cy}
-                  r={dr.r}
-                  fill="var(--water-sea-glow)"
-                  opacity={dr.opacity}
-                />
-              </g>
-            ))}
-          </g>
-        ))}
+        {strands.map((s, ix) => renderStrand(s, ix, true))}
+        {/* Fork branches — secondary tributaries that only appear
+            where scenes stack vertically. They share the main river's
+            color scheme but render after so they paint on top. */}
+        {forkBranches.map((b, ix) => renderStrand(b, 100 + ix, false))}
       </svg>
     </div>
   );

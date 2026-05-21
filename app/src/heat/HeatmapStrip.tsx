@@ -238,6 +238,7 @@ export function HeatmapStrip({ sceneId }: Props) {
       aria-label="Heatmap"
       role="img"
       data-testid="heatmap-strip"
+      className="water-floating-chip"
       onPointerMove={onPointerMove}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
@@ -249,7 +250,6 @@ export function HeatmapStrip({ sceneId }: Props) {
         display: "flex",
         alignItems: "stretch",
         gap: 0,
-        background: "var(--water-bg-canvas)",
         borderRadius: "var(--water-r-8)",
         overflow: "visible",
         cursor: scrubbingRef.current ? "grabbing" : hover ? "grab" : "default",
