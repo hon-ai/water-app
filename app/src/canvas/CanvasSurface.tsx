@@ -485,10 +485,12 @@ export function CanvasSurface({ onOpenScene }: Props) {
           gradually when scenes move. */}
       <WaterRibbon
         parentWidth={containerSize.width}
-        influences={cards
+        anchors={cards
           .filter((c) => c.isPrimary)
           .map((c) => ({
+            id: c.id,
             x: (c.x + CARD_W / 2) * zoom + pan.x,
+            y: (c.y + CARD_H / 2) * zoom + pan.y,
             weight: 1,
           }))}
       />
