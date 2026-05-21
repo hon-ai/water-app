@@ -65,41 +65,39 @@ export function ScenesPanel({
   // When collapsed we still render a thin 28px handle so the writer can
   // re-expand from the same surface — earlier 0-width versions trapped
   // writers with no expand affordance visible (M4 smoke-walk finding).
+  // Collapsed state: the ENTIRE panel becomes a single glass button.
+  // No separate inner chevron — the arrow is centered vertically and
+  // the whole strip clicks to expand. Matte glass treatment matches
+  // the IconRail's floating panel aesthetic.
   if (collapsed) {
     return (
-      <aside
-        aria-label="scenes (collapsed)"
+      <button
+        type="button"
+        aria-label="Expand scenes"
         data-collapsed="true"
+        onClick={onToggleCollapsed}
+        className="water-floating-panel"
         style={{
-          width: 28,
+          width: 36,
           flexShrink: 0,
-          background: "var(--water-bg-canvas)",
+          padding: 0,
+          margin: "10px 0 10px 10px",
           display: "flex",
-          flexDirection: "column",
           alignItems: "center",
-          paddingTop: 14,
-          transition: `width var(--water-dur-medium) var(--water-ease-out-soft)`,
+          justifyContent: "center",
+          color: "var(--water-fg-muted)",
+          cursor: "pointer",
+          transition: `width var(--water-dur-medium) var(--water-ease-out-soft), color var(--water-dur-tiny) var(--water-ease-out-soft)`,
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "var(--water-fg-default)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = "var(--water-fg-muted)";
         }}
       >
-        <button
-          type="button"
-          aria-label="Expand scenes"
-          onClick={onToggleCollapsed}
-          style={{
-            width: 24,
-            height: 28,
-            display: "grid",
-            placeItems: "center",
-            border: "none",
-            background: "transparent",
-            color: "var(--water-fg-muted)",
-            cursor: "pointer",
-            borderRadius: "var(--water-r-8)",
-          }}
-        >
-          <ChevronRight size={14} strokeWidth={1.5} />
-        </button>
-      </aside>
+        <ChevronRight size={16} strokeWidth={1.5} />
+      </button>
     );
   }
 

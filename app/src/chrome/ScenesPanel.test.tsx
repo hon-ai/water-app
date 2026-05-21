@@ -79,8 +79,9 @@ describe("ScenesPanel", () => {
         onToggleCollapsed={() => {}}
       />,
     );
-    const aside = screen.getByRole("complementary");
-    expect(aside).toHaveAttribute("data-collapsed", "true");
+    // Collapsed: the whole panel is now a single glass button.
+    const btn = screen.getByRole("button", { name: /expand scenes/i });
+    expect(btn).toHaveAttribute("data-collapsed", "true");
   });
 
   it("reloads scene list when reloadToken changes without remounting", async () => {

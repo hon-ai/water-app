@@ -154,9 +154,75 @@ interface StrandShape {
   }[];
 }
 
-/** Main river path — one strand through the smoothed centerline. */
-function buildMainStrand(
+/** Filter the anchor list to ones relevant to a specific lane.
+ *  Non-fork anchors (i.e., the single-scene flow points) are
+ *  relevant to every lane. Fork members are relevant only to the
+ *  lane that's assigned to them — otherwise every lane would bump
+ *  its width up toward every member of every fork. */
+function relevantAnchorsForLane(
+  _x: number,
+  laneIx: number,
   anchors: Anchor[],
+  forks: Fork[],
+): Anchor[] {
+  const allForkMemberIds = new Set<string>();
+  for (const f of forks) {
+    for (const m of f.members) allForkMemberIds.add(m.id);
+  }
+  const myMemberIds = new Set<string>();
+  for (const f of forks) {
+    const sortedMembers = [...f.members].sort((a, b) => a.y - b.y);
+    const member = sortedMembers[laneIx];
+    if (member) myMemberIds.add(member.id);
+  }
+  return anchors.filter((a) => {
+    if (!allForkMemberIds.has(a.id)) return true;
+    return myMemberIds.has(a.id);
+  });
+}
+
+/** Compute lane-specific Y at sample x. Outside any fork, every lane
+ *  collapses to the kernel-smoothed centerline (so multiple lanes
+ *  overlap visually as one ribbon). At each fork, this lane bends
+ *  smoothly toward its assigned member's Y across the FORK_FLARE
+ *  region — like a river dividing around an island and merging.
+ *
+ *  Lane assignments are deterministic: members of each fork are
+ *  sorted top-to-bottom by Y, and lane `laneIx` takes the member
+ *  at that index (or null if the fork has fewer members than lanes).
+ *  When this lane has no member in a given fork, it stays at the
+ *  smoothed centerline through that fork. */
+function laneY(
+  x: number,
+  laneIx: number,
+  forks: Fork[],
+  anchors: Anchor[],
+  fallbackY: number,
+): number {
+  const base = kernelY(anchors, x, fallbackY);
+  let y = base;
+  for (const f of forks) {
+    const sortedMembers = [...f.members].sort((a, b) => a.y - b.y);
+    const member = sortedMembers[laneIx];
+    if (!member) continue;
+    const dx = x - f.centerX;
+    if (Math.abs(dx) > FORK_FLARE) continue;
+    // Cosine envelope: 1 at fork center, 0 at +/- FORK_FLARE. Smooth
+    // C1-continuous deflection so the lane fans out and reconverges
+    // without any visible kink.
+    const env = Math.cos((dx / FORK_FLARE) * (Math.PI / 2));
+    y = y + (member.y - base) * env;
+  }
+  return y;
+}
+
+/** Build one lane's strand. Multiple lanes overlap visually outside
+ *  fork regions (all at kernelY) and split apart inside forks where
+ *  they each pull toward their assigned member. */
+function buildLaneStrand(
+  laneIx: number,
+  anchors: Anchor[],
+  forks: Fork[],
   parentWidth: number,
   baseY: number,
   baseThickness: number,
@@ -178,34 +244,45 @@ function buildMainStrand(
   const brightness: number[] = [];
   const alpha: number[] = [];
 
+  // Per-lane phase offset so multiple lanes (when they overlap
+  // outside forks) don't move in perfect lockstep. Tiny offset
+  // keeps each lane's noise a touch out of phase from siblings.
+  const laneOffset = laneIx * 0.6;
+
   for (let i = 0; i <= samples; i++) {
     const x = (i / samples) * W;
-    // Smoothed scene-driven centerline.
-    const splineY = kernelY(anchors, x, baseY);
-    // Noise overlay — subordinate to the spline but not uniform.
-    // Two harmonics with very different frequencies + phase offset
-    // produce variable thickness and meander, while staying small
-    // enough not to override the scene-defined skeleton.
+    // Lane-specific centerline: kernel-smoothed flow + per-fork
+    // deflection toward this lane's assigned member.
+    const center = laneY(x, laneIx, forks, anchors, baseY);
+    // Noise overlay — subordinate to the centerline but not uniform.
     const noiseY =
-      14 * Math.sin(tau * x * 1.6 + omegaY1 * t) +
-      8 * Math.sin(tau * x * 3.7 + omegaY2 * t + 1.2);
-    const y = splineY + noiseY;
-    // Width: more variable than before (writer asked for more
-    // variance) — base swell + a higher-frequency wobble.
+      14 * Math.sin(tau * x * 1.6 + omegaY1 * t + laneOffset) +
+      8 * Math.sin(tau * x * 3.7 + omegaY2 * t + 1.2 + laneOffset);
+    const y = center + noiseY;
     const swell =
       0.55 +
-      0.35 * Math.sin(tau * x * 1.4 + omegaW1 * t) +
-      0.22 * Math.sin(tau * x * 3.8 + omegaW2 * t + 0.6);
-    // Touch bump near each scene so the ribbon actually reaches it.
-    const bump = anchors.length > 0 ? widthBump(anchors, x, splineY) : 0;
+      0.35 * Math.sin(tau * x * 1.4 + omegaW1 * t + laneOffset * 0.4) +
+      0.22 * Math.sin(tau * x * 3.8 + omegaW2 * t + 0.6 + laneOffset);
+    // Touch bump only for anchors that belong to this lane's
+    // trajectory. For non-fork anchors, all lanes share them; for
+    // fork members, only the assigned lane's member contributes.
+    const laneAnchors = relevantAnchorsForLane(
+      x,
+      laneIx,
+      anchors,
+      forks,
+    );
+    const bump = laneAnchors.length > 0
+      ? widthBump(laneAnchors, x, center)
+      : 0;
     const w = Math.max(8, baseThickness * swell + bump);
     const b =
       0.5 +
-      0.34 * Math.sin(tau * x * 1.7 + omegaB1 * t) +
+      0.34 * Math.sin(tau * x * 1.7 + omegaB1 * t + laneOffset * 0.7) +
       0.18 * Math.sin(tau * x * 3.3 + omegaB1 * 1.6 * t);
     const a =
       0.6 +
-      0.25 * Math.sin(tau * x * 1.3 + omegaA1 * t);
+      0.25 * Math.sin(tau * x * 1.3 + omegaA1 * t + laneOffset * 0.5);
     xs.push(x);
     ys.push(y);
     widths.push(w);
@@ -256,120 +333,31 @@ function buildMainStrand(
     });
   }
 
-  // Droplets: stable pool with lifecycle. Each dot has its own
-  // lifetime and birth offset; opacity envelopes in over the first
-  // 20% of life, holds, and out over the last 20%. After death the
-  // dot is reborn at a new position via the same prand seed family,
-  // so the surface always has roughly the same density of spray but
-  // each dot's appearance is staggered.
-  const NUM_DROPS = 26;
+  // Droplets only on the first lane (laneIx === 0) so multiple
+  // overlapping lanes don't multiply the spray density. Lifecycle
+  // envelope (fade in / hold / fade out) carries the organic feel.
   const drops: StrandShape["drops"] = [];
-  for (let i = 0; i < NUM_DROPS; i++) {
-    const xFrac = prand(i, 1);
-    const dx = xFrac * W;
-    const sampleIx = Math.min(samples, Math.floor(xFrac * samples));
-    const yCenter = ys[sampleIx]!;
-    const perpFrac = prand(i, 2) - 0.5;
-    const perpScale = 30 + prand(i, 5) * 100;
-    const cy = yCenter + perpFrac * perpScale;
-    const sizeRand = prand(i, 3);
-    const r =
-      sizeRand < 0.88 ? 0.4 + sizeRand * 1.0 : 1.3 + (sizeRand - 0.88) * 8;
-    // Cap max brightness lower than before so spray doesn't draw the
-    // writer's eye away from the prose.
-    const opacityBase = 0.16 + prand(i, 4) * 0.24;
-    const lifetime = 6 + prand(i, 8) * 10;
-    const birthOffset = prand(i, 9) * lifetime;
-    drops.push({ cx: dx, cy, r, opacityBase, birthOffset, lifetime });
+  if (laneIx === 0) {
+    const NUM_DROPS = 26;
+    for (let i = 0; i < NUM_DROPS; i++) {
+      const xFrac = prand(i, 1);
+      const dx = xFrac * W;
+      const sampleIx = Math.min(samples, Math.floor(xFrac * samples));
+      const yCenter = ys[sampleIx]!;
+      const perpFrac = prand(i, 2) - 0.5;
+      const perpScale = 30 + prand(i, 5) * 100;
+      const cy = yCenter + perpFrac * perpScale;
+      const sizeRand = prand(i, 3);
+      const r =
+        sizeRand < 0.88 ? 0.4 + sizeRand * 1.0 : 1.3 + (sizeRand - 0.88) * 8;
+      const opacityBase = 0.16 + prand(i, 4) * 0.24;
+      const lifetime = 6 + prand(i, 8) * 10;
+      const birthOffset = prand(i, 9) * lifetime;
+      drops.push({ cx: dx, cy, r, opacityBase, birthOffset, lifetime });
+    }
   }
 
   return { d, edge, stopValues, drops };
-}
-
-/** Build a fork branch — a short ribbon segment that curves from the
- *  main river's centerline (at fork entry) up/down through a
- *  stacked-scene anchor and back to the main river (at fork exit).
- *  Renders as a separate filled polygon. */
-function buildForkBranch(
-  fork: Fork,
-  member: Anchor,
-  anchors: Anchor[],
-  parentWidth: number,
-  baseY: number,
-  baseThickness: number,
-  t: number,
-): StrandShape {
-  const W = parentWidth;
-  const tau = (2 * Math.PI) / W;
-  const samples = 32;
-  const entryX = fork.centerX - FORK_FLARE;
-  const exitX = fork.centerX + FORK_FLARE;
-  // Main river y at entry & exit (same kernel logic).
-  const yEntry = kernelY(anchors, entryX, baseY);
-  const yExit = kernelY(anchors, exitX, baseY);
-
-  const xs: number[] = [];
-  const ys: number[] = [];
-  const widths: number[] = [];
-  const brightness: number[] = [];
-  const alpha: number[] = [];
-
-  for (let i = 0; i <= samples; i++) {
-    const p = i / samples;
-    const x = entryX + p * (exitX - entryX);
-    // Smooth deflection from main river to member, then back.
-    // Sine-like envelope: 0 at p=0, 1 at p=0.5, 0 at p=1.
-    const env = Math.sin(p * Math.PI);
-    const mainY = yEntry + (yExit - yEntry) * p;
-    const y = mainY + env * (member.y - mainY) + env * (member.y - (yEntry + (yExit - yEntry) * 0.5));
-    // Width tapers in and out so branches feel like tributaries.
-    const swell = 0.5 + 0.3 * Math.sin(tau * x * 2 + 0.4 * t);
-    const w = (baseThickness * 0.65) * swell * (0.4 + 0.6 * env);
-    xs.push(x);
-    ys.push(y);
-    widths.push(Math.max(6, w));
-    brightness.push(0.55 + 0.25 * Math.sin(tau * x * 1.5 + 0.3 * t));
-    alpha.push(0.55 + 0.2 * env);
-  }
-
-  const top: { x: number; y: number }[] = [];
-  const bot: { x: number; y: number }[] = [];
-  for (let i = 0; i <= samples; i++) {
-    const prev = i > 0 ? i - 1 : i;
-    const next = i < samples ? i + 1 : i;
-    const dx = xs[next]! - xs[prev]!;
-    const dy = ys[next]! - ys[prev]!;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len;
-    const ny = dx / len;
-    const half = widths[i]! * 0.5;
-    top.push({ x: xs[i]! + nx * half, y: ys[i]! + ny * half });
-    bot.push({ x: xs[i]! - nx * half, y: ys[i]! - ny * half });
-  }
-  let d = `M ${top[0]!.x} ${top[0]!.y}`;
-  for (let i = 1; i < top.length; i++) d += ` L ${top[i]!.x} ${top[i]!.y}`;
-  for (let i = bot.length - 1; i >= 0; i--) d += ` L ${bot[i]!.x} ${bot[i]!.y}`;
-  d += " Z";
-  let edge = `M ${top[0]!.x} ${top[0]!.y}`;
-  for (let i = 1; i < top.length; i++) edge += ` L ${top[i]!.x} ${top[i]!.y}`;
-
-  const STOPS = 6;
-  const stopValues: { b: number; a: number }[] = [];
-  for (let s = 0; s < STOPS; s++) {
-    const start = Math.floor((s / STOPS) * samples);
-    const end = Math.floor(((s + 1) / STOPS) * samples);
-    let bSum = 0;
-    let aSum = 0;
-    let n = 0;
-    for (let i = start; i <= end; i++) {
-      bSum += brightness[i] ?? 0.5;
-      aSum += alpha[i] ?? 0.5;
-      n += 1;
-    }
-    stopValues.push({ b: bSum / Math.max(1, n), a: aSum / Math.max(1, n) });
-  }
-
-  return { d, edge, stopValues, drops: [] };
 }
 
 function buildWaveStrand(
@@ -556,48 +544,33 @@ export function WaterRibbon({
   // anchors fall back to the periodic wave.
   const mainMode = displayedAnchors.length >= 1;
   const strands: StrandShape[] = [];
-  let forkBranches: StrandShape[] = [];
 
   if (mainMode) {
-    strands.push(
-      buildMainStrand(
-        displayedAnchors,
-        W,
-        baseY,
-        baseThickness,
-        samplesPerPeriod,
-        t,
-      ),
-    );
+    // Number of lanes equals the largest fork's member count, or 1
+    // if there are no forks. Each lane renders as a full-length
+    // strand: outside forks it coincides with the kernel-smoothed
+    // centerline (so multiple lanes overlap visually as ONE river);
+    // inside a fork it bends toward its assigned member and
+    // smoothly rejoins. This is what makes the river "divide and
+    // reunite" at stack columns instead of growing tributaries.
     const forks = detectForks(displayedAnchors);
-    for (const f of forks) {
-      // Determine which member is closest to the main river's
-      // centerline at the fork — that one's path is handled by the
-      // main strand naturally; the others become branches.
-      const mainY = kernelY(displayedAnchors, f.centerX, baseY);
-      let closestMember = f.members[0]!;
-      let closestDy = Math.abs(f.members[0]!.y - mainY);
-      for (const m of f.members) {
-        const dy = Math.abs(m.y - mainY);
-        if (dy < closestDy) {
-          closestDy = dy;
-          closestMember = m;
-        }
-      }
-      for (const m of f.members) {
-        if (m.id === closestMember.id) continue;
-        forkBranches.push(
-          buildForkBranch(
-            f,
-            m,
-            displayedAnchors,
-            W,
-            baseY,
-            baseThickness,
-            t,
-          ),
-        );
-      }
+    const laneCount =
+      forks.length === 0
+        ? 1
+        : Math.max(...forks.map((f) => f.members.length));
+    for (let lane = 0; lane < laneCount; lane++) {
+      strands.push(
+        buildLaneStrand(
+          lane,
+          displayedAnchors,
+          forks,
+          W,
+          baseY,
+          baseThickness,
+          samplesPerPeriod,
+          t,
+        ),
+      );
     }
   } else {
     strands.push(
@@ -735,11 +708,10 @@ export function WaterRibbon({
             <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
           </filter>
         </defs>
-        {strands.map((s, ix) => renderStrand(s, ix, true))}
-        {/* Fork branches — secondary tributaries that only appear
-            where scenes stack vertically. They share the main river's
-            color scheme but render after so they paint on top. */}
-        {forkBranches.map((b, ix) => renderStrand(b, 100 + ix, false))}
+        {/* All lanes render as full-length strands. Outside forks
+            their centerlines coincide so the polygons overlap and
+            read as one ribbon; inside forks they smoothly diverge. */}
+        {strands.map((s, ix) => renderStrand(s, ix, ix === 0))}
       </svg>
     </div>
   );
