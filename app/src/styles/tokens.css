@@ -292,6 +292,21 @@
   }
 }
 
+/* Drawer slide-in for the ScenesPanel's expanded content. Plays
+   once when the panel transitions from collapsed to expanded — the
+   content slides in from the left edge and fades in, matching the
+   wrapper's width animation for a coherent drawer-opening feel. */
+@keyframes water-scenes-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* Smaller glass chip — same matte treatment, slightly lighter blur
    for legibility at small sizes. */
 .water-floating-chip {

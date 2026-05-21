@@ -63,59 +63,114 @@ export function ScenesPanel({
   };
 
   // When collapsed we still render a thin 28px handle so the writer can
-  // re-expand from the same surface — earlier 0-width versions trapped
-  // writers with no expand affordance visible (M4 smoke-walk finding).
-  // Collapsed state: the ENTIRE panel becomes a single glass button.
-  // No separate inner chevron — the arrow is centered vertically and
-  // the whole strip clicks to expand. Matte glass treatment matches
-  // the IconRail's floating panel aesthetic.
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        aria-label="Expand scenes"
-        data-collapsed="true"
-        onClick={onToggleCollapsed}
-        className="water-floating-panel"
-        style={{
-          width: 36,
-          flexShrink: 0,
-          padding: 0,
-          margin: "10px 0 10px 10px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--water-fg-muted)",
-          cursor: "pointer",
-          transition: `width var(--water-dur-medium) var(--water-ease-out-soft), color var(--water-dur-tiny) var(--water-ease-out-soft)`,
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = "var(--water-fg-default)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = "var(--water-fg-muted)";
-        }}
-      >
-        <ChevronRight size={16} strokeWidth={1.5} />
-      </button>
-    );
-  }
-
+  // Single root that lives across collapse/expand so the width can
+  // animate smoothly between the 36px collapsed handle and the full
+  // panel. Earlier we mounted two different elements depending on
+  // the state, which let React unmount/remount and skipped the
+  // transition entirely. With one persistent wrapper the width
+  // transition runs end-to-end; the inner content swap happens with
+  // overflow:hidden clipping any temporary overflow.
   return (
     <aside
       aria-label="scenes"
-      data-collapsed="false"
+      data-collapsed={collapsed ? "true" : "false"}
       className="water-floating-panel"
       style={{
-        width: "var(--water-scenes-w)",
+        width: collapsed ? 36 : "var(--water-scenes-w)",
         flexShrink: 0,
         overflow: "hidden",
-        transition: `width var(--water-dur-medium) var(--water-ease-out-soft)`,
+        transition: `width var(--water-dur-medium) var(--water-ease-in-out-water)`,
         display: "flex",
         flexDirection: "column",
-        // Buffer space so it floats like a glass card, not a fixed
-        // sidebar against the rail.
         margin: "10px 0 10px 10px",
+      }}
+    >
+      {collapsed && (
+        <button
+          type="button"
+          aria-label="Expand scenes"
+          data-collapsed="true"
+          onClick={onToggleCollapsed}
+          style={{
+            flex: 1,
+            width: "100%",
+            padding: 0,
+            border: "none",
+            background: "transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--water-fg-muted)",
+            cursor: "pointer",
+            transition:
+              "color var(--water-dur-tiny) var(--water-ease-out-soft)",
+            animation:
+              "water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "var(--water-fg-default)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--water-fg-muted)";
+          }}
+        >
+          <ChevronRight size={16} strokeWidth={1.5} />
+        </button>
+      )}
+      {!collapsed && (
+        <ScenesPanelExpanded
+          scenes={scenes}
+          activeSceneId={activeSceneId}
+          projectName={projectName}
+          onSelectScene={onSelectScene}
+          onOpenProjectMenu={onOpenProjectMenu}
+          onToggleCollapsed={onToggleCollapsed}
+          onCreate={handleCreate}
+          onOpenDetails={onOpenDetails}
+        />
+      )}
+    </aside>
+  );
+}
+
+interface ExpandedProps {
+  scenes: SceneInfo[];
+  activeSceneId: string | null;
+  projectName: string;
+  onSelectScene: (id: string) => void;
+  onOpenProjectMenu: () => void;
+  onToggleCollapsed: () => void;
+  onCreate: () => void;
+  onOpenDetails?: (id: string) => void;
+}
+
+function ScenesPanelExpanded({
+  scenes,
+  activeSceneId,
+  projectName,
+  onSelectScene,
+  onOpenProjectMenu,
+  onToggleCollapsed,
+  onCreate,
+  onOpenDetails,
+}: ExpandedProps) {
+  return (
+    <div
+      style={{
+        // Hold the expanded panel at its natural width so when the
+        // wrapper transitions from 36 → 280 the content doesn't squish
+        // mid-animation. overflow:hidden on the wrapper clips the
+        // briefly-too-wide content while the wrapper widens.
+        width: "var(--water-scenes-w)",
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        // Slight slide-in from the left, matching the wrapper's
+        // expansion. Plays once when this branch mounts; combined
+        // with the wrapper's width transition the writer perceives
+        // a smooth drawer opening.
+        animation:
+          "water-scenes-slide-in var(--water-dur-medium) var(--water-ease-out-soft) both",
       }}
     >
       <div
@@ -187,7 +242,7 @@ export function ScenesPanel({
 
       <button
         type="button"
-        onClick={handleCreate}
+        onClick={onCreate}
         style={{
           margin: "0 12px 10px 12px",
           padding: "8px 12px",
@@ -304,6 +359,6 @@ export function ScenesPanel({
           );
         })}
       </ul>
-    </aside>
+    </div>
   );
 }
