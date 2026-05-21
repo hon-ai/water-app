@@ -81,6 +81,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
   const [sharesOn, setSharesOn] = useState(false);
   const [pan, setPan] = useState({ x: 24, y: 24 });
   const [zoom, setZoom] = useState(1);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const panStartRef = useRef<{ x: number; y: number; pan: { x: number; y: number } } | null>(
     null,
@@ -149,6 +150,24 @@ export function CanvasSurface({ onOpenScene }: Props) {
     setLanes(laid_lanes);
     centeredOnce.current = false; // re-center when layout changes shape
   }, [laneMode, presenceMode]);
+
+  // Track container size for viewport-extent calculations (the flow
+  // ribbon needs to span the full visible canvas, not just the
+  // scene bounding box).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setContainerSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Heat refetch on heat:updated.
   useEffect(() => {
@@ -412,11 +431,19 @@ export function CanvasSurface({ onOpenScene }: Props) {
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
-        {/* Ambient flow ribbon — snakes through scenes in manuscript
-            order, thickness modulates by overall heat per scene.
-            Below the cards so it shows in the inter-card gutter
-            without occluding card content. */}
-        <CanvasFlowRibbon cards={cards} heatPerScene={heatPerScene} />
+        {/* Ambient flow ribbon — independent L→R path that responds
+            to scene positions via a falloff-weighted influence
+            field. Spans the full visible viewport, eases toward
+            target shape over ~1s, splits into parallel strands when
+            scenes spread vertically. Below cards in z-order. */}
+        {containerSize.width > 0 && (
+          <CanvasFlowRibbon
+            cards={cards}
+            heatPerScene={heatPerScene}
+            viewportMinX={-pan.x / zoom}
+            viewportMaxX={(containerSize.width - pan.x) / zoom}
+          />
+        )}
         {sharesOn && cards.length > 1 && (
           <SharedAttrConnectors
             cards={cards}

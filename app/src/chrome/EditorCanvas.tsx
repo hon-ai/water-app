@@ -270,7 +270,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
       {/* Ambient water-ribbon — flows L→R behind the text column,
           fades around the central writing area, naturally occluded
           by pills + pinned column on z-index. */}
-      <WaterRibbon />
+      <WaterRibbon parentWidth={mainWidth} />
       <div
         style={{
           position: "absolute",
