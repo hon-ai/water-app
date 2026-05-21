@@ -340,6 +340,8 @@ export function CanvasFlowRibbon({
     <svg
       aria-hidden
       data-testid="canvas-flow-ribbon"
+      width={w}
+      height={h}
       style={{
         position: "absolute",
         left: xMin,
@@ -363,7 +365,20 @@ export function CanvasFlowRibbon({
         </filter>
       </defs>
       {strands.map((strand, ix) => (
-        <g key={ix}>
+        // Inner-group animations: each strand wobbles + shimmers with
+        // its own period and offset so they don't move in lockstep.
+        // The wobble breaks the perceived stillness when scenes
+        // aren't moving — the ribbon feels alive on its own.
+        <g
+          key={ix}
+          style={{
+            animation: `water-ribbon-wobble ${
+              19 + ix * 6
+            }s ease-in-out infinite ${ix * -5}s, water-ribbon-shimmer ${
+              27 + ix * 4
+            }s ease-in-out infinite ${ix * -9}s`,
+          }}
+        >
           <defs>
             <linearGradient id={`cf-grad-${ix}`} x1="0" y1="0" x2="1" y2="0">
               {strand.stopValues.map((s, six) => (

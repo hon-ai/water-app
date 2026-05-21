@@ -221,6 +221,7 @@ export function WaterRibbon({
 
   return (
     <div data-testid="water-ribbon" style={wrapperStyle} aria-hidden>
+      {/* PRIMARY ribbon — full opacity, 48s drift. */}
       <svg
         width={parentWidth * 3}
         height={VB_H}
@@ -265,39 +266,86 @@ export function WaterRibbon({
           </linearGradient>
         </defs>
 
-        <path d={shape.d} fill="url(#wr-grad)" opacity={0.55} filter="url(#wr-glow-wide)" />
-        <path d={shape.d} fill="url(#wr-grad)" opacity={0.7} filter="url(#wr-glow-mid)" />
-        <path d={shape.d} fill="url(#wr-grad)" opacity={0.4} />
-        <path
-          d={shape.edge}
-          fill="none"
-          stroke="url(#wr-edge-grad)"
-          strokeWidth={1.2}
-          strokeLinecap="round"
-        />
+        {/* Inner group wobbles vertically — independent of the
+            outer translateX drift. This is what breaks the conveyor-
+            belt feel: the ribbon flows L→R AND drifts up/down at the
+            same time. Shimmer fades the whole layer's opacity slowly. */}
+        <g
+          style={{
+            animation:
+              "water-ribbon-wobble 17s ease-in-out infinite, water-ribbon-shimmer 23s ease-in-out infinite",
+          }}
+        >
+          <path d={shape.d} fill="url(#wr-grad)" opacity={0.55} filter="url(#wr-glow-wide)" />
+          <path d={shape.d} fill="url(#wr-grad)" opacity={0.7} filter="url(#wr-glow-mid)" />
+          <path d={shape.d} fill="url(#wr-grad)" opacity={0.4} />
+          <path
+            d={shape.edge}
+            fill="none"
+            stroke="url(#wr-edge-grad)"
+            strokeWidth={1.2}
+            strokeLinecap="round"
+          />
+          {shape.drops.map((d, i) => (
+            <g key={i}>
+              <circle
+                cx={d.cx}
+                cy={d.cy}
+                r={d.r * 2.2}
+                fill="var(--water-sea-glow)"
+                opacity={d.opacity * 0.5}
+                filter="url(#wr-drop-glow)"
+              />
+              <circle
+                cx={d.cx}
+                cy={d.cy}
+                r={d.r}
+                fill="var(--water-sea-glow)"
+                opacity={d.opacity}
+              />
+            </g>
+          ))}
+        </g>
+      </svg>
 
-        {/* Water-droplet spray. Two passes per droplet: a wide soft
-            halo, then a sharper inner dot. Most droplets are tiny so
-            the soft halo carries most of the visual weight. */}
-        {shape.drops.map((d, i) => (
-          <g key={i}>
-            <circle
-              cx={d.cx}
-              cy={d.cy}
-              r={d.r * 2.2}
-              fill="var(--water-sea-glow)"
-              opacity={d.opacity * 0.5}
-              filter="url(#wr-drop-glow)"
-            />
-            <circle
-              cx={d.cx}
-              cy={d.cy}
-              r={d.r}
-              fill="var(--water-sea-glow)"
-              opacity={d.opacity}
-            />
-          </g>
-        ))}
+      {/* PARALLAX layer — same shape, slower drift, lower opacity,
+          opposite wobble phase. Reads as a second stream behind the
+          primary; together they break the perceived periodicity that
+          made the single layer feel conveyor-belt-like. */}
+      <svg
+        width={parentWidth * 3}
+        height={VB_H}
+        style={{
+          position: "absolute",
+          left: -parentWidth,
+          top: 18,
+          animation: "water-ribbon-drift-slow 71s linear infinite",
+          opacity: 0.5,
+        }}
+      >
+        <defs>
+          <filter id="wr-glow-wide-p" x="-10%" y="-30%" width="120%" height="160%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="28" />
+          </filter>
+          <linearGradient id="wr-grad-p" x1="0" y1="0" x2="1" y2="0">
+            {shape.stopValues.map((s, ix) => (
+              <stop
+                key={ix}
+                offset={`${(ix / (shape.stopValues.length - 1)) * 100}%`}
+                stopColor="var(--water-sea-200)"
+                stopOpacity={(0.1 + s.b * 0.3) * s.a}
+              />
+            ))}
+          </linearGradient>
+        </defs>
+        <g
+          style={{
+            animation:
+              "water-ribbon-wobble 22s ease-in-out infinite -7s, water-ribbon-shimmer 31s ease-in-out infinite -11s",
+          }}
+        >
+          <path d={shape.d} fill="url(#wr-grad-p)" opacity={0.6} filter="url(#wr-glow-wide-p)" />
+        </g>
       </svg>
     </div>
   );
