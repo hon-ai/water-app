@@ -12,6 +12,7 @@ import { SceneCard, CARD_W, CARD_H } from "./SceneCard";
 import { CanvasIntro } from "./CanvasIntro";
 import { ReadingOrderOverlay } from "./ReadingOrderOverlay";
 import { SharedAttrConnectors } from "./SharedAttrConnectors";
+import { CanvasFlowRibbon } from "./CanvasFlowRibbon";
 
 interface Props {
   onOpenScene: (sceneId: string) => void;
@@ -411,6 +412,11 @@ export function CanvasSurface({ onOpenScene }: Props) {
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
+        {/* Ambient flow ribbon — snakes through scenes in manuscript
+            order, thickness modulates by overall heat per scene.
+            Below the cards so it shows in the inter-card gutter
+            without occluding card content. */}
+        <CanvasFlowRibbon cards={cards} heatPerScene={heatPerScene} />
         {sharesOn && cards.length > 1 && (
           <SharedAttrConnectors
             cards={cards}
