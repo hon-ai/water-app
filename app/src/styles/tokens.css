@@ -354,3 +354,18 @@ body {
     background-position: 0% 50%;
   }
 }
+
+/* ───────────────────── Water-ribbon drift ─────────────────────
+   Animates the WaterRibbon's SVG L→R for a continuous flow. The
+   SVG content is sized 3× wide; translating by 1W creates the
+   seamless loop. */
+@keyframes water-ribbon-drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-33.33%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-testid="water-ribbon"] svg {
+    animation: none !important;
+  }
+}
