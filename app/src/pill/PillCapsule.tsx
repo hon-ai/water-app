@@ -51,11 +51,13 @@ function formatSpeakerLabel(speakerId: string): string | null {
  */
 export function PillCapsule({ pill, onClick }: Props) {
   const speakerLabel = formatSpeakerLabel(pill.speaker_id);
+  // Layered animation: the entry fade plays once; the persistent
+  // breathe (defined in tokens.css on .water-pill) carries the ambient
+  // gradient drift. Inline persona-tint shadow rides on top.
   const style: CSSProperties = {
     position: "relative",
     padding: "6px 10px",
     borderRadius: "var(--water-r-16)",
-    background: `color-mix(in oklch, var(${pill.hue_token}) 30%, var(--water-bg-paper))`,
     boxShadow: `0 0 18px color-mix(in oklch, var(${pill.hue_token}) 50%, transparent)`,
     color: "var(--water-fg-default)",
     fontFamily: "var(--water-font-sans)",
@@ -64,8 +66,13 @@ export function PillCapsule({ pill, onClick }: Props) {
     maxWidth: 200,
     cursor: onClick ? "pointer" : "default",
     pointerEvents: "auto",
-    animation:
-      "water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
+    // Two animations: the entry fade once, the breathe loop forever.
+    // The breathe's background gradient comes from the .water-pill
+    // class so prefers-reduced-motion can disable it cleanly.
+    animationName: "water-pill-fade-in",
+    animationDuration: "var(--water-dur-small)",
+    animationTimingFunction: "var(--water-ease-out-soft)",
+    animationFillMode: "both",
   };
   const chipStyle: CSSProperties = {
     display: "block",
@@ -80,6 +87,7 @@ export function PillCapsule({ pill, onClick }: Props) {
   return (
     <div
       role="button"
+      className="water-pill"
       data-pill-id={pill.pill_id}
       data-block-target-id={pill.block_target_id ?? ""}
       onClick={onClick}
