@@ -115,13 +115,13 @@ mod tests {
     fn schema_version_row_matches_latest_migration() {
         // `Db::open_in_memory` ratchets to the latest migration; the
         // `schema_version` table is human-readable bookkeeping kept in sync
-        // by each migration script. As of v6 (M6 macro spatial canvas),
-        // the current version is 6.
+        // by each migration script. As of v7 (multi-location presence
+        // for the M6 canvas multi-lane view), the current version is 7.
         let db = Db::open_in_memory().unwrap();
         let v: i64 = db
             .conn()
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 6);
+        assert_eq!(v, 7);
     }
 }

@@ -55,10 +55,23 @@ export function SceneCard({
   const intensity = avgMetricIntensity(metrics, activeMetric);
   const hue = metricHue(activeMetric);
   const tintPct = Math.round(intensity * 28); // 0..28%
+  // Ghosts are secondary placements of a scene in lanes other than
+  // its primary. Rendered faded with a dotted border so the writer
+  // sees presence at a glance but knows which card is the source of
+  // truth. Click jumps focus to the primary.
+  const ghost = !card.isPrimary;
+  // Spanning cards cover several lane rows. Detect by height > the
+  // single-row card height. They get a left rail in flow-hue so the
+  // ensemble shape reads at a glance.
+  const isSpanning = card.height > CARD_H + 1;
+  const baseBorder = ghost
+    ? "1px dashed color-mix(in srgb, var(--water-fg-faint) 35%, transparent)"
+    : "1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent)";
   return (
     <div
-      data-testid={`scene-card-${card.id}`}
+      data-testid={`scene-card-${card.placementKey}`}
       data-scene-id={card.id}
+      data-ghost={ghost ? "true" : "false"}
       onPointerDown={onPointerDown}
       onClick={(e) => {
         // Distinguish click from drag-end. Drag-end fires pointerup
@@ -72,13 +85,13 @@ export function SceneCard({
         left: card.x,
         top: card.y,
         width: CARD_W,
-        height: CARD_H,
+        height: card.height,
+        opacity: ghost ? 0.36 : 1,
         background: `color-mix(in oklch, var(${hue}) ${tintPct}%, var(--water-bg-raised))`,
-        border:
-          "1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent)",
+        border: baseBorder,
         borderRadius: "var(--water-r-16)",
-        boxShadow: "var(--water-elev-1)",
-        cursor: "grab",
+        boxShadow: ghost ? "none" : "var(--water-elev-1)",
+        cursor: ghost ? "pointer" : "grab",
         padding: "10px 12px",
         display: "flex",
         flexDirection: "column",
@@ -86,17 +99,32 @@ export function SceneCard({
         fontFamily: "var(--water-font-sans)",
         userSelect: "none",
         transition:
-          "box-shadow var(--water-dur-tiny) var(--water-ease-out-soft), border-color var(--water-dur-tiny) var(--water-ease-out-soft)",
+          "box-shadow var(--water-dur-tiny) var(--water-ease-out-soft), border-color var(--water-dur-tiny) var(--water-ease-out-soft), opacity var(--water-dur-tiny) var(--water-ease-out-soft)",
+        // Spanning cards: hint the multi-lane shape with a thin left
+        // rail of the flow hue. Subtle but reads instantly.
+        borderLeft: isSpanning
+          ? "3px solid color-mix(in srgb, var(--water-hue-flow) 55%, transparent)"
+          : baseBorder.startsWith("1px dashed")
+            ? baseBorder
+            : baseBorder,
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = "var(--water-elev-2)";
-        e.currentTarget.style.borderColor =
-          "color-mix(in srgb, var(--water-hue-flow) 30%, transparent)";
+        if (!ghost) {
+          e.currentTarget.style.boxShadow = "var(--water-elev-2)";
+          e.currentTarget.style.borderColor =
+            "color-mix(in srgb, var(--water-hue-flow) 30%, transparent)";
+        } else {
+          e.currentTarget.style.opacity = "0.55";
+        }
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "var(--water-elev-1)";
-        e.currentTarget.style.borderColor =
-          "color-mix(in srgb, var(--water-fg-faint) 10%, transparent)";
+        if (!ghost) {
+          e.currentTarget.style.boxShadow = "var(--water-elev-1)";
+          e.currentTarget.style.borderColor =
+            "color-mix(in srgb, var(--water-fg-faint) 10%, transparent)";
+        } else {
+          e.currentTarget.style.opacity = "0.36";
+        }
       }}
     >
       <div

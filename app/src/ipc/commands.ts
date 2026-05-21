@@ -290,6 +290,11 @@ export interface HeatMetricEnabledMap {
  * (see `crates/water-core/src/canvas/layout.rs::auto_flow`) is
  * applied client-side to fill in those slots.
  */
+export interface Presence {
+  id: string;
+  name: string;
+}
+
 export interface SceneCanvasRow {
   id: string;
   name: string;
@@ -301,9 +306,20 @@ export interface SceneCanvasRow {
   /** M6 lanes: POV character (LEFT JOIN'd at the IPC boundary). */
   pov_character_id: string | null;
   pov_character_name: string | null;
-  /** M6 lanes: location entry. */
+  /** M6 lanes: primary location entry. */
   location_id: string | null;
   location_name: string | null;
+  /**
+   * All characters present in the scene (POV + any extras from
+   * `scene_character_presence`). The first entry is the primary
+   * (POV) when set; the renderer uses it as the primary lane.
+   */
+  character_presences: Presence[];
+  /**
+   * All locations the scene touches (primary + extras from
+   * `scene_location_presence`). First entry is the primary.
+   */
+  location_presences: Presence[];
 }
 
 /**

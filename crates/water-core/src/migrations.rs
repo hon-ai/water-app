@@ -26,6 +26,7 @@ const V3_CHARACTER_HUE: &str = include_str!("../sql/v3_character_hue.sql");
 const V4_WORLD_BIBLE: &str = include_str!("../sql/v4_world_bible.sql");
 const V5_HEATMAP: &str = include_str!("../sql/v5_heatmap.sql");
 const V6_CANVAS: &str = include_str!("../sql/v6_canvas.sql");
+const V7_LOCATION_PRESENCE: &str = include_str!("../sql/v7_location_presence.sql");
 
 #[must_use]
 pub fn all() -> Migrations<'static> {
@@ -36,6 +37,7 @@ pub fn all() -> Migrations<'static> {
         M::up(V4_WORLD_BIBLE),
         M::up(V5_HEATMAP),
         M::up(V6_CANVAS),
+        M::up(V7_LOCATION_PRESENCE),
     ])
 }
 
@@ -111,9 +113,9 @@ mod tests {
         assert_eq!(current_version(&conn).unwrap(), 1);
         drop(conn);
 
-        // Db::open now sees a v1 DB and ratchets to latest (v5).
+        // Db::open now sees a v1 DB and ratchets to latest.
         let db = Db::open(&path).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 6);
+        assert_eq!(current_version(db.conn()).unwrap(), 7);
     }
 
     #[test]
@@ -203,16 +205,16 @@ mod tests {
         // Db::open already ratcheted to latest; another run_pending must be a no-op.
         run_pending(&mut db).unwrap();
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 6);
+        assert_eq!(current_version(db.conn()).unwrap(), 7);
     }
 
     #[test]
-    fn migration_ratchets_to_v6() {
+    fn migration_ratchets_to_v7() {
         let (_tmp, mut db) = fresh_v1_db();
         // fresh_v1_db actually returns a DB already ratcheted to latest via
-        // Db::open; another run_pending is a no-op that still leaves us at v5.
+        // Db::open; another run_pending is a no-op that still leaves us at v7.
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 6);
+        assert_eq!(current_version(db.conn()).unwrap(), 7);
     }
 
     #[test]
@@ -427,17 +429,32 @@ mod tests {
         assert_eq!(count, 1, "heat_metric_by_scene index missing");
     }
 
-    // The historical `v5_schema_version_is_five` check retired when v6
-    // landed; `v6_schema_version_is_six` below replaces it.
+    // The historical version-pin checks retire on each migration bump;
+    // `v7_schema_version_is_seven` below is the current latest check.
 
     #[test]
-    fn v6_schema_version_is_six() {
+    fn v7_schema_version_is_seven() {
         let db = Db::open_in_memory().unwrap();
         let version: u32 = db
             .conn()
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
+    }
+
+    #[test]
+    fn v7_adds_scene_location_presence_table() {
+        let db = Db::open_in_memory().unwrap();
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'scene_location_presence'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "scene_location_presence table missing");
     }
 
     #[test]

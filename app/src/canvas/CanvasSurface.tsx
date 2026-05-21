@@ -75,6 +75,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
   const [overlayOn, setOverlayOn] = useState(false);
   const [laneMode, setLaneMode] = useState<LaneMode>("free");
   const [lanes, setLanes] = useState<Lane[]>([]);
+  const [presenceMode, setPresenceMode] = useState<PresenceMode>("ghost");
   const [pan, setPan] = useState({ x: 24, y: 24 });
   const [zoom, setZoom] = useState(1);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -107,6 +108,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
         const { cards: laid, lanes: laid_lanes } = layoutCards(
           scenes,
           laneMode,
+          presenceMode,
         );
         setCards(laid);
         setLanes(laid_lanes);
@@ -132,17 +134,18 @@ export function CanvasSurface({ onOpenScene }: Props) {
     };
   }, []);
 
-  // Recompute layout when lane mode flips.
+  // Recompute layout when lane mode or presence mode flips.
   useEffect(() => {
     if (rawScenesRef.current.length === 0) return;
     const { cards: laid, lanes: laid_lanes } = layoutCards(
       rawScenesRef.current,
       laneMode,
+      presenceMode,
     );
     setCards(laid);
     setLanes(laid_lanes);
     centeredOnce.current = false; // re-center when layout changes shape
-  }, [laneMode]);
+  }, [laneMode, presenceMode]);
 
   // Heat refetch on heat:updated.
   useEffect(() => {
@@ -212,7 +215,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
     const minX = Math.min(...cards.map((c) => c.x)) - laneOffset;
     const minY = Math.min(...cards.map((c) => c.y));
     const maxX = Math.max(...cards.map((c) => c.x + CARD_W));
-    const maxY = Math.max(...cards.map((c) => c.y + CARD_H));
+    const maxY = Math.max(...cards.map((c) => c.y + c.height));
     const bbW = maxX - minX;
     const bbH = maxY - minY;
     let z = 1;
@@ -330,7 +333,9 @@ export function CanvasSurface({ onOpenScene }: Props) {
     // x/y are derived from manuscript order × lane index, so a manual
     // drag would just snap back on the next layout pass.
     if (laneMode !== "free") return;
-    const card = cards?.find((c) => c.id === id);
+    // In free mode each scene has exactly one card (isPrimary=true),
+    // so the first match is fine. find() picks the canonical one.
+    const card = cards?.find((c) => c.id === id && c.isPrimary);
     if (!card) return;
     dragStartRef.current = {
       sceneId: id,
@@ -439,12 +444,29 @@ export function CanvasSurface({ onOpenScene }: Props) {
           ))}
         {cards.map((card) => (
           <SceneCard
-            key={card.id}
+            key={card.placementKey}
             card={card}
             metrics={heatPerScene[card.id] ?? null}
             activeMetric={activeMetric}
             onPointerDown={(e) => onCardPointerDown(card.id, e)}
-            onOpen={() => onOpenScene(card.id)}
+            onOpen={() => {
+              // Ghost click → focus the canonical card. Pan the view
+              // so the primary y is centered; leave x alone since
+              // ghost and primary share x. For primary or free-mode
+              // cards, opening goes straight to the scene.
+              if (!card.isPrimary) {
+                const el = containerRef.current;
+                if (el) {
+                  const rect = el.getBoundingClientRect();
+                  setPan((p) => ({
+                    x: p.x,
+                    y: rect.height / 2 - (card.primaryY + CARD_H / 2) * zoom,
+                  }));
+                }
+                return;
+              }
+              onOpenScene(card.id);
+            }}
           />
         ))}
       </div>
@@ -496,6 +518,45 @@ export function CanvasSurface({ onOpenScene }: Props) {
           }}
         >
           rows: {laneMode}
+        </button>
+        {/* Presence-mode chip: ghost vs spanning. Only meaningful in
+            lane modes, but kept visible so the writer can preview
+            the toggle before switching rows on. */}
+        <button
+          type="button"
+          aria-label="Multi-lane presentation"
+          data-testid="canvas-presence-mode"
+          onClick={() =>
+            setPresenceMode((m) => (m === "ghost" ? "spanning" : "ghost"))
+          }
+          disabled={laneMode === "free"}
+          title={
+            laneMode === "free"
+              ? "Switch rows: to location or character to use presence modes"
+              : "Toggle ghost vs spanning multi-lane cards"
+          }
+          style={{
+            padding: "6px 12px",
+            border: "none",
+            background:
+              laneMode === "free"
+                ? "color-mix(in srgb, var(--water-bg-raised) 60%, transparent)"
+                : "var(--water-bg-raised)",
+            color:
+              laneMode === "free"
+                ? "var(--water-fg-faint)"
+                : "var(--water-fg-default)",
+            fontFamily: "var(--water-font-sans)",
+            fontSize: "var(--water-fs-meta)",
+            fontWeight: 500,
+            borderRadius: "var(--water-r-8)",
+            boxShadow: laneMode === "free" ? "none" : "var(--water-elev-1)",
+            cursor: laneMode === "free" ? "not-allowed" : "pointer",
+            textTransform: "lowercase",
+            letterSpacing: 0.3,
+          }}
+        >
+          presence: {presenceMode}
         </button>
         <button
           type="button"
@@ -571,30 +632,62 @@ export function CanvasSurface({ onOpenScene }: Props) {
 interface CanvasCard extends SceneCanvasRow {
   x: number;
   y: number;
+  /** Height in canvas-space px. Always CARD_H except in spanning
+   *  presentation when a scene's card vertically covers several
+   *  rows it participates in. */
+  height: number;
+  /** Lane this placement belongs to. Empty string in free mode. */
+  laneId: string;
+  /** True for the canonical placement of a scene (the POV / primary-
+   *  location lane). False for ghost placements in secondary lanes. */
+  isPrimary: boolean;
+  /** Stable React key across re-layouts (sceneId::laneId). */
+  placementKey: string;
+  /** y of this scene's primary placement — used so clicking a ghost
+   *  can pan/focus the canonical card. Equal to y when isPrimary. */
+  primaryY: number;
 }
 
 export interface Lane {
-  /** Unique id (location_id / character_id / "unassigned"). */
+  /** Unique id (location_id / character_id / "__unassigned"). */
   id: string;
-  /** Display label (location_name / character_name / "(unassigned)"). */
+  /** Display label. */
   label: string;
   /** Row index in the lane stack — used to compute y position. */
   row: number;
 }
 
 /**
- * Compute card positions + lanes based on the current mode.
+ * How scenes that touch multiple lanes are rendered.
+ *
+ * - ghost: one canonical card in the primary lane; faded ghost
+ *   copies in each secondary lane (same x). Click ghost → focus
+ *   primary. The "one scene = one source of truth" model.
+ * - spanning: one card per scene, anchored at its top-most lane,
+ *   tall enough to vertically span every lane it participates in.
+ *   Visually shows ensemble scenes as a single object that "covers"
+ *   its plotlines.
+ */
+export type PresenceMode = "ghost" | "spanning";
+
+/**
+ * Compute card placements + lanes based on the current mode.
  *
  * - free: respect canvas_x/canvas_y when set; auto-flow the rest
  *   into 8-per-row chunks. No lanes returned.
- * - location: y = lane index × CARD_SPACING_Y; x = manuscript order
- *   × CARD_SPACING_X. One lane per distinct location_id; scenes
- *   without a location fall into "(unassigned)" at the bottom.
- * - character: same shape, grouped by pov_character_id.
+ * - location: y = lane row × CARD_SPACING_Y; x = manuscript-order
+ *   index × CARD_SPACING_X (compacted, gap-free). One lane per
+ *   distinct location; "(no location)" pinned at the bottom.
+ * - character: same shape, grouped by character presence.
+ *
+ * In lane modes a single scene may appear in *multiple* lanes via
+ * `character_presences` / `location_presences`. The `presentation`
+ * arg decides how those are drawn.
  */
 function layoutCards(
   scenes: SceneCanvasRow[],
   mode: LaneMode,
+  presentation: PresenceMode,
 ): { cards: CanvasCard[]; lanes: Lane[] } {
   const sorted = [...scenes].sort(
     (a, b) => a.manuscript_ordering - b.manuscript_ordering,
@@ -604,36 +697,53 @@ function layoutCards(
     const cards: CanvasCard[] = sorted.map((s, ix) => {
       const col = ix % CARDS_PER_ROW;
       const row = Math.floor(ix / CARDS_PER_ROW);
+      const x = s.canvas_x ?? col * CARD_SPACING_X;
+      const y = s.canvas_y ?? row * CARD_SPACING_Y;
       return {
         ...s,
-        x: s.canvas_x ?? col * CARD_SPACING_X,
-        y: s.canvas_y ?? row * CARD_SPACING_Y,
+        x,
+        y,
+        height: CARD_H,
+        laneId: "",
+        isPrimary: true,
+        placementKey: s.id,
+        primaryY: y,
       };
     });
     return { cards, lanes: [] };
   }
 
-  const laneOf = (s: SceneCanvasRow): { id: string; label: string } => {
+  // Which lanes does each scene touch? In lane mode the first
+  // entry is the primary; rest are secondary (ghost/spanned).
+  const presencesOf = (s: SceneCanvasRow): { id: string; label: string }[] => {
+    const out: { id: string; label: string }[] = [];
     if (mode === "location") {
-      if (s.location_id && s.location_name) {
-        return { id: s.location_id, label: s.location_name };
+      for (const p of s.location_presences) {
+        out.push({ id: p.id, label: p.name });
       }
-      return { id: "__unassigned", label: "(no location)" };
+      if (out.length === 0) {
+        out.push({ id: "__unassigned", label: "(no location)" });
+      }
+      return out;
     }
     // character
-    if (s.pov_character_id && s.pov_character_name) {
-      return { id: s.pov_character_id, label: s.pov_character_name };
+    for (const p of s.character_presences) {
+      out.push({ id: p.id, label: p.name });
     }
-    return { id: "__unassigned", label: "(no POV)" };
+    if (out.length === 0) {
+      out.push({ id: "__unassigned", label: "(no POV)" });
+    }
+    return out;
   };
 
-  // Build lane order: first appearance in manuscript order, with the
-  // unassigned bucket pinned to the bottom.
+  // Build lane order: first-appearance in manuscript order; the
+  // "__unassigned" bucket is pinned to the bottom.
   const laneIndex = new Map<string, Lane>();
   for (const s of sorted) {
-    const { id, label } = laneOf(s);
-    if (!laneIndex.has(id)) {
-      laneIndex.set(id, { id, label, row: -1 });
+    for (const p of presencesOf(s)) {
+      if (!laneIndex.has(p.id)) {
+        laneIndex.set(p.id, { id: p.id, label: p.label, row: -1 });
+      }
     }
   }
   const named = [...laneIndex.values()].filter((l) => l.id !== "__unassigned");
@@ -645,20 +755,53 @@ function layoutCards(
   const rowFor = (id: string) =>
     ordered.find((l) => l.id === id)?.row ?? 0;
 
-  // Position cards by lane row + manuscript order column. Use a
-  // per-lane column counter so consecutive same-lane scenes pack
-  // without gaps when their manuscript order jumps.
-  const colInLane = new Map<string, number>();
-  const cards: CanvasCard[] = sorted.map((s) => {
-    const { id } = laneOf(s);
-    const col = colInLane.get(id) ?? 0;
-    colInLane.set(id, col + 1);
-    return {
-      ...s,
-      x: col * CARD_SPACING_X,
-      y: rowFor(id) * CARD_SPACING_Y,
-    };
-  });
+  // Column = compacted manuscript-order index. Using the array index
+  // (not ordering) keeps columns gap-free even when manuscript
+  // ordering has holes.
+  const colByScene = new Map<string, number>();
+  sorted.forEach((s, ix) => colByScene.set(s.id, ix));
+
+  const cards: CanvasCard[] = [];
+  for (const s of sorted) {
+    const presences = presencesOf(s);
+    const x = (colByScene.get(s.id) ?? 0) * CARD_SPACING_X;
+    const rows = presences.map((p) => rowFor(p.id));
+    const minRow = Math.min(...rows);
+    const maxRow = Math.max(...rows);
+    const primaryY = minRow * CARD_SPACING_Y;
+
+    if (presentation === "spanning") {
+      // ONE card per scene, anchored at its top-most lane, vertically
+      // covering everywhere it touches.
+      const height =
+        (maxRow - minRow) * CARD_SPACING_Y + CARD_H;
+      cards.push({
+        ...s,
+        x,
+        y: primaryY,
+        height,
+        laneId: presences[0]?.id ?? "",
+        isPrimary: true,
+        placementKey: `${s.id}::span`,
+        primaryY,
+      });
+    } else {
+      // Ghost mode: one canonical card + one ghost per secondary
+      // presence. They sit at the same x; only y differs.
+      presences.forEach((p, ix) => {
+        cards.push({
+          ...s,
+          x,
+          y: rowFor(p.id) * CARD_SPACING_Y,
+          height: CARD_H,
+          laneId: p.id,
+          isPrimary: ix === 0,
+          placementKey: `${s.id}::${p.id}`,
+          primaryY,
+        });
+      });
+    }
+  }
 
   return { cards, lanes: ordered };
 }
