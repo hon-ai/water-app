@@ -16,7 +16,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
+use std::collections::HashMap;
 use water_core::{Db, Id, SceneStore};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Presence {
+    pub id: String,
+    pub name: String,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SceneCanvasRow {
@@ -27,18 +34,24 @@ pub struct SceneCanvasRow {
     pub canvas_y: Option<f32>,
     pub canvas_group: Option<String>,
     pub word_count: i64,
-    /// M6 lanes: POV character id (NULL if unset) — lets the
-    /// renderer group cards into a "by character" lane layout
-    /// without a second IPC.
+    /// M6 lanes: POV character id (NULL if unset). The renderer
+    /// uses this as the *primary* lane in character mode.
     pub pov_character_id: Option<String>,
     /// Display name of the POV character (LEFT JOIN). NULL when
     /// pov_character_id is unset.
     pub pov_character_name: Option<String>,
-    /// M6 lanes: location entry id (NULL if unset).
+    /// M6 lanes: primary location entry id (NULL if unset).
     pub location_id: Option<String>,
-    /// Display name of the location entry. NULL when location_id
-    /// is unset.
+    /// Display name of the primary location entry.
     pub location_name: Option<String>,
+    /// All characters present in the scene (from
+    /// `scene_character_presence`). The POV character is included
+    /// when present; the renderer dedupes against `pov_character_id`.
+    pub character_presences: Vec<Presence>,
+    /// All locations the scene touches (from
+    /// `scene_location_presence`). Primary `location_id` is included
+    /// when present; the renderer dedupes against it.
+    pub location_presences: Vec<Presence>,
 }
 
 #[tauri::command]
@@ -92,12 +105,97 @@ pub async fn scene_canvas_list_core(
                 pov_character_name: r.get::<_, Option<String>>(8)?,
                 location_id: r.get::<_, Option<String>>(9)?,
                 location_name: r.get::<_, Option<String>>(10)?,
+                character_presences: Vec::new(),
+                location_presences: Vec::new(),
             })
         })
         .map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
+    let mut out: Vec<SceneCanvasRow> = Vec::new();
     for r in rows {
         out.push(r.map_err(|e| e.to_string())?);
+    }
+    drop(stmt);
+
+    // Bulk-load presence tables for this project so the renderer can
+    // do multi-lane layout without per-scene IPC. Two extra queries
+    // is cheaper than N joins.
+    let chars = load_presence(
+        g.conn(),
+        "SELECT scp.scene_id, character.id, character.name
+         FROM scene_character_presence scp
+         JOIN scene ON scene.id = scp.scene_id
+         JOIN manuscript ON manuscript.id = scene.manuscript_id
+         JOIN character ON character.id = scp.character_id
+         WHERE manuscript.project_id = ?1",
+        project_id.as_str(),
+    )?;
+    let locs = load_presence(
+        g.conn(),
+        "SELECT slp.scene_id, world_entry.id, world_entry.name
+         FROM scene_location_presence slp
+         JOIN scene ON scene.id = slp.scene_id
+         JOIN manuscript ON manuscript.id = scene.manuscript_id
+         JOIN world_entry ON world_entry.id = slp.location_id
+         WHERE manuscript.project_id = ?1",
+        project_id.as_str(),
+    )?;
+    for row in &mut out {
+        // Start each presence list with the primary (POV / location_id)
+        // so the renderer's first entry is always the primary lane.
+        let mut cs: Vec<Presence> = Vec::new();
+        if let (Some(id), Some(name)) =
+            (row.pov_character_id.clone(), row.pov_character_name.clone())
+        {
+            cs.push(Presence { id, name });
+        }
+        if let Some(extra) = chars.get(&row.id) {
+            for p in extra {
+                if !cs.iter().any(|x| x.id == p.id) {
+                    cs.push(p.clone());
+                }
+            }
+        }
+        row.character_presences = cs;
+
+        let mut ls: Vec<Presence> = Vec::new();
+        if let (Some(id), Some(name)) =
+            (row.location_id.clone(), row.location_name.clone())
+        {
+            ls.push(Presence { id, name });
+        }
+        if let Some(extra) = locs.get(&row.id) {
+            for p in extra {
+                if !ls.iter().any(|x| x.id == p.id) {
+                    ls.push(p.clone());
+                }
+            }
+        }
+        row.location_presences = ls;
+    }
+    Ok(out)
+}
+
+fn load_presence(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    project_id: &str,
+) -> Result<HashMap<String, Vec<Presence>>, String> {
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([project_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                Presence {
+                    id: r.get::<_, String>(1)?,
+                    name: r.get::<_, String>(2)?,
+                },
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out: HashMap<String, Vec<Presence>> = HashMap::new();
+    for r in rows {
+        let (scene_id, p) = r.map_err(|e| e.to_string())?;
+        out.entry(scene_id).or_default().push(p);
     }
     Ok(out)
 }
