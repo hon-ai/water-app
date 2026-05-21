@@ -15,6 +15,12 @@ interface Props {
    * `projectOpen === false`, so the writer perceives them as broken.
    */
   projectOpen: boolean;
+  /**
+   * Called when the writer clicks the StreamMark at the top of the
+   * rail. The shell closes the active project (if any), returning
+   * to the EmptyState splash.
+   */
+  onGoHome?: () => void;
 }
 
 const NAV: { id: NavTarget; label: string; Icon: typeof FileText }[] = [
@@ -24,7 +30,7 @@ const NAV: { id: NavTarget; label: string; Icon: typeof FileText }[] = [
   { id: "canvas", label: "Canvas", Icon: Map },
 ];
 
-export function IconRail({ active, onSelect, onOpenSettings, projectOpen }: Props) {
+export function IconRail({ active, onSelect, onOpenSettings, projectOpen, onGoHome }: Props) {
   return (
     <nav
       aria-label="primary"
@@ -51,9 +57,34 @@ export function IconRail({ active, onSelect, onOpenSettings, projectOpen }: Prop
         boxShadow: "var(--water-elev-2)",
       }}
     >
-      <div aria-hidden style={{ padding: 8, color: "var(--water-sea-400)" }}>
+      <button
+        type="button"
+        aria-label="Home"
+        title="Return to home"
+        onClick={onGoHome}
+        disabled={!onGoHome}
+        style={{
+          padding: 8,
+          border: "none",
+          background: "transparent",
+          color: "var(--water-sea-400)",
+          cursor: onGoHome ? "pointer" : "default",
+          display: "grid",
+          placeItems: "center",
+          borderRadius: "var(--water-r-16)",
+          transition:
+            "color var(--water-dur-tiny) var(--water-ease-out-soft)",
+        }}
+        onMouseEnter={(e) => {
+          if (onGoHome)
+            e.currentTarget.style.color = "var(--water-sea-glow)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = "var(--water-sea-400)";
+        }}
+      >
         <StreamMark size={26} />
-      </div>
+      </button>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, paddingTop: 12 }}>
         {projectOpen &&
           NAV.map(({ id, label, Icon }) => (
