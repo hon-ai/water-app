@@ -55,6 +55,7 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
     <div
       ref={ref}
       role="menu"
+      className="water-floating-panel"
       style={{
         // Positioned below the project-name button in the ScenesPanel
         // header. The wrapping container in App.tsx is a flex row that
@@ -63,16 +64,12 @@ export function ProjectMenu({ open, onClose, onSwitchProject, onCloseProject }: 
         // behind the editor canvas). Anchor by a fixed offset matching
         // the panel's header padding + button height instead.
         position: "absolute",
-        top: 48,
-        left: 14,
+        top: 56,
+        left: 20,
         minWidth: 220,
         padding: 6,
-        background: "var(--water-bg-raised)",
         borderRadius: "var(--water-r-16)",
-        boxShadow: "var(--water-elev-2)",
         zIndex: "var(--water-z-tooltip)" as unknown as number,
-        animation:
-          "water-pill-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
       }}
     >
       <button
