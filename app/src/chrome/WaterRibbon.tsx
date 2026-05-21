@@ -142,13 +142,17 @@ function buildStrand(
 ): StrandShape {
   const W = parentWidth;
   const tau = (2 * Math.PI) / W;
-  const omegaY1 = 0.16;
-  const omegaY2 = 0.27;
-  const omegaY3 = 0.34;
-  const omegaW1 = 0.22;
-  const omegaW2 = 0.39;
-  const omegaB1 = 0.31;
-  const omegaA1 = 0.21;
+  // Negative omega → wave appears to drift RIGHTWARD (forward) over
+  // time. Positive would advance the phase, dragging the visible
+  // wave pattern leftward — which the writer flagged as feeling
+  // like backflow on the splash page. A stream "moves forward."
+  const omegaY1 = -0.16;
+  const omegaY2 = -0.27;
+  const omegaY3 = -0.34;
+  const omegaW1 = -0.22;
+  const omegaW2 = -0.39;
+  const omegaB1 = -0.31;
+  const omegaA1 = -0.21;
 
   // Total active anchor weight drives the scene-vs-ambient blend.
   // 0 weight → full ambient (looks like a free-flowing wave). High
