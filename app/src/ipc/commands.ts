@@ -298,6 +298,12 @@ export interface SceneCanvasRow {
   canvas_y: number | null;
   canvas_group: string | null;
   word_count: number;
+  /** M6 lanes: POV character (LEFT JOIN'd at the IPC boundary). */
+  pov_character_id: string | null;
+  pov_character_name: string | null;
+  /** M6 lanes: location entry. */
+  location_id: string | null;
+  location_name: string | null;
 }
 
 /**

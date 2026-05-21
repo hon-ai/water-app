@@ -27,6 +27,18 @@ pub struct SceneCanvasRow {
     pub canvas_y: Option<f32>,
     pub canvas_group: Option<String>,
     pub word_count: i64,
+    /// M6 lanes: POV character id (NULL if unset) — lets the
+    /// renderer group cards into a "by character" lane layout
+    /// without a second IPC.
+    pub pov_character_id: Option<String>,
+    /// Display name of the POV character (LEFT JOIN). NULL when
+    /// pov_character_id is unset.
+    pub pov_character_name: Option<String>,
+    /// M6 lanes: location entry id (NULL if unset).
+    pub location_id: Option<String>,
+    /// Display name of the location entry. NULL when location_id
+    /// is unset.
+    pub location_name: Option<String>,
 }
 
 #[tauri::command]
@@ -54,9 +66,13 @@ pub async fn scene_canvas_list_core(
         .prepare(
             "SELECT scene.id, scene.name, scene.ordering,
                     scene.canvas_x, scene.canvas_y, scene.canvas_group,
-                    scene.word_count
+                    scene.word_count,
+                    scene.pov_character_id, character.name,
+                    scene.location_id, world_entry.name
              FROM scene
              JOIN manuscript ON manuscript.id = scene.manuscript_id
+             LEFT JOIN character ON character.id = scene.pov_character_id
+             LEFT JOIN world_entry ON world_entry.id = scene.location_id
              WHERE manuscript.project_id = ?1
              ORDER BY scene.ordering ASC",
         )
@@ -72,6 +88,10 @@ pub async fn scene_canvas_list_core(
                 canvas_y: r.get::<_, Option<f64>>(4)?.map(|v| v as f32),
                 canvas_group: r.get::<_, Option<String>>(5)?,
                 word_count: r.get::<_, i64>(6)?,
+                pov_character_id: r.get::<_, Option<String>>(7)?,
+                pov_character_name: r.get::<_, Option<String>>(8)?,
+                location_id: r.get::<_, Option<String>>(9)?,
+                location_name: r.get::<_, Option<String>>(10)?,
             })
         })
         .map_err(|e| e.to_string())?;

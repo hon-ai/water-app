@@ -26,6 +26,14 @@ const CARDS_PER_ROW = 8;
 const CARD_SPACING_X = 240;
 const CARD_SPACING_Y = 140;
 const POSITION_SAVE_DEBOUNCE_MS = 400;
+const LANE_LABEL_WIDTH = 160;
+
+/**
+ * Which axis groups scenes into rows. "free" = use canvas_x/canvas_y;
+ * "location" + "character" = layout is automatic (x by manuscript
+ * order, y by lane index).
+ */
+export type LaneMode = "free" | "location" | "character";
 
 /**
  * Snap a (x, y) drag-end position to the nearest grid cell. Keeps
@@ -63,7 +71,10 @@ export function CanvasSurface({ onOpenScene }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null);
   const chipRef = useRef<HTMLButtonElement | null>(null);
+  const rawScenesRef = useRef<SceneCanvasRow[]>([]);
   const [overlayOn, setOverlayOn] = useState(false);
+  const [laneMode, setLaneMode] = useState<LaneMode>("free");
+  const [lanes, setLanes] = useState<Lane[]>([]);
   const [pan, setPan] = useState({ x: 24, y: 24 });
   const [zoom, setZoom] = useState(1);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -90,7 +101,15 @@ export function CanvasSurface({ onOpenScene }: Props) {
         ]);
         if (cancelled) return;
         setEnabledMap({ pacing: true, ...settings.enabled });
-        setCards(autoFlow(scenes));
+        // Snapshot raw scene rows; recompute placement when layout
+        // mode flips between free + lane modes.
+        rawScenesRef.current = scenes;
+        const { cards: laid, lanes: laid_lanes } = layoutCards(
+          scenes,
+          laneMode,
+        );
+        setCards(laid);
+        setLanes(laid_lanes);
         // Fetch heat per scene in parallel.
         const heatResults = await Promise.all(
           scenes.map(async (s) => {
@@ -112,6 +131,18 @@ export function CanvasSurface({ onOpenScene }: Props) {
       cancelled = true;
     };
   }, []);
+
+  // Recompute layout when lane mode flips.
+  useEffect(() => {
+    if (rawScenesRef.current.length === 0) return;
+    const { cards: laid, lanes: laid_lanes } = layoutCards(
+      rawScenesRef.current,
+      laneMode,
+    );
+    setCards(laid);
+    setLanes(laid_lanes);
+    centeredOnce.current = false; // re-center when layout changes shape
+  }, [laneMode]);
 
   // Heat refetch on heat:updated.
   useEffect(() => {
@@ -174,7 +205,11 @@ export function CanvasSurface({ onOpenScene }: Props) {
     if (!el) return;
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return; // not laid out yet
-    const minX = Math.min(...cards.map((c) => c.x));
+    // In lane modes, lane labels live to the left of the cards at
+    // negative x; include them in the fit-bbox so they don't get
+    // clipped on first paint.
+    const laneOffset = laneMode === "free" ? 0 : LANE_LABEL_WIDTH + 16;
+    const minX = Math.min(...cards.map((c) => c.x)) - laneOffset;
     const minY = Math.min(...cards.map((c) => c.y));
     const maxX = Math.max(...cards.map((c) => c.x + CARD_W));
     const maxY = Math.max(...cards.map((c) => c.y + CARD_H));
@@ -196,7 +231,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
       y: rect.height / 2 - cy * z,
     });
     centeredOnce.current = true;
-  }, [cards]);
+  }, [cards, laneMode]);
 
   const debouncedPersist = useCallback(
     (sceneId: string, x: number, y: number) => {
@@ -291,6 +326,10 @@ export function CanvasSurface({ onOpenScene }: Props) {
   };
 
   const onCardPointerDown = (id: string, e: React.PointerEvent) => {
+    // Drag-to-move is meaningful only in free mode. In lane modes the
+    // x/y are derived from manuscript order × lane index, so a manual
+    // drag would just snap back on the next layout pass.
+    if (laneMode !== "free") return;
     const card = cards?.find((c) => c.id === id);
     if (!card) return;
     dragStartRef.current = {
@@ -366,6 +405,38 @@ export function CanvasSurface({ onOpenScene }: Props) {
             cardH={CARD_H}
           />
         )}
+        {/* Lane labels — when grouped by location or character,
+            render the lane name to the left of each row. */}
+        {laneMode !== "free" &&
+          lanes.map((lane) => (
+            <div
+              key={lane.id}
+              data-testid={`canvas-lane-${lane.id}`}
+              style={{
+                position: "absolute",
+                left: -LANE_LABEL_WIDTH - 16,
+                top: lane.row * CARD_SPACING_Y,
+                width: LANE_LABEL_WIDTH,
+                height: CARD_H,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                paddingRight: 12,
+                fontFamily: "var(--water-font-sans)",
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: 0.6,
+                color:
+                  lane.id === "__unassigned"
+                    ? "var(--water-fg-faint)"
+                    : "var(--water-fg-muted)",
+                pointerEvents: "none",
+              }}
+            >
+              {lane.label}
+            </div>
+          ))}
         {cards.map((card) => (
           <SceneCard
             key={card.id}
@@ -388,6 +459,44 @@ export function CanvasSurface({ onOpenScene }: Props) {
           gap: 8,
         }}
       >
+        {/* Lane-mode chip: cycle free → location → character → free.
+            Lets the writer reshape the canvas into plot-line rows for
+            quick coordination across POVs or settings, then back to
+            the freely-arranged map. */}
+        <button
+          type="button"
+          aria-label="Layout mode"
+          data-testid="canvas-lane-mode"
+          onClick={() => {
+            setLaneMode((m) =>
+              m === "free"
+                ? "location"
+                : m === "location"
+                  ? "character"
+                  : "free",
+            );
+          }}
+          title="Group rows by location or POV (cycle)"
+          style={{
+            padding: "6px 12px",
+            border: "none",
+            background:
+              laneMode === "free"
+                ? "var(--water-bg-raised)"
+                : "color-mix(in srgb, var(--water-hue-flow) 22%, transparent)",
+            color: "var(--water-fg-default)",
+            fontFamily: "var(--water-font-sans)",
+            fontSize: "var(--water-fs-meta)",
+            fontWeight: 500,
+            borderRadius: "var(--water-r-8)",
+            boxShadow: "var(--water-elev-1)",
+            cursor: "pointer",
+            textTransform: "lowercase",
+            letterSpacing: 0.3,
+          }}
+        >
+          rows: {laneMode}
+        </button>
         <button
           type="button"
           aria-label="Toggle reading order"
@@ -464,24 +573,94 @@ interface CanvasCard extends SceneCanvasRow {
   y: number;
 }
 
+export interface Lane {
+  /** Unique id (location_id / character_id / "unassigned"). */
+  id: string;
+  /** Display label (location_name / character_name / "(unassigned)"). */
+  label: string;
+  /** Row index in the lane stack — used to compute y position. */
+  row: number;
+}
+
 /**
- * Mirror of `water_core::canvas::auto_flow`: 8 cards per row at
- * 240 × 140 spacing. Applied to scenes with NULL canvas_x/canvas_y.
- * Scenes WITH persisted positions use those positions verbatim.
+ * Compute card positions + lanes based on the current mode.
+ *
+ * - free: respect canvas_x/canvas_y when set; auto-flow the rest
+ *   into 8-per-row chunks. No lanes returned.
+ * - location: y = lane index × CARD_SPACING_Y; x = manuscript order
+ *   × CARD_SPACING_X. One lane per distinct location_id; scenes
+ *   without a location fall into "(unassigned)" at the bottom.
+ * - character: same shape, grouped by pov_character_id.
  */
-function autoFlow(scenes: SceneCanvasRow[]): CanvasCard[] {
+function layoutCards(
+  scenes: SceneCanvasRow[],
+  mode: LaneMode,
+): { cards: CanvasCard[]; lanes: Lane[] } {
   const sorted = [...scenes].sort(
     (a, b) => a.manuscript_ordering - b.manuscript_ordering,
   );
-  return sorted.map((s, ix) => {
-    const col = ix % CARDS_PER_ROW;
-    const row = Math.floor(ix / CARDS_PER_ROW);
+
+  if (mode === "free") {
+    const cards: CanvasCard[] = sorted.map((s, ix) => {
+      const col = ix % CARDS_PER_ROW;
+      const row = Math.floor(ix / CARDS_PER_ROW);
+      return {
+        ...s,
+        x: s.canvas_x ?? col * CARD_SPACING_X,
+        y: s.canvas_y ?? row * CARD_SPACING_Y,
+      };
+    });
+    return { cards, lanes: [] };
+  }
+
+  const laneOf = (s: SceneCanvasRow): { id: string; label: string } => {
+    if (mode === "location") {
+      if (s.location_id && s.location_name) {
+        return { id: s.location_id, label: s.location_name };
+      }
+      return { id: "__unassigned", label: "(no location)" };
+    }
+    // character
+    if (s.pov_character_id && s.pov_character_name) {
+      return { id: s.pov_character_id, label: s.pov_character_name };
+    }
+    return { id: "__unassigned", label: "(no POV)" };
+  };
+
+  // Build lane order: first appearance in manuscript order, with the
+  // unassigned bucket pinned to the bottom.
+  const laneIndex = new Map<string, Lane>();
+  for (const s of sorted) {
+    const { id, label } = laneOf(s);
+    if (!laneIndex.has(id)) {
+      laneIndex.set(id, { id, label, row: -1 });
+    }
+  }
+  const named = [...laneIndex.values()].filter((l) => l.id !== "__unassigned");
+  const unassigned = laneIndex.get("__unassigned");
+  const ordered: Lane[] = named.map((l, ix) => ({ ...l, row: ix }));
+  if (unassigned) {
+    ordered.push({ ...unassigned, row: ordered.length });
+  }
+  const rowFor = (id: string) =>
+    ordered.find((l) => l.id === id)?.row ?? 0;
+
+  // Position cards by lane row + manuscript order column. Use a
+  // per-lane column counter so consecutive same-lane scenes pack
+  // without gaps when their manuscript order jumps.
+  const colInLane = new Map<string, number>();
+  const cards: CanvasCard[] = sorted.map((s) => {
+    const { id } = laneOf(s);
+    const col = colInLane.get(id) ?? 0;
+    colInLane.set(id, col + 1);
     return {
       ...s,
-      x: s.canvas_x ?? col * CARD_SPACING_X,
-      y: s.canvas_y ?? row * CARD_SPACING_Y,
+      x: col * CARD_SPACING_X,
+      y: rowFor(id) * CARD_SPACING_Y,
     };
   });
+
+  return { cards, lanes: ordered };
 }
 
 export type { CanvasCard, HeatRow };
