@@ -51,14 +51,14 @@ function formatSpeakerLabel(speakerId: string): string | null {
  */
 export function PillCapsule({ pill, onClick }: Props) {
   const speakerLabel = formatSpeakerLabel(pill.speaker_id);
-  // Layered animation: the entry fade plays once; the persistent
-  // breathe (defined in tokens.css on .water-pill) carries the ambient
-  // gradient drift. Inline persona-tint shadow rides on top.
+  // Visuals — substrate, fade-in, breathe overlay, and hover float are
+  // all owned by the .water-pill class in tokens.css. The inline style
+  // is reserved for per-pill values that the stylesheet can't see:
+  // the persona-tinted glow rides as a custom property so it composes
+  // with the class's box-shadow rules.
   const style: CSSProperties = {
-    position: "relative",
     padding: "6px 10px",
     borderRadius: "var(--water-r-16)",
-    boxShadow: `0 0 18px color-mix(in oklch, var(${pill.hue_token}) 50%, transparent)`,
     color: "var(--water-fg-default)",
     fontFamily: "var(--water-font-sans)",
     fontSize: "var(--water-fs-meta)",
@@ -66,13 +66,9 @@ export function PillCapsule({ pill, onClick }: Props) {
     maxWidth: 200,
     cursor: onClick ? "pointer" : "default",
     pointerEvents: "auto",
-    // Two animations: the entry fade once, the breathe loop forever.
-    // The breathe's background gradient comes from the .water-pill
-    // class so prefers-reduced-motion can disable it cleanly.
-    animationName: "water-pill-fade-in",
-    animationDuration: "var(--water-dur-small)",
-    animationTimingFunction: "var(--water-ease-out-soft)",
-    animationFillMode: "both",
+    // Persona glow exposed as a custom property; CSS layers it on top
+    // of the class's elevation shadow.
+    ["--water-pill-glow" as never]: `0 0 14px color-mix(in oklch, var(${pill.hue_token}) 42%, transparent)`,
   };
   const chipStyle: CSSProperties = {
     display: "block",
