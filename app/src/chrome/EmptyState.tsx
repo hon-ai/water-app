@@ -1,7 +1,4 @@
-import { useRef } from "react";
 import { StreamMark } from "./StreamMark";
-import { WaterRibbon } from "./WaterRibbon";
-import { useElementWidth } from "../pill/useElementWidth";
 
 interface Props {
   onCreate: () => void;
@@ -9,8 +6,6 @@ interface Props {
 }
 
 export function EmptyState({ onCreate, onOpen }: Props) {
-  const mainRef = useRef<HTMLElement | null>(null);
-  const mainWidth = useElementWidth(mainRef);
   const primaryBtn: React.CSSProperties = {
     padding: "10px 20px",
     border: "none",
@@ -45,10 +40,9 @@ export function EmptyState({ onCreate, onOpen }: Props) {
 
   return (
     <main
-      ref={mainRef}
       style={{
         flex: 1,
-        background: "var(--water-bg-paper)",
+        background: "transparent",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -56,7 +50,6 @@ export function EmptyState({ onCreate, onOpen }: Props) {
         overflow: "hidden",
       }}
     >
-      <WaterRibbon parentWidth={mainWidth} />
       {/* Ambient hue wash behind the content — soft, off-center. */}
       <div
         aria-hidden

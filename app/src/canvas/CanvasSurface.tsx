@@ -12,7 +12,7 @@ import { SceneCard, CARD_W, CARD_H } from "./SceneCard";
 import { CanvasIntro } from "./CanvasIntro";
 import { ReadingOrderOverlay } from "./ReadingOrderOverlay";
 import { SharedAttrConnectors } from "./SharedAttrConnectors";
-import { WaterRibbon } from "../chrome/WaterRibbon";
+import { setRibbonTarget } from "../chrome/ribbonState";
 
 interface Props {
   onOpenScene: (sceneId: string) => void;
@@ -223,6 +223,36 @@ export function CanvasSurface({ onOpenScene }: Props) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [cards]);
+
+  // Push scene anchors to the global ribbon target. The App-level
+  // WaterRibbon eases its displayed anchors toward this list. When
+  // the writer leaves the canvas, the cleanup clears the target and
+  // the ribbon gradually fades back to ambient noise.
+  useEffect(() => {
+    if (!cards) {
+      setRibbonTarget([]);
+      return;
+    }
+    // Translate canvas-space (canvas_x/y) to window-space via pan/zoom
+    // PLUS the container's offset from the window-left edge. The
+    // App-level WaterRibbon expects parent-x relative to the window,
+    // and the canvas surface lives to the right of the IconRail +
+    // ScenesPanel, so we need the container's screen-x to align.
+    const el = containerRef.current;
+    const rect = el?.getBoundingClientRect();
+    const surfaceOffsetX = rect?.left ?? 0;
+    const surfaceOffsetY = rect?.top ?? 0;
+    const anchors = cards
+      .filter((c) => c.isPrimary)
+      .map((c) => ({
+        id: c.id,
+        x: (c.x + CARD_W / 2) * zoom + pan.x + surfaceOffsetX,
+        y: (c.y + CARD_H / 2) * zoom + pan.y + surfaceOffsetY,
+        weight: 1,
+      }));
+    setRibbonTarget(anchors);
+    return () => setRibbonTarget([]);
+  }, [cards, pan.x, pan.y, zoom]);
 
   // Heat refetch on heat:updated.
   useEffect(() => {
@@ -475,25 +505,6 @@ export function CanvasSurface({ onOpenScene }: Props) {
         cursor: panStartRef.current ? "grabbing" : "default",
       }}
     >
-      {/* Ambient water-ribbon. Same component as the editor surface;
-          all instances share a performance.now()-driven clock so the
-          flow appears continuous when navigating between surfaces.
-          Rendered OUTSIDE the pan/zoom-transformed wrapper so it
-          isn't scaled or panned with the canvas content. Scene
-          positions are passed as 'influences' so the ribbon warps
-          to touch each scene as it flows past — and shifts
-          gradually when scenes move. */}
-      <WaterRibbon
-        parentWidth={containerSize.width}
-        anchors={cards
-          .filter((c) => c.isPrimary)
-          .map((c) => ({
-            id: c.id,
-            x: (c.x + CARD_W / 2) * zoom + pan.x,
-            y: (c.y + CARD_H / 2) * zoom + pan.y,
-            weight: 1,
-          }))}
-      />
       {/* Pan/zoom wrapper. Cards are absolutely positioned in this
           space using the persisted canvas_x / canvas_y. */}
       <div
