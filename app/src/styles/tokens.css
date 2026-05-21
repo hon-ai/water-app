@@ -254,6 +254,32 @@
    Body baseline + ambient animations.
    ===================================================================== */
 
+/* ───────────────────── Floating glass surfaces ─────────────────────
+   Shared treatment for surfaces that float above the ambient stream:
+   the IconRail, canvas chrome chips (rows/presence/shares/reading
+   order/metric picker), pills, and other interactable elements. The
+   glass-like back lets the water-ribbon read through. */
+.water-floating-panel {
+  background: color-mix(in srgb, var(--water-bg-paper) 55%, transparent);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid
+    color-mix(in srgb, var(--water-hairline) 60%, transparent);
+  border-radius: var(--water-r-24);
+  box-shadow: var(--water-elev-2);
+}
+
+/* Smaller glass chip — for canvas mode toggles and similar pill-shaped
+   buttons. Applied via inline style or className on the button. */
+.water-floating-chip {
+  background: color-mix(in srgb, var(--water-bg-paper) 65%, transparent) !important;
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid
+    color-mix(in srgb, var(--water-hairline) 70%, transparent) !important;
+  box-shadow: var(--water-elev-1);
+}
+
 body {
   background: var(--water-bg-paper);
   color: var(--water-fg-default);

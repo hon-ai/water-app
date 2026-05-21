@@ -12,7 +12,7 @@ import { SceneCard, CARD_W, CARD_H } from "./SceneCard";
 import { CanvasIntro } from "./CanvasIntro";
 import { ReadingOrderOverlay } from "./ReadingOrderOverlay";
 import { SharedAttrConnectors } from "./SharedAttrConnectors";
-import { CanvasFlowRibbon } from "./CanvasFlowRibbon";
+import { WaterRibbon } from "../chrome/WaterRibbon";
 
 interface Props {
   onOpenScene: (sceneId: string) => void;
@@ -469,6 +469,12 @@ export function CanvasSurface({ onOpenScene }: Props) {
         cursor: panStartRef.current ? "grabbing" : "default",
       }}
     >
+      {/* Ambient water-ribbon. Same component as the editor surface;
+          all instances share a performance.now()-driven clock so the
+          flow appears continuous when navigating between surfaces.
+          Rendered OUTSIDE the pan/zoom-transformed wrapper so it
+          isn't scaled or panned with the canvas content. */}
+      <WaterRibbon parentWidth={containerSize.width} />
       {/* Pan/zoom wrapper. Cards are absolutely positioned in this
           space using the persisted canvas_x / canvas_y. */}
       <div
@@ -480,19 +486,6 @@ export function CanvasSurface({ onOpenScene }: Props) {
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
-        {/* Ambient flow ribbon — independent L→R path that responds
-            to scene positions via a falloff-weighted influence
-            field. Spans the full visible viewport, eases toward
-            target shape over ~1s, splits into parallel strands when
-            scenes spread vertically. Below cards in z-order. */}
-        {containerSize.width > 0 && (
-          <CanvasFlowRibbon
-            cards={cards}
-            heatPerScene={heatPerScene}
-            viewportMinX={-pan.x / zoom}
-            viewportMaxX={(containerSize.width - pan.x) / zoom}
-          />
-        )}
         {sharesOn && cards.length > 1 && (
           <SharedAttrConnectors
             cards={cards}
@@ -594,6 +587,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
             the freely-arranged map. */}
         <button
           type="button"
+          className="water-floating-chip"
           aria-label="Layout mode"
           data-testid="canvas-lane-mode"
           onClick={() => {
@@ -631,6 +625,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
             the toggle before switching rows on. */}
         <button
           type="button"
+          className="water-floating-chip"
           aria-label="Multi-lane presentation"
           data-testid="canvas-presence-mode"
           onClick={() =>
@@ -670,6 +665,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
             two scenes are connected" without forcing a lane mode. */}
         <button
           type="button"
+          className="water-floating-chip"
           aria-label="Toggle shared-attribute connectors"
           aria-pressed={sharesOn}
           data-testid="canvas-shares-toggle"
@@ -696,6 +692,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
         </button>
         <button
           type="button"
+          className="water-floating-chip"
           aria-label="Toggle reading order"
           aria-pressed={overlayOn}
           onClick={() => setOverlayOn((v) => !v)}
@@ -720,6 +717,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
         <button
           ref={chipRef}
           type="button"
+          className="water-floating-chip"
           aria-label="Heatmap metrics"
           aria-haspopup="menu"
           aria-expanded={pickerOpen ? "true" : "false"}

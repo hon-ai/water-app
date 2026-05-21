@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { WorldIndex } from "./WorldIndex";
 import { WorldSegmentView } from "./WorldSegmentView";
 import { WorldEntrySheet } from "./WorldEntrySheet";
 import { WorldEntryIntakeSheet } from "./WorldEntryIntakeSheet";
 import { SegmentTemplateEditor } from "./SegmentTemplateEditor";
+import { WaterRibbon } from "../chrome/WaterRibbon";
+import { useElementWidth } from "../pill/useElementWidth";
 
 /**
  * Worlds surface router (M4 T20, spec § 10).
@@ -39,6 +41,8 @@ type View =
 export function WorldsSurface({ projectId: _projectId }: { projectId: string }) {
   const [view, setView] = useState<View>({ kind: "index" });
   const [indexScrollY, setIndexScrollY] = useState(0);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const wrapWidth = useElementWidth(wrapRef);
 
   function goToSegment(segmentId: string) {
     if (view.kind === "index") setIndexScrollY(window.scrollY);
@@ -74,7 +78,12 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
   }, []);
 
   return (
-    <div className="worlds-surface">
+    <div
+      ref={wrapRef}
+      className="worlds-surface"
+      style={{ flex: 1, position: "relative", overflow: "auto" }}
+    >
+      <WaterRibbon parentWidth={wrapWidth} />
       {view.kind === "index" && (
         <WorldIndex
           onSelectSegment={goToSegment}

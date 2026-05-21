@@ -37,7 +37,7 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("diagnostics_status", undefined));
     expect(screen.getByRole("button", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /water/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /just flow/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create new project/i })).toBeInTheDocument();
   });
 });

@@ -362,15 +362,6 @@ export function HeatmapStrip({ sceneId }: Props) {
           onClose={() => setPickerOpen(false)}
         />
       </div>
-      {hover && activeKinds.length > 0 && (
-        <HoverTooltip
-          metrics={metrics}
-          activeKinds={activeKinds}
-          columnIx={hover.columnIx}
-          clientX={hover.clientX}
-          stripEl={stripRef.current}
-        />
-      )}
       {!introSeen && <IntroOverlay onDismiss={dismissIntro} />}
     </div>
   );

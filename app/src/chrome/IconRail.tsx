@@ -1,4 +1,5 @@
-import { Droplet, FileText, User, Globe, Map, Settings } from "lucide-react";
+import { FileText, User, Globe, Map, Settings } from "lucide-react";
+import { StreamMark } from "./StreamMark";
 
 export type NavTarget = "scenes" | "characters" | "world" | "canvas";
 
@@ -27,6 +28,7 @@ export function IconRail({ active, onSelect, onOpenSettings, projectOpen }: Prop
   return (
     <nav
       aria-label="primary"
+      className="water-floating-panel"
       style={{
         width: "var(--water-rail-w)",
         flexShrink: 0,
@@ -35,21 +37,22 @@ export function IconRail({ active, onSelect, onOpenSettings, projectOpen }: Prop
         alignItems: "center",
         gap: 8,
         padding: "12px 0",
-        // Apple-Glass: semi-transparent substrate with a strong
-        // backdrop-filter blur + saturation bump. Anything that ever
-        // flows behind the rail (the editor water ribbon, future
-        // ambient layers) reads through softly. A thin hairline at
-        // the right edge defines the boundary without a hard fill.
+        // Floating glass panel: offset from the window edge, fully
+        // rounded corners, hairline border on all sides. Sits over the
+        // ambient background like a pebble in a stream.
+        margin: "10px 0 10px 10px",
         background:
           "color-mix(in srgb, var(--water-bg-paper) 55%, transparent)",
         backdropFilter: "blur(22px) saturate(160%)",
         WebkitBackdropFilter: "blur(22px) saturate(160%)",
-        borderRight:
+        border:
           "1px solid color-mix(in srgb, var(--water-hairline) 60%, transparent)",
+        borderRadius: "var(--water-r-24)",
+        boxShadow: "var(--water-elev-2)",
       }}
     >
-      <div aria-hidden style={{ padding: 8, color: "var(--water-hue-flow)" }}>
-        <Droplet size={22} strokeWidth={1.75} />
+      <div aria-hidden style={{ padding: 8, color: "var(--water-sea-400)" }}>
+        <StreamMark size={26} />
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, paddingTop: 12 }}>
         {projectOpen &&
