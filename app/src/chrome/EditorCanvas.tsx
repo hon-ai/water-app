@@ -340,6 +340,10 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
             letterSpacing: -0.4,
           }}
         />
+        {/* Title accent rule. Uses the active sea palette so it reads
+            as a deliberate brand accent rather than a brownish line —
+            --water-fg-faint at hsl(0, 3%, 28%) in dark mode looked
+            like a brown smudge. */}
         <div
           aria-hidden
           style={{
@@ -347,7 +351,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
             width: 48,
             margin: "8px 0 24px 0",
             background:
-              "color-mix(in srgb, var(--water-fg-faint) 35%, transparent)",
+              "color-mix(in srgb, var(--water-sea-300) 45%, transparent)",
           }}
         />
         <Editor

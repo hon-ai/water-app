@@ -335,16 +335,11 @@ body {
     0 0 18px color-mix(in oklch, var(--water-sea-glow) 12%, transparent);
 }
 
+/* Hover bumps the overlay opacity slightly — *not* a gradient swap
+   or animation-period change. Keeps the breathe steady so the pill
+   doesn't visibly "reload" on hover. */
 .water-pill:hover::before {
-  opacity: 1;
-  background:
-    linear-gradient(
-      110deg,
-      transparent 0%,
-      color-mix(in oklch, var(--water-sea-100), transparent 35%) 50%,
-      transparent 100%
-    );
-  animation-duration: 11s;
+  opacity: 0.85;
 }
 
 @media (prefers-reduced-motion: reduce) {

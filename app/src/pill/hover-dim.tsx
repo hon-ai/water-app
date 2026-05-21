@@ -34,14 +34,17 @@ export function HoverDim({ active, anchorRect, hueToken }: Props) {
     zIndex: 30,
   };
 
+  // Tight alignment: pad horizontally by 2px each side, no vertical
+  // pad. The earlier ±2 vertical pad was pushing the highlight
+  // above/below the text glyphs, which read as misaligned.
   const highlightStyle: CSSProperties | null =
     active && anchorRect
       ? {
           position: "fixed",
-          left: anchorRect.left - 4,
-          top: anchorRect.top - 2,
-          width: anchorRect.width + 8,
-          height: anchorRect.height + 4,
+          left: anchorRect.left - 2,
+          top: anchorRect.top,
+          width: anchorRect.width + 4,
+          height: anchorRect.height,
           background: `color-mix(in oklch, var(${hueToken}) 14%, transparent)`,
           borderRadius: "var(--water-r-8)",
           pointerEvents: "none",

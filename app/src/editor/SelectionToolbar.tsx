@@ -151,16 +151,18 @@ export function SelectionToolbar({ editorView, onLinkClick }: Props) {
   const italicActive = selectionHasMark(editorView, "em");
   const linkActive = selectionHasMark(editorView, "link");
 
-  // Default position when jsdom can't measure rects: (0, 0). Browser uses
-  // real coords.
+  // Position the toolbar above the selection's top edge with a real
+  // vertical gap (translate handles the toolbar's own height; the
+  // extra -14px keeps a visible margin between the toolbar's bottom
+  // and the highlighted text). Anchor: top edge of selection.
   const left = rect ? rect.left + rect.width / 2 : 0;
-  const top = rect ? rect.top - 8 : 0;
+  const top = rect ? rect.top : 0;
 
   const toolbarStyle: CSSProperties = {
     position: "fixed",
     left,
     top,
-    transform: "translate(-50%, -100%)",
+    transform: "translate(-50%, calc(-100% - 14px))",
     display: "flex",
     flexDirection: "row",
     gap: 6,

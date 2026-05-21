@@ -35,8 +35,17 @@ export function IconRail({ active, onSelect, onOpenSettings, projectOpen }: Prop
         alignItems: "center",
         gap: 8,
         padding: "12px 0",
-        background: "var(--water-bg-canvas)",
-        borderRight: "1px solid transparent",
+        // Apple-Glass: semi-transparent substrate with a strong
+        // backdrop-filter blur + saturation bump. Anything that ever
+        // flows behind the rail (the editor water ribbon, future
+        // ambient layers) reads through softly. A thin hairline at
+        // the right edge defines the boundary without a hard fill.
+        background:
+          "color-mix(in srgb, var(--water-bg-paper) 55%, transparent)",
+        backdropFilter: "blur(22px) saturate(160%)",
+        WebkitBackdropFilter: "blur(22px) saturate(160%)",
+        borderRight:
+          "1px solid color-mix(in srgb, var(--water-hairline) 60%, transparent)",
       }}
     >
       <div aria-hidden style={{ padding: 8, color: "var(--water-hue-flow)" }}>

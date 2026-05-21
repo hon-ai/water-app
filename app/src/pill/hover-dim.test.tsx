@@ -41,10 +41,12 @@ describe("HoverDim", () => {
     );
     const highlight = screen.getByTestId("water-hover-highlight");
     expect(highlight).toBeInTheDocument();
-    // Positioned over the anchored block with small padding.
+    // Positioned over the anchored block with tight horizontal pad
+    // and no vertical offset (the earlier vertical pad was reading
+    // as misaligned with the text glyphs).
     expect(highlight.style.position).toBe("fixed");
-    expect(parseFloat(highlight.style.left)).toBeCloseTo(a.left - 4);
-    expect(parseFloat(highlight.style.top)).toBeCloseTo(a.top - 2);
+    expect(parseFloat(highlight.style.left)).toBeCloseTo(a.left - 2);
+    expect(parseFloat(highlight.style.top)).toBeCloseTo(a.top);
   });
 
   it("does not render the highlight when anchorRect is null", () => {
