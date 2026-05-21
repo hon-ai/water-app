@@ -64,6 +64,15 @@ export function SceneCard({
   // single-row card height. They get a left rail in flow-hue so the
   // ensemble shape reads at a glance.
   const isSpanning = card.height > CARD_H + 1;
+  // Collision stack: when N cards land on the same snapped cell,
+  // fan them slightly so each is visible. The top card shows a
+  // count badge so the writer knows others are hidden behind. The
+  // fan grows up-and-to-the-right; subtle enough not to disturb
+  // reading order, visible enough to invite a click.
+  const stacked = card.stackSize > 1;
+  const stackOffsetX = stacked ? card.stackIndex * 10 : 0;
+  const stackOffsetY = stacked ? card.stackIndex * -8 : 0;
+  const isStackTop = stacked && card.stackIndex === card.stackSize - 1;
   const baseBorder = ghost
     ? "1px dashed color-mix(in srgb, var(--water-fg-faint) 35%, transparent)"
     : "1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent)";
@@ -82,10 +91,11 @@ export function SceneCard({
       }}
       style={{
         position: "absolute",
-        left: card.x,
-        top: card.y,
+        left: card.x + stackOffsetX,
+        top: card.y + stackOffsetY,
         width: CARD_W,
         height: card.height,
+        zIndex: stacked ? card.stackIndex + 1 : "auto",
         opacity: ghost ? 0.36 : 1,
         background: `color-mix(in oklch, var(${hue}) ${tintPct}%, var(--water-bg-raised))`,
         border: baseBorder,
@@ -127,6 +137,35 @@ export function SceneCard({
         }
       }}
     >
+      {/* Stack count badge: only on the top card of a collision
+          stack. Tells the writer "N scenes share this cell" so they
+          know to spread/inspect the pile. */}
+      {isStackTop && (
+        <div
+          aria-label={`${card.stackSize} scenes stacked here`}
+          style={{
+            position: "absolute",
+            top: -8,
+            right: -8,
+            minWidth: 22,
+            height: 22,
+            padding: "0 6px",
+            borderRadius: 11,
+            background: "var(--water-fg-default)",
+            color: "var(--water-bg-paper)",
+            fontFamily: "var(--water-font-sans)",
+            fontSize: 11,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "var(--water-elev-2)",
+            pointerEvents: "none",
+          }}
+        >
+          +{card.stackSize - 1}
+        </div>
+      )}
       <div
         style={{
           fontFamily: "var(--water-font-serif)",

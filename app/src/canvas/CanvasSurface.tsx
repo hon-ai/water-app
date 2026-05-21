@@ -11,6 +11,7 @@ import { HeatmapMetricPicker } from "../heat/HeatmapMetricPicker";
 import { SceneCard, CARD_W, CARD_H } from "./SceneCard";
 import { CanvasIntro } from "./CanvasIntro";
 import { ReadingOrderOverlay } from "./ReadingOrderOverlay";
+import { SharedAttrConnectors } from "./SharedAttrConnectors";
 
 interface Props {
   onOpenScene: (sceneId: string) => void;
@@ -76,6 +77,7 @@ export function CanvasSurface({ onOpenScene }: Props) {
   const [laneMode, setLaneMode] = useState<LaneMode>("free");
   const [lanes, setLanes] = useState<Lane[]>([]);
   const [presenceMode, setPresenceMode] = useState<PresenceMode>("ghost");
+  const [sharesOn, setSharesOn] = useState(false);
   const [pan, setPan] = useState({ x: 24, y: 24 });
   const [zoom, setZoom] = useState(1);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -288,11 +290,17 @@ export function CanvasSurface({ onOpenScene }: Props) {
       if (card) {
         // Snap on release so cards visibly land on a grid cell.
         const [sx, sy] = snapToGrid(card.x, card.y);
-        setCards((prev) =>
-          prev
-            ? prev.map((c) => (c.id === card.id ? { ...c, x: sx, y: sy } : c))
-            : prev,
-        );
+        setCards((prev) => {
+          if (!prev) return prev;
+          const updated = prev.map((c) =>
+            c.id === card.id
+              ? { ...c, x: sx, y: sy, stackIndex: 0, stackSize: 1 }
+              : c,
+          );
+          // Recompute collision stacks since the moved card may now
+          // share a cell with another (or have vacated an old one).
+          return applyStackOffsets(updated);
+        });
         debouncedPersist(card.id, sx, sy);
       }
       dragStartRef.current = null;
@@ -403,6 +411,23 @@ export function CanvasSurface({ onOpenScene }: Props) {
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }}
       >
+        {sharesOn && cards.length > 1 && (
+          <SharedAttrConnectors
+            cards={cards}
+            offsetX={Math.min(...cards.map((c) => c.x)) - 80}
+            offsetY={Math.min(...cards.map((c) => c.y)) - 80}
+            width={
+              Math.max(...cards.map((c) => c.x + CARD_W)) -
+              Math.min(...cards.map((c) => c.x)) +
+              160
+            }
+            height={
+              Math.max(...cards.map((c) => c.y + c.height)) -
+              Math.min(...cards.map((c) => c.y)) +
+              160
+            }
+          />
+        )}
         {overlayOn && (
           <ReadingOrderOverlay
             cards={sortedForOverlay}
@@ -558,6 +583,35 @@ export function CanvasSurface({ onOpenScene }: Props) {
         >
           presence: {presenceMode}
         </button>
+        {/* Shared-attribute connectors. Faint arcs between scenes
+            that share a location or a character — surfaces "these
+            two scenes are connected" without forcing a lane mode. */}
+        <button
+          type="button"
+          aria-label="Toggle shared-attribute connectors"
+          aria-pressed={sharesOn}
+          data-testid="canvas-shares-toggle"
+          onClick={() => setSharesOn((v) => !v)}
+          title="Show arcs between scenes sharing a location or character"
+          style={{
+            padding: "6px 12px",
+            border: "none",
+            background: sharesOn
+              ? "color-mix(in srgb, var(--water-hue-flow) 22%, transparent)"
+              : "var(--water-bg-raised)",
+            color: "var(--water-fg-default)",
+            fontFamily: "var(--water-font-sans)",
+            fontSize: "var(--water-fs-meta)",
+            fontWeight: 500,
+            borderRadius: "var(--water-r-8)",
+            boxShadow: "var(--water-elev-1)",
+            cursor: "pointer",
+            textTransform: "lowercase",
+            letterSpacing: 0.3,
+          }}
+        >
+          shares: {sharesOn ? "on" : "off"}
+        </button>
         <button
           type="button"
           aria-label="Toggle reading order"
@@ -646,6 +700,11 @@ interface CanvasCard extends SceneCanvasRow {
   /** y of this scene's primary placement — used so clicking a ghost
    *  can pan/focus the canonical card. Equal to y when isPrimary. */
   primaryY: number;
+  /** Index within a collision stack at this (x, y). 0 for the
+   *  bottom card; only set when stackSize > 1. */
+  stackIndex: number;
+  /** Total cards sharing this (x, y). 1 means no collision. */
+  stackSize: number;
 }
 
 export interface Lane {
@@ -708,9 +767,11 @@ function layoutCards(
         isPrimary: true,
         placementKey: s.id,
         primaryY: y,
+        stackIndex: 0,
+        stackSize: 1,
       };
     });
-    return { cards, lanes: [] };
+    return { cards: applyStackOffsets(cards), lanes: [] };
   }
 
   // Which lanes does each scene touch? In lane mode the first
@@ -784,6 +845,8 @@ function layoutCards(
         isPrimary: true,
         placementKey: `${s.id}::span`,
         primaryY,
+        stackIndex: 0,
+        stackSize: 1,
       });
     } else {
       // Ghost mode: one canonical card + one ghost per secondary
@@ -798,12 +861,48 @@ function layoutCards(
           isPrimary: ix === 0,
           placementKey: `${s.id}::${p.id}`,
           primaryY,
+          stackIndex: 0,
+          stackSize: 1,
         });
       });
     }
   }
 
-  return { cards, lanes: ordered };
+  return { cards: applyStackOffsets(cards), lanes: ordered };
+}
+
+/**
+ * Find cards sharing a snapped grid cell and assign stackIndex /
+ * stackSize. Only canonical (isPrimary) cards participate — ghosts
+ * stay flush so the writer can still see "this scene is also in
+ * lane Y" without the ghost contributing to the fan.
+ *
+ * Order within a stack is the card's original index, which keeps the
+ * fan stable across re-renders.
+ */
+function applyStackOffsets(cards: CanvasCard[]): CanvasCard[] {
+  // Group canonical cards by snapped (x, y) cell.
+  const cellKey = (x: number, y: number) =>
+    `${Math.round(x / CARD_SPACING_X)},${Math.round(y / CARD_SPACING_Y)}`;
+  const cellMembers: Map<string, number[]> = new Map();
+  cards.forEach((c, ix) => {
+    if (!c.isPrimary) return;
+    const k = cellKey(c.x, c.y);
+    if (!cellMembers.has(k)) cellMembers.set(k, []);
+    cellMembers.get(k)!.push(ix);
+  });
+  const out = cards.slice();
+  for (const members of cellMembers.values()) {
+    if (members.length <= 1) continue;
+    members.forEach((cardIx, stackIx) => {
+      out[cardIx] = {
+        ...out[cardIx]!,
+        stackIndex: stackIx,
+        stackSize: members.length,
+      };
+    });
+  }
+  return out;
 }
 
 export type { CanvasCard, HeatRow };
