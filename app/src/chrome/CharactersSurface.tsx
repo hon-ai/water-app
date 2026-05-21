@@ -1,7 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { CharacterIndex } from "../characters/CharacterIndex";
 import { CharacterSheet } from "../characters/CharacterSheet";
 import { CharacterIntakeSheet } from "../intake/CharacterIntakeSheet";
+import { WaterRibbon } from "./WaterRibbon";
+import { useElementWidth } from "../pill/useElementWidth";
 
 /**
  * Characters surface router (M3 T20, spec § 9).
@@ -38,6 +40,8 @@ export function CharactersSurface() {
   const [view, setView] = useState<View>({ kind: "index" });
   const [intakeCharId, setIntakeCharId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const wrapWidth = useElementWidth(wrapRef);
 
   const openCharacter = useCallback((id: string, hueToken: string) => {
     setView({ kind: "sheet", characterId: id, hueToken });
@@ -63,7 +67,11 @@ export function CharactersSurface() {
   }, []);
 
   return (
-    <>
+    <div
+      ref={wrapRef}
+      style={{ flex: 1, position: "relative", overflow: "auto" }}
+    >
+      <WaterRibbon parentWidth={wrapWidth} />
       <div
         style={{ display: view.kind === "index" ? "block" : "none" }}
       >
@@ -90,6 +98,6 @@ export function CharactersSurface() {
           onCompleted={onIntakeCompleted}
         />
       )}
-    </>
+    </div>
   );
 }

@@ -1,4 +1,7 @@
-import { Droplet } from "lucide-react";
+import { useRef } from "react";
+import { StreamMark } from "./StreamMark";
+import { WaterRibbon } from "./WaterRibbon";
+import { useElementWidth } from "../pill/useElementWidth";
 
 interface Props {
   onCreate: () => void;
@@ -6,6 +9,8 @@ interface Props {
 }
 
 export function EmptyState({ onCreate, onOpen }: Props) {
+  const mainRef = useRef<HTMLElement | null>(null);
+  const mainWidth = useElementWidth(mainRef);
   const primaryBtn: React.CSSProperties = {
     padding: "10px 20px",
     border: "none",
@@ -40,6 +45,7 @@ export function EmptyState({ onCreate, onOpen }: Props) {
 
   return (
     <main
+      ref={mainRef}
       style={{
         flex: 1,
         background: "var(--water-bg-paper)",
@@ -50,6 +56,7 @@ export function EmptyState({ onCreate, onOpen }: Props) {
         overflow: "hidden",
       }}
     >
+      <WaterRibbon parentWidth={mainWidth} />
       {/* Ambient hue wash behind the content — soft, off-center. */}
       <div
         aria-hidden
@@ -78,12 +85,12 @@ export function EmptyState({ onCreate, onOpen }: Props) {
         <div
           aria-hidden
           style={{
-            color: "var(--water-hue-flow)",
+            color: "var(--water-sea-400)",
             filter:
-              "drop-shadow(0 0 18px color-mix(in srgb, var(--water-hue-flow) 55%, transparent))",
+              "drop-shadow(0 0 22px color-mix(in srgb, var(--water-sea-glow) 50%, transparent))",
           }}
         >
-          <Droplet size={56} strokeWidth={1.25} />
+          <StreamMark size={72} />
         </div>
         <h1
           style={{
@@ -96,7 +103,7 @@ export function EmptyState({ onCreate, onOpen }: Props) {
             color: "var(--water-fg-default)",
           }}
         >
-          Water
+          Just flow.
         </h1>
         <p
           style={{
@@ -107,8 +114,7 @@ export function EmptyState({ onCreate, onOpen }: Props) {
             lineHeight: 1.55,
           }}
         >
-          A writing surface that listens. Begin a project, or open one you've
-          already started.
+          A writing surface for true immersion.
         </p>
         <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
           <button type="button" onClick={onCreate} style={primaryBtn}>
