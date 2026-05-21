@@ -28,6 +28,19 @@ const CARD_SPACING_Y = 140;
 const POSITION_SAVE_DEBOUNCE_MS = 400;
 
 /**
+ * Snap a (x, y) drag-end position to the nearest grid cell. Keeps
+ * the layout visually aligned without forcing it during the drag
+ * itself — the writer drags freely and the card lands cleanly on
+ * release.
+ */
+function snapToGrid(x: number, y: number): [number, number] {
+  return [
+    Math.round(x / CARD_SPACING_X) * CARD_SPACING_X,
+    Math.round(y / CARD_SPACING_Y) * CARD_SPACING_Y,
+  ];
+}
+
+/**
  * The macro spatial canvas (M6 Phase D). Renders every scene in the
  * open project as a draggable card on a 2D pan/zoom surface. Each
  * card carries a tiny sparkline of the active heat metric.
@@ -150,20 +163,39 @@ export function CanvasSurface({ onOpenScene }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Fit-all-on-mount when there are > 3 scenes.
+  // On first paint: center the cards' bounding box in the viewport,
+  // zooming out only as far as needed to fit. > 3 scenes use fit-all;
+  // otherwise zoom stays at 1.0 and pan centers regardless.
+  const centeredOnce = useRef(false);
   useEffect(() => {
-    if (!cards || cards.length <= 3) return;
+    if (!cards || cards.length === 0) return;
+    if (centeredOnce.current) return;
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return; // not laid out yet
+    const minX = Math.min(...cards.map((c) => c.x));
+    const minY = Math.min(...cards.map((c) => c.y));
     const maxX = Math.max(...cards.map((c) => c.x + CARD_W));
     const maxY = Math.max(...cards.map((c) => c.y + CARD_H));
-    const z = Math.min(
-      1,
-      Math.min((rect.width - 80) / maxX, (rect.height - 80) / maxY),
-    );
+    const bbW = maxX - minX;
+    const bbH = maxY - minY;
+    let z = 1;
+    if (cards.length > 3) {
+      z = Math.min(
+        1,
+        Math.min((rect.width - 80) / bbW, (rect.height - 120) / bbH),
+      );
+    }
+    // Center the bounding box midpoint at the viewport midpoint.
+    const cx = minX + bbW / 2;
+    const cy = minY + bbH / 2;
     setZoom(z);
-    setPan({ x: 40, y: 40 });
+    setPan({
+      x: rect.width / 2 - cx * z,
+      y: rect.height / 2 - cy * z,
+    });
+    centeredOnce.current = true;
   }, [cards]);
 
   const debouncedPersist = useCallback(
@@ -215,7 +247,16 @@ export function CanvasSurface({ onOpenScene }: Props) {
     if (dragStartRef.current) {
       const drag = dragStartRef.current;
       const card = cards?.find((c) => c.id === drag.sceneId);
-      if (card) debouncedPersist(card.id, card.x, card.y);
+      if (card) {
+        // Snap on release so cards visibly land on a grid cell.
+        const [sx, sy] = snapToGrid(card.x, card.y);
+        setCards((prev) =>
+          prev
+            ? prev.map((c) => (c.id === card.id ? { ...c, x: sx, y: sy } : c))
+            : prev,
+        );
+        debouncedPersist(card.id, sx, sy);
+      }
       dragStartRef.current = null;
     }
     panStartRef.current = null;
@@ -225,16 +266,22 @@ export function CanvasSurface({ onOpenScene }: Props) {
       /* swallow */
     }
   };
+  /**
+   * Plain scroll = zoom (Figma/Miro convention). Cmd/Ctrl modifier
+   * accelerates the zoom step. The view zooms around the cursor so
+   * the writer can dive into a corner without losing the spatial
+   * anchor.
+   */
   const onContainerWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     const el = containerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const localX = e.clientX - rect.left - pan.x;
     const localY = e.clientY - rect.top - pan.y;
+    const step = e.ctrlKey || e.metaKey ? 0.15 : 0.06;
     const direction = -Math.sign(e.deltaY);
-    const next = Math.max(0.2, Math.min(2, zoom + direction * 0.1));
+    const next = Math.max(0.15, Math.min(3, zoom + direction * step));
     const ratio = next / zoom;
     setPan({
       x: pan.x - localX * (ratio - 1),
