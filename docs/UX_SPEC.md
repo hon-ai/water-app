@@ -1,25 +1,26 @@
-# Water — UX Spec v1
+# Water — UX Spec v2
 
-**Status:** Draft for review. Locks decisions for the visual + interaction overhaul; replaces the M7 polish target with a directed redesign.
-**Theme:** Running water. Substrate is cool, near-paper gray. Signal is deep-sea blue. Pills are nuanced annotations; rabbit holes are how thought deepens.
+**Status:** Locked direction. v1 open questions resolved by the writer (2026-05-21). Locks decisions for the visual + interaction overhaul; replaces the M7 polish target with a directed redesign.
+**Theme:** Running water. Substrate is warm-neutral paper (OpenCode-tinted). Primary signal is deep-sea blue, with sea-adjacent palette variants (sunrise horizon, clear forest stream, earth/moss). Pills are nuanced annotations that breathe with a near-imperceptible gradient; rabbit holes are how thought deepens.
 **References:**
 - OpenCode (`anomalyco/opencode`) — `packages/web/src/styles/custom.css` for shading discipline.
 - (scrubbed-project) (`~/Desktop/(scrubbed-project)`) — `frontend/src/services/openai.ts` for character-embodied + craft prompt patterns; `backend/app/agents/grammar_agent.py` for rule-based editor heuristics.
 
 ---
 
-## 0. Decisions locked in this draft
+## 0. Decisions locked
 
 | # | Decision | Choice |
 |---|---|---|
 | 1 | Spec format | One doc, iterate |
-| 2 | Heatmap visual | Single deep-sea-blue scale (metric = stripe position, intensity = saturation) |
-| 3 | Editor-pill engine | Hybrid: rule-based + LLM polish |
-| 4 | Rabbit hole persistence | Persisted to SQLite from day one (v8 migration) |
-| 5 | Neutral palette hue | **OPEN** — needs answer below. Recommend cool blue-gray (h ≈ 215, s ≤ 4%). |
-| 6 | Pill speaker hues | **OPEN** — recommend collapse persona color to a small chip-icon, free hue for content signal (warning / suggestion / praise / observation). |
-
-Open items 5–6 are flagged in §1 and §3. Everything downstream can be drafted regardless.
+| 2 | Heatmap visual | Collapse all metrics to a single per-palette scale; multiple sea-adjacent palettes (deep-sea / sunrise / clear / earth) selectable per project |
+| 3 | Editor-pill engine | Hybrid: rule-based for mechanical, LLM for nuanced — *all phrased in Water's voice discipline* |
+| 4 | Rabbit hole persistence | SQLite on-device with a memory ceiling + auto-trim |
+| 5 | Neutral palette hue | **OpenCode-warm** — h ≈ 0–30, s ≤ 8% on substrates. Warmth comes from `s`, not `h`. |
+| 6 | Pill speaker hues | Persona collapses to a 12×12 chip-icon (glyph on persona-hued circle); pill outer hue freed for content signal. **Plus: every pill carries a near-imperceptible gradient animation.** |
+| 7 | Pill anchoring | **Precise span highlight required** — hover must light only the trigger phrase, not the paragraph. Mandates a robust anchor-recovery subsystem (see §C.6). |
+| 8 | Editor voice | Editor pills (rule-based and LLM) inherit `tone.toml` blacklist + speaker discipline. No "consider rewriting"; phrase as the Editor persona noticing craft. |
+| 9 | Logo concept | Three flowing arcs + wordmark, as drafted. Iterate during implementation. |
 
 ---
 
@@ -27,33 +28,33 @@ Open items 5–6 are flagged in §1 and §3. Everything downstream can be drafte
 
 ### A.1 Substrate ladder
 
-OpenCode's discipline is the *near-imperceptible* step between bg layers. Five stops, all in the cool blue-gray family. Light mode primary; dark mode mirrors (see A.4).
+OpenCode's discipline is the *near-imperceptible* step between bg layers. Five stops, all warm-neutral. Hue stays near 0 (red/gray) or 20–30 (sand/parchment) at extremely low saturation. The warmth is felt, not seen — putting these tokens against a true neutral, they read as paper.
 
 ```css
---water-bg-paper:    hsl(215, 12%, 99%);  /* main canvas; nearly white */
---water-bg-raised:   hsl(215, 10%, 97%);  /* cards, tiles, pills */
---water-bg-weak:     hsl(215,  8%, 94%);  /* hover state, secondary panels */
---water-bg-strong:   hsl(215, 14%, 12%);  /* nav rail bg, code blocks, inverted chips */
---water-bg-stronger: hsl(215, 14%,  8%);  /* dialog overlay scrim */
+--water-bg-paper:    hsl(  0, 20%, 99%);  /* main canvas; nearly white, faintest warm tint */
+--water-bg-raised:   hsl(  0,  8%, 97%);  /* cards, tiles, pills */
+--water-bg-weak:     hsl(  0,  8%, 94%);  /* hover state, secondary panels */
+--water-bg-strong:   hsl(  0,  5%, 12%);  /* nav rail bg, code blocks, inverted chips */
+--water-bg-stronger: hsl(  0,  6%,  8%);  /* dialog overlay scrim */
 ```
 
-The 99 → 97 → 94 step is the OpenCode trick: enough to register as elevation under a 1px hairline border, never enough to feel "panel-y". The hue (215) sits between azure and steel — reads as cool, never as cyan.
+The 99 → 97 → 94 step is the OpenCode trick: enough to register as elevation under a 1px hairline border, never enough to feel "panel-y". Tested against OpenCode's tokens (h=0, s=20% at 99% L) — same warmth, same near-zero saturation discipline.
 
 ### A.2 Hairlines + elevation
 
-Borders are the primary depth tool. Saturation barely above zero so they don't fight the substrate.
+Borders are the primary depth tool. Borders carry a *slightly* warmer hue (h=30, s=2%) than the substrate — a trick borrowed from OpenCode that gives them the faintest hint of pencil-line.
 
 ```css
---water-hairline:        hsl(215,  6%, 88%);   /* default 1px border */
---water-hairline-weak:   hsl(215,  6%, 92%);   /* whisper-line for divider rows */
+--water-hairline:        hsl( 30,  2%, 81%);   /* default 1px border */
+--water-hairline-weak:   hsl(  0,  1%, 85%);   /* whisper-line for divider rows */
 --water-elev-1:
-  0 1px 2px hsl(215, 18%, 12% / 0.05),
+  0 1px 2px hsl(  0,  5%, 12% / 0.05),
   0 0 0 1px var(--water-hairline);
 --water-elev-2:
-  0 4px 12px hsl(215, 18%, 12% / 0.08),
+  0 4px 12px hsl(  0,  5%, 12% / 0.08),
   0 0 0 1px var(--water-hairline);
 --water-elev-3:
-  0 12px 32px hsl(215, 18%, 12% / 0.14),
+  0 12px 32px hsl(  0,  5%, 12% / 0.14),
   0 0 0 1px var(--water-hairline);
 ```
 
@@ -62,62 +63,113 @@ Rule: **never combine elev shadow with a stronger background**. Pick depth or pi
 ### A.3 Foreground
 
 ```css
---water-fg-strong:  hsl(215, 18%, 10%);  /* titles, scene names, primary CTAs */
---water-fg-default: hsl(215, 10%, 24%);  /* body text */
---water-fg-muted:   hsl(215,  6%, 48%);  /* meta lines, secondary chips */
---water-fg-faint:   hsl(215,  4%, 68%);  /* placeholders, disabled, dividers */
+--water-fg-strong:  hsl(  0,  5%, 12%);  /* titles, scene names, primary CTAs */
+--water-fg-default: hsl(  0,  1%, 39%);  /* body text */
+--water-fg-muted:   hsl(  0,  1%, 55%);  /* meta lines, icon hue */
+--water-fg-faint:   hsl(  0,  3%, 78%);  /* placeholders, disabled, dividers */
 ```
 
-Text on `bg-strong` flips: use `fg-inverted: hsl(215, 12%, 96%)`.
+Text on `bg-strong` flips to `fg-inverted: hsl(0, 20%, 99%)`. Direct ports of OpenCode's foreground ladder.
 
 ### A.4 Dark mode
 
 ```css
---water-bg-paper:    hsl(215, 14%,  7%);
---water-bg-raised:   hsl(215, 14%, 10%);
---water-bg-weak:     hsl(215, 14%, 13%);
---water-bg-strong:   hsl(215, 12%, 90%);   /* inverted: bright chip on dark canvas */
---water-fg-default:  hsl(215,  8%, 78%);
---water-fg-muted:    hsl(215,  4%, 56%);
---water-fg-faint:    hsl(215,  3%, 36%);
+--water-bg-paper:    hsl(  0,  9%,  7%);
+--water-bg-raised:   hsl(  0,  6%, 10%);
+--water-bg-weak:     hsl(  0,  6%, 13%);
+--water-bg-strong:   hsl(  0, 15%, 94%);   /* inverted: bright chip on dark canvas */
+--water-fg-default:  hsl(  0,  4%, 71%);
+--water-fg-muted:    hsl(  0,  2%, 49%);
+--water-fg-faint:    hsl(  0,  3%, 28%);
 --water-elev-*:      none;                  /* glow carries depth in dark */
 ```
 
 Dark-mode glow stays — the existing pill fade-in + hue-tinted card backgrounds carry the depth that drop-shadows do in light mode.
 
-### A.5 The blue (signal color)
+### A.5 The signal — sea palettes
 
-A single deep-sea ramp drives every signal in the app:
+A single ramp drives every signal in the app, but the *ramp itself* is one of four sea-adjacent palettes the writer picks per project. All four ramps share the same step count (50–800 + glow), same role assignments, same visual weight — only the hue shifts. This keeps every component agnostic to palette choice.
+
+**A.5.a Deep-sea** (default) — ocean depth, blue-cyan.
 
 ```css
---water-deep-50:  hsl(208, 60%, 96%);   /* heatmap baseline */
---water-deep-100: hsl(208, 58%, 88%);
---water-deep-200: hsl(208, 56%, 75%);
---water-deep-300: hsl(208, 56%, 60%);
---water-deep-400: hsl(208, 60%, 46%);
---water-deep-500: hsl(208, 64%, 36%);   /* primary brand */
---water-deep-600: hsl(208, 68%, 26%);
---water-deep-700: hsl(208, 72%, 18%);
---water-deep-800: hsl(214, 80%, 11%);   /* deepest, abyss */
---water-deep-glow: hsl(196, 90%, 64%);  /* cyan accent for active glow */
+--water-sea-50:   hsl(208, 60%, 96%);
+--water-sea-100:  hsl(208, 58%, 88%);
+--water-sea-200:  hsl(208, 56%, 75%);
+--water-sea-300:  hsl(208, 56%, 60%);
+--water-sea-400:  hsl(208, 60%, 46%);
+--water-sea-500:  hsl(208, 64%, 36%);   /* primary */
+--water-sea-600:  hsl(208, 68%, 26%);
+--water-sea-700:  hsl(208, 72%, 18%);
+--water-sea-800:  hsl(214, 80%, 11%);   /* abyss */
+--water-sea-glow: hsl(196, 90%, 64%);   /* peak intensity, active outline */
 ```
 
-`--water-deep-500` is the brand color (logo stroke, primary buttons, active toggles, focused borders). `--water-deep-glow` is used **only** for the heatmap intensity peak and pill-active outline. Everything else stays in the 50–800 ramp.
+**A.5.b Sunrise** — horizon over water, warm coral-amber.
+
+```css
+--water-sea-50:   hsl( 24, 80%, 96%);
+--water-sea-100:  hsl( 22, 78%, 88%);
+--water-sea-200:  hsl( 20, 74%, 76%);
+--water-sea-300:  hsl( 18, 72%, 64%);
+--water-sea-400:  hsl( 14, 70%, 52%);
+--water-sea-500:  hsl( 10, 72%, 44%);
+--water-sea-600:  hsl(  6, 70%, 34%);
+--water-sea-700:  hsl(  2, 64%, 24%);
+--water-sea-800:  hsl(358, 60%, 14%);
+--water-sea-glow: hsl( 32, 96%, 68%);   /* gold sun-flash */
+```
+
+**A.5.c Clear** — forest-stream / iOS "Clear" icon translucency, pale green-aqua with high luminance.
+
+```css
+--water-sea-50:   hsl(176, 38%, 97%);
+--water-sea-100:  hsl(174, 38%, 90%);
+--water-sea-200:  hsl(172, 36%, 80%);
+--water-sea-300:  hsl(170, 34%, 68%);
+--water-sea-400:  hsl(168, 36%, 54%);
+--water-sea-500:  hsl(166, 40%, 42%);
+--water-sea-600:  hsl(164, 44%, 32%);
+--water-sea-700:  hsl(162, 48%, 22%);
+--water-sea-800:  hsl(160, 52%, 14%);
+--water-sea-glow: hsl(178, 80%, 72%);   /* pale crystal */
+```
+
+**A.5.d Earth** — moss, riverbank, peat — green-brown with warm undertone.
+
+```css
+--water-sea-50:   hsl( 84, 24%, 96%);
+--water-sea-100:  hsl( 82, 22%, 88%);
+--water-sea-200:  hsl( 80, 20%, 74%);
+--water-sea-300:  hsl( 78, 22%, 58%);
+--water-sea-400:  hsl( 76, 24%, 44%);
+--water-sea-500:  hsl( 74, 28%, 34%);
+--water-sea-600:  hsl( 70, 32%, 24%);
+--water-sea-700:  hsl( 66, 36%, 16%);
+--water-sea-800:  hsl( 60, 40%, 10%);
+--water-sea-glow: hsl( 96, 60%, 60%);   /* fresh moss */
+```
+
+**A.5.e Selection mechanism**
+
+Stored on the project (new column `project.palette TEXT NOT NULL DEFAULT 'deep'`). On project open, the renderer sets `[data-palette="deep|sunrise|clear|earth"]` on `<html>`; each variant supplies its own concrete `--water-sea-*` values via CSS attribute selector. Components never reference the variant directly — they reference `--water-sea-300`, etc., and the active palette resolves them.
+
+`--water-sea-500` is always the brand/primary; `--water-sea-glow` is always the peak. Logo, brand buttons, focused borders all use the active palette automatically.
 
 ### A.6 Replacing the existing hue tokens
 
-Current `--water-hue-*` tokens (mint, periwinkle, rose, peach, etc.) get retired or remapped:
+Current `--water-hue-*` tokens (mint, periwinkle, rose, peach, etc.) collapse into the sea-palette ramp. The mapping below is hue-agnostic — substitute `--water-sea-N` and the active palette decides the actual color.
 
 | Old token | Replacement |
 |---|---|
-| `--water-hue-flow` | `--water-deep-300` |
-| `--water-hue-coherence` | `--water-deep-400` |
-| `--water-hue-intensity` | `--water-deep-500` |
-| `--water-hue-pace` | `--water-deep-200` |
-| `--water-hue-valence-pos` | `--water-deep-100` (with `--water-deep-glow` for peak) |
-| `--water-hue-valence-neg` | `--water-deep-600` |
-| `--water-hue-drift` | `--water-deep-700` |
-| `--water-hue-muse` / `architect` / `editor` / `cartographer` / `chorus` | (see §3 — collapses to icon, hue freed for content signal) |
+| `--water-hue-flow` | `--water-sea-300` |
+| `--water-hue-coherence` | `--water-sea-400` |
+| `--water-hue-intensity` | `--water-sea-500` |
+| `--water-hue-pace` | `--water-sea-200` |
+| `--water-hue-valence-pos` | `--water-sea-100` (peak: `--water-sea-glow`) |
+| `--water-hue-valence-neg` | `--water-sea-600` |
+| `--water-hue-drift` | `--water-sea-700` |
+| `--water-hue-muse` / `architect` / `editor` / `cartographer` / `chorus` | (collapses to chip-icon; see §3) |
 | `--water-hue-character-1..6` | retained as small accent for character-card avatars only |
 
 ### A.7 Migration path
@@ -181,11 +233,12 @@ The pill engine is the heart of Water. The refinement preserves the architecture
 - **Persona color** is no longer the dominant signal. The speaker's identity moves to a small chip-icon at the left edge (12×12 round, persona-hued, with a 1-char glyph: E/A/D/C/H for Echo/Architect/Editor/Cartographer/Chorus, or the character's monogram for character speakers).
 - **Hue** is freed for *content signal*:
   - **observation** → no border tint, `bg-raised` (default state)
-  - **suggestion** → left-rail `--water-deep-300` (1.5px)
-  - **warning** → left-rail `--water-deep-600`
-  - **praise** → left-rail `--water-deep-glow` at 50% saturation (gentle, non-shouty)
+  - **suggestion** → left-rail `--water-sea-300` (1.5px)
+  - **warning** → left-rail `--water-sea-600`
+  - **praise** → left-rail `--water-sea-glow` at 50% saturation (gentle, non-shouty)
 - **Hover state** lifts elevation `elev-1` → `elev-2`, no scale transform (current scale 1.02 feels twitchy).
 - **Affordance hint** — a single chevron-down at the right edge appears on hover, signalling "click to deepen" (rabbit hole). Replaces the current hover line that occludes the pill.
+- **Living surface** — every pill carries a near-imperceptible gradient animation (see §C.5).
 
 ### C.2 What stays
 
@@ -216,9 +269,97 @@ The pill engine is the heart of Water. The refinement preserves the architecture
 
 Left-rail color absent on observation; rendered for suggestion/warning/praise.
 
-### C.5 Open decision
+### C.5 Living surface — subtle gradient animation
 
-Confirm the persona-collapse before implementation: do you want persona color *eliminated entirely* (chip-icon goes neutral, glyph carries identity), or *retained inside the chip* (glyph on persona-hued circle)?
+Every pill, including editor pills and rabbit-hole children, gets a very-low-amplitude gradient animation on its background. The motion is slow enough to feel ambient — the writer notices it only on second glance.
+
+```css
+@keyframes water-pill-breathe {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.water-pill {
+  background:
+    linear-gradient(
+      110deg,
+      var(--water-bg-raised) 0%,
+      color-mix(in oklch, var(--water-bg-raised), var(--water-sea-50) 35%) 50%,
+      var(--water-bg-raised) 100%
+    );
+  background-size: 220% 100%;
+  animation: water-pill-breathe 14s var(--water-ease-in-out-water) infinite;
+}
+```
+
+**Discipline:**
+- Amplitude is small (background-color moves only ~3–5% toward `--water-sea-50`).
+- Period is 14s — slow enough to be ambient, not distracting.
+- `prefers-reduced-motion: reduce` disables it entirely.
+- Active pill (hovered, focused, or carrying a rabbit-hole thread the user opened) gets a slightly stronger animation (12s period, ~7% amplitude) so it visually breathes more — the user's attention "wakes" the pill.
+
+The animation reuses `--water-sea-50` from the active palette, so a sunrise project breathes amber, a clear project breathes pale aqua, etc.
+
+### C.6 Hover-highlight subsystem (precise anchor recovery)
+
+**Requirement:** hovering a pill highlights *only* the text span that triggered the pill — never the whole paragraph — and the highlight lands on the correct text *every time*, even after the writer has edited.
+
+#### C.6.a Pill anchor payload
+
+Every pill row gains four anchor fields (already partially present; this formalizes them):
+
+```sql
+ALTER TABLE pinned_pill ADD COLUMN anchor_block_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE pinned_pill ADD COLUMN anchor_snippet TEXT NOT NULL DEFAULT '';
+-- The 3–10 word exact phrase from the manuscript at trigger time.
+ALTER TABLE pinned_pill ADD COLUMN anchor_block_hash TEXT NOT NULL DEFAULT '';
+-- First 80 chars of the block, normalized (lowercase, single-space). Lets us
+-- locate the block if its block_id has changed (paragraph split/merge).
+ALTER TABLE pinned_pill ADD COLUMN anchor_offset_hint INTEGER NOT NULL DEFAULT 0;
+-- Character offset of the snippet within the block at trigger time.
+-- Used only as a search starting-point; not authoritative.
+```
+
+The same four fields apply to rabbit-hole thoughts and editor pills.
+
+#### C.6.b Resolution algorithm
+
+On hover, the renderer resolves the anchor in this order:
+
+1. **Block-id + snippet substring** — the cheap, common case. Find the block; locate the snippet within it; highlight that exact range.
+2. **Block-hash + snippet substring** — if block-id is missing or its content no longer contains the snippet, search blocks whose first-80-char hash matches. Locate snippet there.
+3. **Snippet-only fuzzy** — if both fail, run a tolerant search across all blocks for the snippet (allowing ≤2 character-level edits, e.g., a typo correction the writer made since trigger time). Highlight the first match.
+4. **Fallback to block + visual marker** — if even fuzzy fails, fall back to highlighting the *block* (paragraph) the block_id pointed to, AND show a small "anchor drifted" pip on the pill so the writer knows the highlight is approximate. They can dismiss and the pill clears itself.
+
+#### C.6.c Visual
+
+```css
+.water-trigger-highlight {
+  background: color-mix(in oklch, var(--water-sea-200), transparent 70%);
+  border-bottom: 1.5px solid var(--water-sea-400);
+  border-radius: 2px;
+  padding: 0 1px;
+  transition: background var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+```
+
+The highlight uses the active palette so a sunrise project lights triggers in amber, a clear project in aqua. Subtle but legible.
+
+#### C.6.d Implementation notes
+
+- Built as a ProseMirror decoration plugin (port the pattern from (scrubbed-project)'s `setHighlightedParagraph`, scoped to a character range instead of a node range).
+- The plugin exposes a single transaction-meta key: `setTriggerHighlight({ blockId, start, end })`. Hover handler computes the range via the resolver, dispatches a transaction with that meta. Plugin applies decoration.
+- On pointer-leave or scroll-away, dispatch a clearing transaction.
+- Re-resolves on every hover (cheap) so anchors that drift between hovers stay correct.
+
+#### C.6.e Test contract
+
+Anchor resolution is unit-tested with a battery covering: identity hit, paragraph split, paragraph merge, typo correction, partial deletion, full deletion. The fallback path is tested for visual cleanliness (no flicker, no double-highlight).
+
+### C.7 Open decision (closed)
+
+Persona color is retained *inside* the chip backing (glyph on persona-hued circle), not eliminated. Hue outside the chip is freed for content signal.
 
 ---
 
@@ -268,6 +409,24 @@ A new task prompt `rabbit_fan_4.toml` produces exactly four siblings:
 
 Each click = one LLM call generating 4 messages, ~600 input tokens (parent + scene + sheet + arc summary), ~400 output. At Sonnet 4.6 rates that's ~$0.005/click. A long session of 30 clicks = $0.15. Wire into the existing `LlmBudget` per-session cap (default 20k input / 5k output → raise to 40k input / 15k output to make space for rabbit-hole sessions).
 
+### D.5.a Memory ceiling + auto-trim
+
+The tree lives on-device (SQLite) but with a bounded footprint so it doesn't grow unbounded for prolific writers.
+
+**Hard caps (per project, total):**
+- 5,000 `rabbit_thought` rows.
+- 25 MB of `message` text (sum of all messages).
+
+**Trim policy (runs on app close + once at startup):**
+1. Never trim a thought with `resonance = 1`, nor any of its ancestors. Resonant threads are sacred.
+2. Among non-resonant thoughts, prefer trimming the *oldest leaves* (no children) first.
+3. If still over the cap after trimming all non-resonant leaves, trim non-resonant interior nodes oldest-first. Reparent any orphaned children to the trimmed node's parent (preserving the depth chain visually, even if context is lost).
+4. Log a `trim_event` row with count + freed-bytes so the writer can see if their resonance-marking habits are losing them history.
+
+A user-facing setting (`settings.rabbit_hole_ceiling`) lets the writer raise or lower the cap. Default 5,000 / 25MB; minimum 500 / 2MB; maximum 50,000 / 250MB.
+
+The auto-trim runs in a background task with a single SQLite write transaction, no UI blocking.
+
 ### D.6 Rendering
 
 Reuse the existing pill components inside the deepen panel — Bouquet → DeepenPanel sharing internals. Breadcrumb is a horizontal scroller; each crumb shows the speaker chip + truncated message + depth.
@@ -283,6 +442,8 @@ Marking a child as resonant doesn't change generation immediately. It tags the t
 ### E.1 Why a separate track
 
 The pill engine is *generative*. Editor pills are *diagnostic*. They surface mechanical and stylistic issues that the writer can fix or dismiss. They're sticky (don't disappear until acted on) and rule-based first, LLM-light second.
+
+**Critical constraint — voice discipline.** Editor pills must keep the writer inside their universe. They never sound like a tooltip from a word processor; they sound like the Editor persona doing its job. This applies to both rule-based and LLM-generated diagnostics. See §E.7 for the voice rules.
 
 ### E.2 Rule-based layer (Rust, free, instant)
 
@@ -348,6 +509,38 @@ The `text_snippet` + `content_hash` columns mirror (scrubbed-project)'s two-laye
 ### E.6 Why Editor not a new speaker
 
 The existing Editor persona is the natural home for diagnostics. We extend its scope (currently editorial craft commentary) to include the rule-based diagnostics. The persona prompt is updated to acknowledge both modes.
+
+### E.7 Voice discipline (the editor stays in the universe)
+
+Rule-based pills are template-string outputs — there's a temptation to write tooltip prose. We resist.
+
+**Rules** (these inherit from `tone.toml`'s blacklist regex and add editor-specific clauses):
+
+- ❌ Never: "Consider rewriting", "Try using", "You should", "This is too...", "Use active voice", "Maybe rephrase as".
+- ✅ Always: present-tense observation in the Editor's voice, ≤ 12 words, no second-person directive.
+
+**Rule → message templates** (each rule has 3–5 phrasings, picked round-robin to avoid repetition fatigue):
+
+| Rule | Old "tooltip" phrasing (banned) | New Editor phrasing |
+|---|---|---|
+| `passive_voice` | "Consider using active voice." | "the verb is asleep here." |
+| `passive_voice` | (alt) | "this sentence is being acted upon." |
+| `weak_verb` | "Replace 'was' with a stronger verb." | "'was' is doing thin work." |
+| `adverb_density` | "Reduce adverbs in this paragraph." | "the prose is over-explaining." |
+| `adverb_density` | (alt) | "too many -lys for one breath." |
+| `repetition` | "You've repeated 'just' 4 times." | "'just' is showing up a lot. four times in this paragraph." |
+| `dialog_tag_overuse` | "Avoid 'said quickly'." | "'quickly' is doing the verb's job." |
+| `spelling` | "Possible misspelling: 'wierd'." | "weird, not wierd." |
+| `common_mistake` | "Use 'there is' not 'their is'." | "'their is' wants to be 'there is'." |
+| `sentence_length_variance` | "Vary sentence length for rhythm." | "the cadence is metronomic right now." |
+
+Each templated message goes through the same blacklist regex check as generative pills before surfacing. A regex hit means the template is broken — we ship without it rather than past it.
+
+**LLM polish prompt** inherits the full Editor persona prompt (including its "won't do" clause from §F.4) and the `tone.toml` clauses. The polish output is treated identically to a generative Editor pill — no special-casing for "editorial" tone.
+
+**Suggestion field** (when applicable, e.g., spelling correction): rendered separately from the message, as a small inline replacement chip. Avoids stuffing the directive into the Editor's voice.
+
+The principle: the writer should feel the Editor sitting at their shoulder, *not* a grammar bot interrupting.
 
 ---
 
@@ -500,11 +693,19 @@ Each phase is a commit-and-ship boundary. Earlier phases unlock later phases.
 
 ---
 
-## 9. Open questions for redline
+## 9. Resolved questions (v2)
 
-1. **Neutral hue (h=215 vs 0 vs custom)** — confirm cool blue-gray substrate or propose alternative.
-2. **Persona color in chip** — eliminate entirely, or retain inside chip backing?
-3. **Editor pills: separate tab vs inline-only** — current spec has both; one might suffice.
-4. **Rabbit hole panel: side-slide vs popover** — side-slide preserves manuscript context; popover is cheaper to build.
-5. **Resonance signal scope** — should resonance picks leak across scenes (writer-wide voice preference) or stay scene-scoped?
-6. **Logo concept** — three flowing arcs okay, or should I sketch 2-3 alternatives before committing?
+| # | Question | Resolution |
+|---|---|---|
+| 1 | Neutral hue | OpenCode-warm (h=0–30, s ≤ 8%) |
+| 2 | Persona color in chip | Retained inside chip backing |
+| 3 | Editor pills: separate tab vs inline-only | **Both** — inline underline + diagnostics tab |
+| 4 | Rabbit hole panel | Side-slide (preserves manuscript context) |
+| 5 | Resonance scope | Scene-scoped by default; project-wide opt-in setting `settings.resonance_scope = "scene" \| "project"` |
+| 6 | Logo concept | Three flowing arcs as drafted; iterate at 18px before committing |
+
+## 10. Still open (small)
+
+- Heatmap palette switcher UI — chip in settings, or in-canvas chip near the existing metric picker? (Recommend settings; the canvas chip would clutter.)
+- "Anchor drifted" pip color — match content-signal warning hue, or use a neutral gray? (Recommend neutral; not the writer's fault.)
+- Rabbit hole "back to canvas" gesture — Esc or a back button? (Recommend Esc with button as visual hint.)
