@@ -359,8 +359,37 @@ body {
   to   { transform: translateX(-33.33%); }
 }
 
+/* Parallax-second-layer ribbon drift, slightly slower for an
+   organic out-of-phase feel against the primary drift. */
+@keyframes water-ribbon-drift-slow {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-33.33%); }
+}
+
+/* Vertical wobble on the inner ribbon group — slow, low amplitude.
+   Independent of the conveyor-belt translateX so the ribbon reads
+   as living motion, not mechanical sliding. */
+@keyframes water-ribbon-wobble {
+  0%   { transform: translateY(0); }
+  25%  { transform: translateY(12px); }
+  50%  { transform: translateY(-8px); }
+  75%  { transform: translateY(14px); }
+  100% { transform: translateY(0); }
+}
+
+/* Brightness shimmer — fades the layer's overall opacity in and
+   out very slowly. Combined with the drift and wobble, the ribbon
+   reads as 3D shimmering water, not a tiled image. */
+@keyframes water-ribbon-shimmer {
+  0%, 100% { opacity: 1; }
+  33%      { opacity: 0.78; }
+  66%      { opacity: 0.92; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  [data-testid="water-ribbon"] svg {
+  [data-testid="water-ribbon"] svg,
+  [data-testid="water-ribbon"] g,
+  [data-testid="canvas-flow-ribbon"] g {
     animation: none !important;
   }
 }
