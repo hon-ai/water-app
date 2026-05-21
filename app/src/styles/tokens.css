@@ -1,173 +1,245 @@
 @import "tailwindcss";
 
 /* =====================================================================
-   Water design tokens — placeholder values that compile and render
-   correctly. Final shades are pinned in M7 polish.
+   Water design tokens — UX Spec v2.
+   Substrate: OpenCode-warm (h≈0–30, s≤8%). Signal: deep-sea-blue ramp
+   by default, switchable per project via [data-palette].
    ===================================================================== */
 
 :root {
   color-scheme: light dark;
 
-  /* Substrate — cool-gray paper. Earlier warm cream (#fbfaf7 / #f5f3ee)
-     read as off-white-flat; the cool variant carries more depth against
-     pastel hues and lets the elevation tokens below actually register. */
-  --water-bg-paper:      #f4f4f6;   /* main canvas — cool light gray */
-  --water-bg-canvas:     #ecedef;   /* one step darker for sidebars/chips */
-  --water-fg-default:    #161a1f;
-  --water-fg-muted:      #5a6168;
-  --water-fg-faint:      #9aa0a6;
+  /* ───────────────────── Substrate (light) ─────────────────────
+     Five-stop ladder. Hue near 0/30 at near-zero saturation so the
+     warmth is felt, not seen. Ported from OpenCode custom.css. */
+  --water-bg-paper:    hsl(  0, 20%, 99%);  /* main canvas — paper */
+  --water-bg-raised:   hsl(  0,  8%, 97%);  /* cards, tiles, pills */
+  --water-bg-canvas:   hsl(  0,  8%, 97%);  /* legacy alias for raised */
+  --water-bg-weak:     hsl(  0,  8%, 94%);  /* hover, secondary panels */
+  --water-bg-strong:   hsl(  0,  5%, 12%);  /* inverted chips, code */
+  --water-bg-stronger: hsl(  0,  6%,  8%);  /* dialog scrim */
+  --water-fg-strong:   hsl(  0,  5%, 12%);
+  --water-fg-default:  hsl(  0,  1%, 39%);
+  --water-fg-muted:    hsl(  0,  1%, 55%);
+  --water-fg-faint:    hsl(  0,  3%, 78%);
+  --water-fg-inverted: hsl(  0, 20%, 99%);
 
-  /* Elevation — light-mode soft drop-shadows for tiles, cards, popovers.
-     Dark-mode overrides below disable elevation (glow shadows already
-     carry depth there). Use sparingly: cards = elev-1, popovers = elev-2,
-     dialogs = elev-3. */
+  --water-hairline:      hsl( 30,  2%, 81%);
+  --water-hairline-weak: hsl(  0,  1%, 85%);
+
+  /* ─────────────────── Elevation (light only) ───────────────────
+     Borders carry depth; shadows reinforce. Dark-mode disables both. */
   --water-elev-1:
-    0 1px 2px color-mix(in srgb, #1a2030 7%, transparent),
-    0 0 0 1px color-mix(in srgb, #1a2030 4%, transparent);
+    0 1px 2px hsl(0, 5%, 12% / 0.05),
+    0 0 0 1px var(--water-hairline);
   --water-elev-2:
-    0 4px 12px color-mix(in srgb, #1a2030 10%, transparent),
-    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
+    0 4px 12px hsl(0, 5%, 12% / 0.08),
+    0 0 0 1px var(--water-hairline);
   --water-elev-3:
-    0 12px 32px color-mix(in srgb, #1a2030 16%, transparent),
-    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
+    0 12px 32px hsl(0, 5%, 12% / 0.14),
+    0 0 0 1px var(--water-hairline);
 
-  /* Raised-card surface — slightly lighter than canvas so cards visually
-     "float" above the surrounding gray. Used by tile / card components. */
-  --water-bg-raised:     #fafafb;
+  /* ─────────────────── Sea palette — default (deep) ───────────────────
+     One ramp drives every signal. Components reference --water-sea-N;
+     [data-palette="sunrise|clear|earth"] below override these to swap
+     the active palette without touching component code. */
+  --water-sea-50:   hsl(208, 60%, 96%);
+  --water-sea-100:  hsl(208, 58%, 88%);
+  --water-sea-200:  hsl(208, 56%, 75%);
+  --water-sea-300:  hsl(208, 56%, 60%);
+  --water-sea-400:  hsl(208, 60%, 46%);
+  --water-sea-500:  hsl(208, 64%, 36%);  /* brand / primary */
+  --water-sea-600:  hsl(208, 68%, 26%);
+  --water-sea-700:  hsl(208, 72%, 18%);
+  --water-sea-800:  hsl(214, 80%, 11%);  /* abyss */
+  --water-sea-glow: hsl(196, 90%, 64%);  /* peak intensity, active outline */
 
-  /* Glow — semantic */
-  --water-hue-flow:           #b8e4d9;   /* mint-cyan */
-  --water-hue-coherence:      #c8c5ea;   /* periwinkle */
-  --water-hue-intensity:      #e6b5b5;   /* dusk-rose */
-  --water-hue-valence-pos:    #f1c8a3;   /* peach */
-  --water-hue-valence-neg:    #d9d2ec;   /* icy-lavender */
-  --water-hue-pace:           #efe6c4;   /* warm vanilla */
-  --water-hue-drift:           #e0a59a;  /* dim coral */
+  /* ─────────────────── Legacy aliases (M1–M6) ───────────────────
+     Old hue tokens now alias the sea palette so existing components
+     keep compiling during the v2 visual migration. To be removed once
+     all references are refactored to --water-sea-*. */
+  --water-hue-flow:        var(--water-sea-300);
+  --water-hue-coherence:   var(--water-sea-400);
+  --water-hue-intensity:   var(--water-sea-500);
+  --water-hue-pace:        var(--water-sea-200);
+  --water-hue-valence-pos: var(--water-sea-100);
+  --water-hue-valence-neg: var(--water-sea-600);
+  --water-hue-drift:       var(--water-sea-700);
 
-  --water-hue-muse:           #efc9bb;   /* Echo: pale rose-gold */
-  --water-hue-architect:      #c5d4bd;   /* Architect: quiet sage */
-  --water-hue-editor:          #cbc4d8;  /* Editor: lilac-grey */
-  --water-hue-cartographer:   #e0c397;   /* Cartographer: dune amber */
-  --water-hue-chorus:          #e8e3da;  /* Chorus: pearl */
+  /* Persona hues — kept as the chip-icon backing only (no longer the
+     dominant pill color). Final shades pinned during Phase 3. */
+  --water-hue-muse:         #efc9bb;   /* Echo */
+  --water-hue-architect:    #c5d4bd;   /* Architect */
+  --water-hue-editor:       #cbc4d8;   /* Editor */
+  --water-hue-cartographer: #e0c397;   /* Cartographer */
+  --water-hue-chorus:       #e8e3da;   /* Chorus */
 
-  /* Character voice palette — round-robin assigned at character create time.
-     Final shades pinned in M7. Distinct from persona hues. */
-  --water-hue-character-1: #c5d4e8;  /* soft periwinkle */
-  --water-hue-character-2: #e8c5d4;  /* soft rose */
-  --water-hue-character-3: #d4e8c5;  /* soft sage */
-  --water-hue-character-4: #e8d4c5;  /* soft sand */
-  --water-hue-character-5: #c5e8d4;  /* soft mint */
-  --water-hue-character-6: #d4c5e8;  /* soft lilac */
-  /* Generic character hue for surfaces that need to indicate
-     "character" without a specific assigned hue (M5 heatmap presence
-     track, future shared affordances). */
+  /* Character hue palette — round-robin assigned per character at
+     create time. Used inside character chip-icons and avatar dots. */
+  --water-hue-character-1: #c5d4e8;
+  --water-hue-character-2: #e8c5d4;
+  --water-hue-character-3: #d4e8c5;
+  --water-hue-character-4: #e8d4c5;
+  --water-hue-character-5: #c5e8d4;
+  --water-hue-character-6: #d4c5e8;
   --water-hue-character-default: var(--water-hue-character-1);
 
-  /* Radii — aggressive Notion/Apple-fluid */
+  /* ───────────────────── Radii ───────────────────── */
   --water-r-8:   8px;
   --water-r-16: 16px;
   --water-r-24: 24px;
   --water-r-32: 32px;
 
-  /* Typography scale */
+  /* ─────────────────── Typography ─────────────────── */
   --water-fs-display: 28px; --water-lh-display: 36px;
   --water-fs-title:   20px; --water-lh-title:   28px;
   --water-fs-body:    16px; --water-lh-body:    26px;
   --water-fs-ui:      14px; --water-lh-ui:      20px;
   --water-fs-meta:    12px; --water-lh-meta:    18px;
 
-  /* Motion */
-  --water-ease-out-soft:    cubic-bezier(0.16, 1, 0.3, 1);
+  /* ───────────────────── Motion ───────────────────── */
+  --water-ease-out-soft:     cubic-bezier(0.16, 1, 0.3, 1);
   --water-ease-in-out-water: cubic-bezier(0.45, 0, 0.15, 1);
   --water-dur-tiny:   120ms;
   --water-dur-small:  240ms;
   --water-dur-medium: 380ms;
   --water-dur-long:   720ms;
 
-  /* Chrome layout */
-  --water-rail-w: 56px;
-  --water-scenes-w: 280px;
+  /* ───────────────────── Chrome ───────────────────── */
+  --water-rail-w:     56px;
+  --water-scenes-w:  280px;
   --water-canvas-max: 720px;
 
-  /* Z-stack */
-  --water-z-sheet: 50;
+  /* ───────────────────── Z-stack ───────────────────── */
+  --water-z-sheet:   50;
   --water-z-tooltip: 60;
 
-  /* Typography stack */
-  --water-font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  /* ─────────────────── Type stack ─────────────────── */
+  --water-font-sans:  "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --water-font-serif: "IBM Plex Serif", "Iowan Old Style", Georgia, serif;
-  --water-font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --water-font-mono:  "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
 }
+
+/* =====================================================================
+   Palette variants — switch by setting [data-palette] on <html>.
+   Each block only overrides --water-sea-*; substrate stays warm-neutral
+   so the writer's paper feels the same across palettes.
+   ===================================================================== */
+
+[data-palette="sunrise"] {
+  --water-sea-50:   hsl( 24, 80%, 96%);
+  --water-sea-100:  hsl( 22, 78%, 88%);
+  --water-sea-200:  hsl( 20, 74%, 76%);
+  --water-sea-300:  hsl( 18, 72%, 64%);
+  --water-sea-400:  hsl( 14, 70%, 52%);
+  --water-sea-500:  hsl( 10, 72%, 44%);
+  --water-sea-600:  hsl(  6, 70%, 34%);
+  --water-sea-700:  hsl(  2, 64%, 24%);
+  --water-sea-800:  hsl(358, 60%, 14%);
+  --water-sea-glow: hsl( 32, 96%, 68%);
+}
+
+[data-palette="clear"] {
+  --water-sea-50:   hsl(176, 38%, 97%);
+  --water-sea-100:  hsl(174, 38%, 90%);
+  --water-sea-200:  hsl(172, 36%, 80%);
+  --water-sea-300:  hsl(170, 34%, 68%);
+  --water-sea-400:  hsl(168, 36%, 54%);
+  --water-sea-500:  hsl(166, 40%, 42%);
+  --water-sea-600:  hsl(164, 44%, 32%);
+  --water-sea-700:  hsl(162, 48%, 22%);
+  --water-sea-800:  hsl(160, 52%, 14%);
+  --water-sea-glow: hsl(178, 80%, 72%);
+}
+
+[data-palette="earth"] {
+  --water-sea-50:   hsl( 84, 24%, 96%);
+  --water-sea-100:  hsl( 82, 22%, 88%);
+  --water-sea-200:  hsl( 80, 20%, 74%);
+  --water-sea-300:  hsl( 78, 22%, 58%);
+  --water-sea-400:  hsl( 76, 24%, 44%);
+  --water-sea-500:  hsl( 74, 28%, 34%);
+  --water-sea-600:  hsl( 70, 32%, 24%);
+  --water-sea-700:  hsl( 66, 36%, 16%);
+  --water-sea-800:  hsl( 60, 40%, 10%);
+  --water-sea-glow: hsl( 96, 60%, 60%);
+}
+
+/* =====================================================================
+   Dark mode (system + manual). Substrate inverts; sea palette stays
+   the same hue but components rely on bg-strong/bg-raised flipping.
+   ===================================================================== */
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Liminal glowing space — glow shadows already give depth here. */
-    --water-bg-paper:      #0d0e12;
-    --water-bg-canvas:     #0a0b0e;
-    --water-bg-raised:     #14161b;
-    --water-fg-default:    #ecedef;
-    --water-fg-muted:      #9aa0a6;
-    --water-fg-faint:      #6a6f76;
+    --water-bg-paper:    hsl(  0,  9%,  7%);
+    --water-bg-raised:   hsl(  0,  6%, 10%);
+    --water-bg-canvas:   hsl(  0,  6%, 10%);
+    --water-bg-weak:     hsl(  0,  6%, 13%);
+    --water-bg-strong:   hsl(  0, 15%, 94%);
+    --water-bg-stronger: hsl(  0, 15%, 97%);
+    --water-fg-strong:   hsl(  0, 15%, 94%);
+    --water-fg-default:  hsl(  0,  4%, 71%);
+    --water-fg-muted:    hsl(  0,  2%, 49%);
+    --water-fg-faint:    hsl(  0,  3%, 28%);
+    --water-fg-inverted: hsl(  0,  9%,  7%);
+    --water-hairline:      hsl(  0,  3%, 28%);
+    --water-hairline-weak: hsl(  0,  4%, 23%);
     --water-elev-1: none;
     --water-elev-2: none;
     --water-elev-3: none;
-
-    /* Glow chroma boosted ~15% */
-    --water-hue-flow:           #9ce5d1;
-    --water-hue-coherence:      #b8b5ee;
-    --water-hue-intensity:      #f0b1b1;
-    --water-hue-valence-pos:    #f7c89e;
-    --water-hue-valence-neg:    #d6cef0;
-    --water-hue-pace:           #f6e8b8;
-    --water-hue-drift:          #ef9b8d;
-
-    --water-hue-muse:           #f5c8b7;
-    --water-hue-architect:      #b4d5a5;
-    --water-hue-editor:          #cbc1e3;
-    --water-hue-cartographer:    #efc592;
-    --water-hue-chorus:          #f1ece1;
-
-    /* Character voice palette — dark-mode (placeholder, M7 pin). */
-    --water-hue-character-1: #c5d4e8;
-    --water-hue-character-2: #e8c5d4;
-    --water-hue-character-3: #d4e8c5;
-    --water-hue-character-4: #e8d4c5;
-    --water-hue-character-5: #c5e8d4;
-    --water-hue-character-6: #d4c5e8;
   }
 }
 
 [data-theme="light"] {
   color-scheme: light;
-  --water-bg-paper:    #f4f4f6;
-  --water-bg-canvas:   #ecedef;
-  --water-bg-raised:   #fafafb;
-  --water-fg-default:  #161a1f;
-  --water-fg-muted:    #5a6168;
-  --water-fg-faint:    #9aa0a6;
+  --water-bg-paper:    hsl(  0, 20%, 99%);
+  --water-bg-raised:   hsl(  0,  8%, 97%);
+  --water-bg-canvas:   hsl(  0,  8%, 97%);
+  --water-bg-weak:     hsl(  0,  8%, 94%);
+  --water-bg-strong:   hsl(  0,  5%, 12%);
+  --water-bg-stronger: hsl(  0,  6%,  8%);
+  --water-fg-strong:   hsl(  0,  5%, 12%);
+  --water-fg-default:  hsl(  0,  1%, 39%);
+  --water-fg-muted:    hsl(  0,  1%, 55%);
+  --water-fg-faint:    hsl(  0,  3%, 78%);
+  --water-fg-inverted: hsl(  0, 20%, 99%);
+  --water-hairline:      hsl( 30,  2%, 81%);
+  --water-hairline-weak: hsl(  0,  1%, 85%);
   --water-elev-1:
-    0 1px 2px color-mix(in srgb, #1a2030 7%, transparent),
-    0 0 0 1px color-mix(in srgb, #1a2030 4%, transparent);
+    0 1px 2px hsl(0, 5%, 12% / 0.05),
+    0 0 0 1px var(--water-hairline);
   --water-elev-2:
-    0 4px 12px color-mix(in srgb, #1a2030 10%, transparent),
-    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
+    0 4px 12px hsl(0, 5%, 12% / 0.08),
+    0 0 0 1px var(--water-hairline);
   --water-elev-3:
-    0 12px 32px color-mix(in srgb, #1a2030 16%, transparent),
-    0 0 0 1px color-mix(in srgb, #1a2030 6%, transparent);
+    0 12px 32px hsl(0, 5%, 12% / 0.14),
+    0 0 0 1px var(--water-hairline);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --water-bg-paper:    #0d0e12;
-  --water-bg-canvas:   #0a0b0e;
-  --water-bg-raised:   #14161b;
-  --water-fg-default:  #ecedef;
-  --water-fg-muted:    #9aa0a6;
-  --water-fg-faint:    #6a6f76;
+  --water-bg-paper:    hsl(  0,  9%,  7%);
+  --water-bg-raised:   hsl(  0,  6%, 10%);
+  --water-bg-canvas:   hsl(  0,  6%, 10%);
+  --water-bg-weak:     hsl(  0,  6%, 13%);
+  --water-bg-strong:   hsl(  0, 15%, 94%);
+  --water-bg-stronger: hsl(  0, 15%, 97%);
+  --water-fg-strong:   hsl(  0, 15%, 94%);
+  --water-fg-default:  hsl(  0,  4%, 71%);
+  --water-fg-muted:    hsl(  0,  2%, 49%);
+  --water-fg-faint:    hsl(  0,  3%, 28%);
+  --water-fg-inverted: hsl(  0,  9%,  7%);
+  --water-hairline:      hsl(  0,  3%, 28%);
+  --water-hairline-weak: hsl(  0,  4%, 23%);
   --water-elev-1: none;
   --water-elev-2: none;
   --water-elev-3: none;
 }
+
+/* =====================================================================
+   Motion guards.
+   ===================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
   :root {
@@ -177,6 +249,10 @@
     --water-dur-long:   1ms;
   }
 }
+
+/* =====================================================================
+   Body baseline + ambient animations.
+   ===================================================================== */
 
 body {
   background: var(--water-bg-paper);
@@ -197,4 +273,53 @@ body {
 @keyframes water-surface-fade {
   from { opacity: 0; transform: translateX(6px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Pill breathe — very-low-amplitude background gradient drift.
+   Components opt in via the .water-pill class (or by setting the
+   animation directly). Amplitude tuned to be ambient, not noticed
+   on first glance. Disabled under prefers-reduced-motion. */
+@keyframes water-pill-breathe {
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+.water-pill {
+  background:
+    linear-gradient(
+      110deg,
+      var(--water-bg-raised) 0%,
+      color-mix(in oklch, var(--water-bg-raised), var(--water-sea-50) 35%) 50%,
+      var(--water-bg-raised) 100%
+    );
+  background-size: 220% 100%;
+  animation: water-pill-breathe 14s var(--water-ease-in-out-water) infinite;
+}
+
+/* Active state: hovered, focused, or rabbit-hole-open. Slightly
+   stronger amplitude + faster period so the user's attention "wakes"
+   the pill. */
+.water-pill[data-active="true"],
+.water-pill:hover,
+.water-pill:focus-within {
+  background:
+    linear-gradient(
+      110deg,
+      var(--water-bg-raised) 0%,
+      color-mix(in oklch, var(--water-bg-raised), var(--water-sea-100) 30%) 50%,
+      var(--water-bg-raised) 100%
+    );
+  background-size: 220% 100%;
+  animation-duration: 12s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .water-pill,
+  .water-pill[data-active="true"],
+  .water-pill:hover,
+  .water-pill:focus-within {
+    animation: none;
+    background-position: 0% 50%;
+  }
 }
