@@ -1,5 +1,10 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer } from "react";
 import type { CSSProperties } from "react";
+import {
+  getRibbonDisplayed,
+  setRibbonTarget,
+  subscribeRibbon,
+} from "./ribbonState";
 
 export interface Anchor {
   /** Stable id used to ease this anchor's displayed position as the
@@ -31,8 +36,6 @@ const KERNEL_SIGMA = 200;
 /** Touch-radius (px) for the strand to "touch" a scene — the ribbon's
  *  half-width gets local bumps so it visibly reaches each scene. */
 const TOUCH_RADIUS = 60;
-/** Anchor-easing factor per rAF frame. ~0.05 ≈ 1s convergence at 60fps. */
-const EASE = 0.05;
 
 function prand(i: number, salt: number): number {
   const x = Math.sin(i * 9301 + salt * 49297) * 233280;
@@ -78,13 +81,15 @@ function widthBump(
   let bump = 0;
   const sigma2 = 2 * (KERNEL_SIGMA * 0.6) * (KERNEL_SIGMA * 0.6);
   for (const a of anchors) {
+    const weight = a.weight ?? 1;
+    if (weight <= 0) continue;
     const dx = x - a.x;
     const dy = Math.abs(a.y - centerY);
     // Desired thickness so the half-extent reaches the anchor minus
     // TOUCH_RADIUS slack.
     const need = Math.max(0, dy - TOUCH_RADIUS);
     if (need <= 0) continue;
-    const f = Math.exp(-(dx * dx) / sigma2);
+    const f = Math.exp(-(dx * dx) / sigma2) * weight;
     bump = Math.max(bump, 2 * need * f);
   }
   return bump;
@@ -112,14 +117,13 @@ interface StrandShape {
   }[];
 }
 
-/** Single ribbon strand. Centerline is kernel-smoothed Y over every
- *  anchor — one curve that bends gently through scenes. Width gets a
- *  local bump near each anchor (widthBump) so the strand visibly
- *  touches each scene even when the smoothed centerline doesn't
- *  pass through its center. No lanes, no fork divergence: a single
- *  flowing ribbon that adapts its thickness to embrace scene
- *  clusters where it needs to. */
-function buildMainStrand(
+/** Unified single-ribbon strand. Always uses kernel smoothing for the
+ *  centerline; noise amplitude blends with `ambientFactor` — the
+ *  inverse of total anchor weight. When scenes are present, the
+ *  scene skeleton dominates and noise is subordinate; when anchors
+ *  fade out (surface change, scene deleted), ambient grows to
+ *  full wave-mode amplitude. One shape, no mode switch. */
+function buildStrand(
   anchors: Anchor[],
   parentWidth: number,
   baseY: number,
@@ -131,10 +135,26 @@ function buildMainStrand(
   const tau = (2 * Math.PI) / W;
   const omegaY1 = 0.16;
   const omegaY2 = 0.27;
+  const omegaY3 = 0.34;
   const omegaW1 = 0.22;
   const omegaW2 = 0.39;
   const omegaB1 = 0.31;
   const omegaA1 = 0.21;
+
+  // Total active anchor weight drives the scene-vs-ambient blend.
+  // 0 weight → full ambient (looks like a free-flowing wave). High
+  // weight → scene-driven (small subordinate noise on top of the
+  // kernel-smoothed skeleton).
+  const totalWeight = anchors.reduce(
+    (s, a) => s + (a.weight ?? 1),
+    0,
+  );
+  const ambientFactor = Math.exp(-totalWeight * 0.35);
+  // Noise amplitudes blend between scene-mode (14, 8, 0) and ambient
+  // (52, 24, 14) — the latter matches the old wave-mode shape.
+  const noiseAmpY1 = 14 + 38 * ambientFactor;
+  const noiseAmpY2 = 8 + 16 * ambientFactor;
+  const noiseAmpY3 = 14 * ambientFactor;
 
   const xs: number[] = [];
   const ys: number[] = [];
@@ -146,8 +166,9 @@ function buildMainStrand(
     const x = (i / samples) * W;
     const center = kernelY(anchors, x, baseY);
     const noiseY =
-      14 * Math.sin(tau * x * 1.6 + omegaY1 * t) +
-      8 * Math.sin(tau * x * 3.7 + omegaY2 * t + 1.2);
+      noiseAmpY1 * Math.sin(tau * x * 1.6 + omegaY1 * t) +
+      noiseAmpY2 * Math.sin(tau * x * 3.7 + omegaY2 * t + 1.2) +
+      noiseAmpY3 * Math.sin(tau * x + 0.4 + omegaY3 * t);
     const y = center + noiseY;
     const swell =
       0.55 +
@@ -234,133 +255,6 @@ function buildMainStrand(
   return { d, edge, stopValues, drops };
 }
 
-function buildWaveStrand(
-  parentWidth: number,
-  baseY: number,
-  baseThickness: number,
-  samples: number,
-  t: number,
-): StrandShape {
-  const W = parentWidth;
-  const tau = (2 * Math.PI) / W;
-  const omegaY1 = 0.13;
-  const omegaY2 = 0.21;
-  const omegaY3 = 0.34;
-  const omegaW1 = 0.18;
-  const omegaW2 = 0.28;
-  const omegaB1 = 0.24;
-  const omegaB2 = 0.41;
-  const omegaA1 = 0.16;
-  const omegaA2 = 0.31;
-
-  const xs: number[] = [];
-  const ys: number[] = [];
-  const widths: number[] = [];
-  const brightness: number[] = [];
-  const alpha: number[] = [];
-
-  const yAt = (x: number) =>
-    baseY +
-    52 * Math.sin(tau * x + 0.0 + omegaY1 * t) +
-    24 * Math.sin(2 * tau * x + 1.05 + omegaY2 * t) +
-    14 * Math.sin(3 * tau * x + 0.4 + omegaY3 * t);
-
-  for (let i = 0; i <= samples; i++) {
-    const x = (i / samples) * (3 * W);
-    const y = yAt(x);
-    const swell =
-      0.55 +
-      0.35 * Math.sin(tau * x + 0.6 + omegaW1 * t) +
-      0.18 * Math.sin(3 * tau * x + 1.4 + omegaW2 * t);
-    const w = Math.max(8, baseThickness * swell);
-    const b = Math.max(
-      0.2,
-      Math.min(
-        1,
-        0.5 +
-          0.38 * Math.sin(tau * x + 1.7 + omegaB1 * t) +
-          0.18 * Math.sin(2 * tau * x + 0.3 + omegaB2 * t),
-      ),
-    );
-    const a = Math.max(
-      0.3,
-      Math.min(
-        1,
-        0.55 +
-          0.35 * Math.sin(tau * x + 0.9 + omegaA1 * t) +
-          0.15 * Math.sin(2 * tau * x + 2.1 + omegaA2 * t),
-      ),
-    );
-    xs.push(x);
-    ys.push(y);
-    widths.push(w);
-    brightness.push(b);
-    alpha.push(a);
-  }
-
-  const top: { x: number; y: number }[] = [];
-  const bot: { x: number; y: number }[] = [];
-  for (let i = 0; i <= samples; i++) {
-    const prev = i > 0 ? i - 1 : i;
-    const next = i < samples ? i + 1 : i;
-    const dx = xs[next]! - xs[prev]!;
-    const dy = ys[next]! - ys[prev]!;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len;
-    const ny = dx / len;
-    const half = widths[i]! * 0.5;
-    top.push({ x: xs[i]! + nx * half, y: ys[i]! + ny * half });
-    bot.push({ x: xs[i]! - nx * half, y: ys[i]! - ny * half });
-  }
-  let d = `M ${top[0]!.x} ${top[0]!.y}`;
-  for (let i = 1; i < top.length; i++) d += ` L ${top[i]!.x} ${top[i]!.y}`;
-  for (let i = bot.length - 1; i >= 0; i--) d += ` L ${bot[i]!.x} ${bot[i]!.y}`;
-  d += " Z";
-  let edge = `M ${top[0]!.x} ${top[0]!.y}`;
-  for (let i = 1; i < top.length; i++) edge += ` L ${top[i]!.x} ${top[i]!.y}`;
-
-  const STOPS = 12;
-  const stopValues: { b: number; a: number }[] = [];
-  for (let s = 0; s < STOPS; s++) {
-    const start = Math.floor((s / STOPS) * samples);
-    const end = Math.floor(((s + 1) / STOPS) * samples);
-    let bSum = 0;
-    let aSum = 0;
-    let n = 0;
-    for (let i = start; i <= end; i++) {
-      bSum += brightness[i] ?? 0.5;
-      aSum += alpha[i] ?? 0.5;
-      n += 1;
-    }
-    stopValues.push({
-      b: bSum / Math.max(1, n),
-      a: aSum / Math.max(1, n),
-    });
-  }
-
-  // Wave-mode droplets — same lifecycle as main strand.
-  const DROPS_PER_PERIOD = 26;
-  const drops: StrandShape["drops"] = [];
-  for (let tile = 0; tile < 3; tile++) {
-    for (let i = 0; i < DROPS_PER_PERIOD; i++) {
-      const xFrac = prand(i, 1);
-      const x = xFrac * W + tile * W;
-      const perpFrac = prand(i, 2) - 0.5;
-      const perpScale = 60 + prand(i, 5) * 100;
-      const cy = yAt(x) + perpFrac * perpScale;
-      const sizeRand = prand(i, 3);
-      const r =
-        sizeRand < 0.88 ? 0.4 + sizeRand * 1.0 : 1.3 + (sizeRand - 0.88) * 8;
-      const opacityBase = 0.16 + prand(i, 4) * 0.24;
-      const lifetime = 6 + prand(i, 8) * 10;
-      const birthOffset = prand(i, 9) * lifetime;
-      drops.push({ cx: x, cy, r, opacityBase, birthOffset, lifetime });
-    }
-  }
-
-  return { d, edge, stopValues, drops };
-}
-
 /** Opacity envelope for a droplet given its lifetime + birth offset.
  *  Fades in over the first 20% of life, holds, fades out over the
  *  last 20%. After death loops to a new cycle. */
@@ -379,77 +273,49 @@ export function WaterRibbon({
   zIndex = 0,
   anchors = [],
 }: Props) {
-  const [, force] = useReducer((x: number) => x + 1, 0);
-  const targetAnchorsRef = useRef<Anchor[]>(anchors);
-  const displayedAnchorsRef = useRef<Anchor[]>(anchors);
-  targetAnchorsRef.current = anchors;
-
+  // Sync the module store's target with this instance's anchors prop.
+  // Each WaterRibbon instance writes the same target; the module's
+  // single rAF loop drives easing for whichever instance is currently
+  // mounted. Across surface unmount/remount cycles the *displayed*
+  // anchors persist — no blink, no phase reset.
   useEffect(() => {
-    let raf = 0;
-    const loop = () => {
-      const targets = targetAnchorsRef.current;
-      const current = displayedAnchorsRef.current;
-      const byId = new Map(current.map((a) => [a.id, a]));
-      const next: Anchor[] = targets.map((t) => {
-        const c = byId.get(t.id);
-        if (!c) return { ...t };
-        return {
-          id: t.id,
-          x: c.x + (t.x - c.x) * EASE,
-          y: c.y + (t.y - c.y) * EASE,
-          weight: t.weight,
-        };
-      });
-      displayedAnchorsRef.current = next;
-      force();
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
+    setRibbonTarget(anchors);
+  }, [anchors]);
+  // On final unmount, clear the target so subsequent surfaces without
+  // anchors don't inherit stale scene anchors.
+  useEffect(() => () => setRibbonTarget([]), []);
+
+  // Per-frame re-render driven by the module clock.
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  useEffect(() => subscribeRibbon(force), []);
 
   if (parentWidth <= 0) return null;
 
   const t = performance.now() / 1000;
   const W = parentWidth;
-  const displayedAnchors = displayedAnchorsRef.current;
+  const displayedAnchors = getRibbonDisplayed();
 
-  // ONE river always. anchors >= 1 enters main-strand mode. With 0
-  // anchors fall back to the periodic wave.
-  const mainMode = displayedAnchors.length >= 1;
-  const strands: StrandShape[] = [];
+  // One unified strand always — kernel smoothing for scene-driven
+  // shape, blended with ambient noise based on total weight. When
+  // weights are 0 (no scenes / scenes faded out), strand looks like
+  // the free-flowing wave; when weights are 1, scenes drive the curve.
+  const strand = buildStrand(
+    displayedAnchors,
+    W,
+    baseY,
+    baseThickness,
+    samplesPerPeriod,
+    t,
+  );
 
-  if (mainMode) {
-    // One river. Kernel smoothing gives a single smooth centerline
-    // through every anchor; width swells locally where the curve
-    // needs reach to touch nearby scenes. No lanes, no fork
-    // divergence — that approach didn't survive zoom transforms
-    // (lanes stacked into a blob when zoomed out) and read as
-    // multiple appended streams.
-    strands.push(
-      buildMainStrand(
-        displayedAnchors,
-        W,
-        baseY,
-        baseThickness,
-        samplesPerPeriod,
-        t,
-      ),
-    );
-  } else {
-    strands.push(
-      buildWaveStrand(W, baseY, baseThickness, samplesPerPeriod * 3, t),
-    );
-  }
-
-  const svgW = mainMode ? W : W * 3;
-  const svgLeft = mainMode ? 0 : -W;
-  const ys = mainMode
+  const svgW = W;
+  const svgLeft = 0;
+  const ys = displayedAnchors.length > 0
     ? displayedAnchors.map((a) => a.y)
     : [baseY];
-  const yMin = ys.length > 0 ? Math.min(...ys) : baseY;
-  const yMax = ys.length > 0 ? Math.max(...ys) : baseY;
-  const svgTop = mainMode ? Math.min(0, yMin - 200) : 0;
+  const yMin = Math.min(...ys);
+  const yMax = Math.max(...ys);
+  const svgTop = Math.min(0, yMin - 200);
   const svgH = Math.max(yMax + 200, baseY + 200) - svgTop;
 
   const columnWidth =
@@ -572,10 +438,8 @@ export function WaterRibbon({
             <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
           </filter>
         </defs>
-        {/* All lanes render as full-length strands. Outside forks
-            their centerlines coincide so the polygons overlap and
-            read as one ribbon; inside forks they smoothly diverge. */}
-        {strands.map((s, ix) => renderStrand(s, ix, ix === 0))}
+        {/* One unified strand. */}
+        {renderStrand(strand, 0, true)}
       </svg>
     </div>
   );

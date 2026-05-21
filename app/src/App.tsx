@@ -126,6 +126,7 @@ export default function App() {
           onSelect={setActiveNav}
           onOpenSettings={() => setSettingsOpen(true)}
           projectOpen={projectOpen}
+          onGoHome={projectOpen ? handleCloseProject : undefined}
         />
         {!projectOpen ? (
           <EmptyState
