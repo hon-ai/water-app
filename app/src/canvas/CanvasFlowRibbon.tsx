@@ -309,19 +309,31 @@ export function CanvasFlowRibbon({
   const xMin = viewportMinX - X_PAD;
   const xMax = viewportMaxX + X_PAD;
 
+  // Ribbon flows below the scene cards rather than through them.
+  // Scene `y` here is already the card center (c.y + CARD_H/2); we
+  // shift baseY further down by CARD_H/2 + RIBBON_GUTTER so the
+  // ribbon's centerline sits cleanly under the card row. This was
+  // the visibility bug: without the offset, baseY equaled the scene
+  // center and the ribbon rendered behind the cards.
+  const RIBBON_GUTTER = 56;
+  const BASEY_OFFSET = CARD_H / 2 + RIBBON_GUTTER;
+
   let strands: StrandShape[] = [];
   if (split === null) {
     const baseY =
-      displayed.reduce((acc, s) => acc + s.y, 0) / displayed.length;
+      displayed.reduce((acc, s) => acc + s.y, 0) / displayed.length +
+      BASEY_OFFSET;
     const s = buildStrand(displayed, xMin, xMax, baseY, 0);
     if (s) strands = [s];
   } else {
     const upper = displayed.filter((s) => s.y < split);
     const lower = displayed.filter((s) => s.y >= split);
     const upperBaseY =
-      upper.reduce((acc, s) => acc + s.y, 0) / Math.max(1, upper.length);
+      upper.reduce((acc, s) => acc + s.y, 0) / Math.max(1, upper.length) +
+      BASEY_OFFSET;
     const lowerBaseY =
-      lower.reduce((acc, s) => acc + s.y, 0) / Math.max(1, lower.length);
+      lower.reduce((acc, s) => acc + s.y, 0) / Math.max(1, lower.length) +
+      BASEY_OFFSET;
     const u = buildStrand(upper, xMin, xMax, upperBaseY, 0);
     const l = buildStrand(lower, xMin, xMax, lowerBaseY, 1);
     if (u) strands.push(u);
@@ -337,11 +349,8 @@ export function CanvasFlowRibbon({
   const h = maxStrandY - minStrandY;
 
   return (
-    <svg
-      aria-hidden
-      data-testid="canvas-flow-ribbon"
-      width={w}
-      height={h}
+    <div
+      data-testid="canvas-flow-ribbon-wrapper"
       style={{
         position: "absolute",
         left: xMin,
@@ -351,7 +360,14 @@ export function CanvasFlowRibbon({
         pointerEvents: "none",
         zIndex: 0,
       }}
+    >
+    <svg
+      aria-hidden
+      data-testid="canvas-flow-ribbon"
+      width={w}
+      height={h}
       viewBox={`${xMin} ${minStrandY} ${w} ${h}`}
+      style={{ display: "block", overflow: "visible" }}
     >
       <defs>
         <filter id="cf-glow-wide" x="-10%" y="-30%" width="120%" height="160%">
@@ -436,5 +452,6 @@ export function CanvasFlowRibbon({
         </g>
       ))}
     </svg>
+    </div>
   );
 }

@@ -75,10 +75,59 @@ export function CanvasSurface({ onOpenScene }: Props) {
   const chipRef = useRef<HTMLButtonElement | null>(null);
   const rawScenesRef = useRef<SceneCanvasRow[]>([]);
   const [overlayOn, setOverlayOn] = useState(false);
-  const [laneMode, setLaneMode] = useState<LaneMode>("free");
+  // Canvas view settings persist across navigation. The writer
+  // picks lane mode / presence mode / shares-on once and we don't
+  // forget when they nav away and back — the cards keep their
+  // organization, the ribbon smoothly morphs into whatever the
+  // remembered settings imply.
+  const [laneMode, setLaneMode] = useState<LaneMode>(() => {
+    try {
+      const v = localStorage.getItem("water:canvas-lane-mode");
+      return v === "free" || v === "location" || v === "character" ? v : "free";
+    } catch {
+      return "free";
+    }
+  });
   const [lanes, setLanes] = useState<Lane[]>([]);
-  const [presenceMode, setPresenceMode] = useState<PresenceMode>("ghost");
-  const [sharesOn, setSharesOn] = useState(false);
+  const [presenceMode, setPresenceMode] = useState<PresenceMode>(() => {
+    try {
+      const v = localStorage.getItem("water:canvas-presence-mode");
+      return v === "ghost" || v === "spanning" ? v : "ghost";
+    } catch {
+      return "ghost";
+    }
+  });
+  const [sharesOn, setSharesOn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("water:canvas-shares-on") === "true";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("water:canvas-lane-mode", laneMode);
+    } catch {
+      /* swallow */
+    }
+  }, [laneMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("water:canvas-presence-mode", presenceMode);
+    } catch {
+      /* swallow */
+    }
+  }, [presenceMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "water:canvas-shares-on",
+        sharesOn ? "true" : "false",
+      );
+    } catch {
+      /* swallow */
+    }
+  }, [sharesOn]);
   const [pan, setPan] = useState({ x: 24, y: 24 });
   const [zoom, setZoom] = useState(1);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
