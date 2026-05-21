@@ -276,9 +276,10 @@ body {
 }
 
 /* Pill breathe — very-low-amplitude background gradient drift.
-   Components opt in via the .water-pill class (or by setting the
-   animation directly). Amplitude tuned to be ambient, not noticed
-   on first glance. Disabled under prefers-reduced-motion. */
+   Implemented via a ::before overlay so it doesn't compete with the
+   pill's solid substrate, fade-in transform, or inline persona glow.
+   Hover slightly bumps gradient contrast (sea-50 → sea-100). Tuned
+   to match the World Bible "floating card" aesthetic. */
 @keyframes water-pill-breathe {
   0%   { background-position:   0% 50%; }
   50%  { background-position: 100% 50%; }
@@ -286,39 +287,69 @@ body {
 }
 
 .water-pill {
+  /* Per-pill persona glow exposed as a custom property; falls back to
+     transparent when the component doesn't set it. */
+  --water-pill-glow: 0 0 0 transparent;
+  position: relative;
+  background: var(--water-bg-raised);
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 10%, transparent);
+  box-shadow: var(--water-elev-1), var(--water-pill-glow);
+  overflow: hidden;
+  /* Single entry fade — never re-runs. */
+  animation:
+    water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both;
+  transition:
+    transform var(--water-dur-tiny) var(--water-ease-out-soft),
+    border-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    box-shadow var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+.water-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
   background:
     linear-gradient(
       110deg,
-      var(--water-bg-raised) 0%,
-      color-mix(in oklch, var(--water-bg-raised), var(--water-sea-50) 35%) 50%,
-      var(--water-bg-raised) 100%
+      transparent 0%,
+      color-mix(in oklch, var(--water-sea-50), transparent 45%) 50%,
+      transparent 100%
     );
   background-size: 220% 100%;
   animation: water-pill-breathe 14s var(--water-ease-in-out-water) infinite;
+  opacity: 0.65;
+  transition:
+    opacity var(--water-dur-small) var(--water-ease-out-soft),
+    background var(--water-dur-small) var(--water-ease-out-soft);
 }
 
-/* Active state: hovered, focused, or rabbit-hole-open. Slightly
-   stronger amplitude + faster period so the user's attention "wakes"
-   the pill. */
-.water-pill[data-active="true"],
-.water-pill:hover,
-.water-pill:focus-within {
+/* Hover: float, deepen elevation, brighten the gradient slightly. */
+.water-pill:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--water-sea-300) 28%, transparent);
+  box-shadow:
+    var(--water-elev-2),
+    var(--water-pill-glow),
+    0 0 18px color-mix(in oklch, var(--water-sea-glow) 12%, transparent);
+}
+
+.water-pill:hover::before {
+  opacity: 1;
   background:
     linear-gradient(
       110deg,
-      var(--water-bg-raised) 0%,
-      color-mix(in oklch, var(--water-bg-raised), var(--water-sea-100) 30%) 50%,
-      var(--water-bg-raised) 100%
+      transparent 0%,
+      color-mix(in oklch, var(--water-sea-100), transparent 35%) 50%,
+      transparent 100%
     );
-  background-size: 220% 100%;
-  animation-duration: 12s;
+  animation-duration: 11s;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .water-pill,
-  .water-pill[data-active="true"],
-  .water-pill:hover,
-  .water-pill:focus-within {
+  .water-pill { animation: none; }
+  .water-pill::before {
     animation: none;
     background-position: 0% 50%;
   }
