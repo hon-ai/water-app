@@ -262,7 +262,11 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
       style={{
         flex: 1,
         position: "relative",
-        background: "var(--water-bg-paper)",
+        // Transparent so the App-level stream shows on the shoulders
+        // (the empty area to the left + right of the centered prose
+        // column). The prose column itself paints bg-paper for
+        // readability over the moving ribbon.
+        background: "transparent",
         overflow: "auto",
       }}
     >
@@ -308,6 +312,9 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           display: "flex",
           flexDirection: "column",
           gap: 4,
+          // Opaque paper for prose readability. Stream flows on the
+          // shoulders outside this column.
+          background: "var(--water-bg-paper)",
         }}
       >
         <HeatmapStrip sceneId={sceneId} />
