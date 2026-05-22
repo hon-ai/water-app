@@ -4,7 +4,7 @@
 **Theme:** Running water. Substrate is warm-neutral paper (OpenCode-tinted). Primary signal is deep-sea blue, with sea-adjacent palette variants (sunrise horizon, clear forest stream, earth/moss). Pills are nuanced annotations that breathe with a near-imperceptible gradient; rabbit holes are how thought deepens.
 **References:**
 - OpenCode (`anomalyco/opencode`) — `packages/web/src/styles/custom.css` for shading discipline.
-- (scrubbed-project) (`~/Desktop/(scrubbed-project)`) — `frontend/src/services/openai.ts` for character-embodied + craft prompt patterns; `backend/app/agents/grammar_agent.py` for rule-based editor heuristics.
+- A prior writing-tooling codebase — character-embodied + craft prompt patterns; rule-based editor heuristics.
 
 ---
 
@@ -348,7 +348,7 @@ The highlight uses the active palette so a sunrise project lights triggers in am
 
 #### C.6.d Implementation notes
 
-- Built as a ProseMirror decoration plugin (port the pattern from (scrubbed-project)'s `setHighlightedParagraph`, scoped to a character range instead of a node range).
+- Built as a ProseMirror decoration plugin (paragraph-range highlight from a prior codebase, here scoped to a character range instead of a node range).
 - The plugin exposes a single transaction-meta key: `setTriggerHighlight({ blockId, start, end })`. Hover handler computes the range via the resolver, dispatches a transaction with that meta. Plugin applies decoration.
 - On pointer-leave or scroll-away, dispatch a clearing transaction.
 - Re-resolves on every hover (cheap) so anchors that drift between hovers stay correct.
@@ -452,13 +452,13 @@ Runs in `water_core::editor::diagnostics`. Each rule emits zero or more `EditorP
 | Rule | Detection | Severity |
 |---|---|---|
 | `spelling` | Word not in dict + not capitalized | warning |
-| `passive_voice` | `(was|were|been|is|are|be) + past-participle` (ports (scrubbed-project)'s heuristic) | suggestion |
+| `passive_voice` | `(was|were|been|is|are|be) + past-participle` (standard heuristic) | suggestion |
 | `weak_verb` | `(to be) + adjective` where a stronger verb exists | suggestion |
 | `adverb_density` | `> 2 -ly adverbs per 100 words` | suggestion |
 | `sentence_length_variance` | All 5 consecutive sentences within ±3 words | observation |
 | `repetition` | Same word ≥ 4 times in 200 words (excluding stopwords) | suggestion |
 | `dialog_tag_overuse` | `said` + adverb (`said quickly`) | suggestion |
-| `common_mistake` | `their is`, `could of`, `your welcome` ((scrubbed-project)'s table) | warning |
+| `common_mistake` | `their is`, `could of`, `your welcome` (15-entry lookup) | warning |
 
 The dictionary uses an embedded `hunspell`-compatible affix file; ships with the binary.
 
@@ -504,7 +504,7 @@ CREATE TABLE editor_pill (
 CREATE INDEX editor_pill_by_scene ON editor_pill(scene_id, dismissed);
 ```
 
-The `text_snippet` + `content_hash` columns mirror (scrubbed-project)'s two-layer anchor validation — re-runs locate the right span even if the writer's edits shift offsets.
+The `text_snippet` + `content_hash` columns implement a two-layer anchor validation — re-runs locate the right span even if the writer's edits shift offsets.
 
 ### E.6 Why Editor not a new speaker
 
@@ -546,10 +546,10 @@ The principle: the writer should feel the Editor sitting at their shoulder, *not
 
 ## 6. Track F — Prompt overhaul
 
-### F.1 Lessons from (scrubbed-project)
+### F.1 Lessons from prior prompt iterations
 
-(scrubbed-project)'s prompts that landed (~30% by user judgment):
-- **Character-embodied** in first person, 80-char ceiling. They felt like the character thinking aloud.
+What landed (~30% by user judgment):
+- **Character-embodied** in first person, 80-char ceiling. Pills felt like the character thinking aloud.
 - **textSnippet anchoring** — every insight pointed at a specific phrase. Made the pill feel earned, not generic.
 - **Two-layer prompt** — separate system instructions per insight type (character vs craft) instead of one mega-prompt.
 
@@ -601,7 +601,7 @@ The `character.sheet_compact` is a one-time-per-character distillation cached in
 
 ### F.4 Speaker prompt updates
 
-Each persona prompt gets a single-line "what this speaker *won't* do" block, ported from (scrubbed-project)'s blacklist pattern. Examples:
+Each persona prompt gets a single-line "what this speaker *won't* do" block (a blacklist pattern that scopes the voice). Examples:
 
 - **Echo**: "Won't analyze. Will notice."
 - **Architect**: "Won't praise. Will name the load-bearing structure."

@@ -74,3 +74,11 @@ models/
 # Eval-harness outputs
 eval/outputs/
 eval/replays/
+
+# Internal development journal — plans, handoffs, design specs,
+# AI-session bootstraps. Kept locally for continuity across sessions
+# but not tracked in the public repo since they read as private
+# notes (strategic reasoning, references to sister projects, local
+# machine paths).
+docs/superpowers/
+docs/HANDOFF.md
