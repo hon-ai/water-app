@@ -199,8 +199,13 @@ function buildStrand(
       0.55 +
       0.35 * Math.sin(tau * x * 1.4 + omegaW1 * t) +
       0.22 * Math.sin(tau * x * 3.8 + omegaW2 * t + 0.6);
-    const bump = anchors.length > 0 ? widthBump(anchors, x, center) : 0;
-    const w = Math.max(8, baseThickness * swell + bump);
+    // Width stays constant regardless of anchor count / vertical
+    // stacking. Earlier we used `widthBump(anchors, x, center)` to
+    // swell the strand near anchors, but with multiple scenes
+    // stacked in a column the swells overlapped + read as a
+    // clunky bubble. Bending (via `kernelY` above) still tracks
+    // scene positions; only the *thickness* now ignores them.
+    const w = Math.max(8, baseThickness * swell);
     const b =
       0.5 +
       0.34 * Math.sin(tau * x * 1.7 + omegaB1 * t) +

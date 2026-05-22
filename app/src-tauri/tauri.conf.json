@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "msi", "nsis"],
+    "targets": ["app", "dmg", "nsis"],
     "icon": ["icons/icon.ico"],
     "resources": {
       "../../sidecar/pyproject.toml": "sidecar/pyproject.toml",
