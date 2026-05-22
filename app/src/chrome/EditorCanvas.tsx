@@ -455,22 +455,17 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           display: "flex",
           flexDirection: "column",
           gap: 4,
-          // Absolute-pixel fade widths so the transition feels the
-          // same at any window size. Percent units (the previous
-          // `22%` / `82%`) compressed at narrow widths and made the
-          // right fade look like a hard edge against the nudge
-          // panel — visible only when the window was shrunk.
-          //
-          // Left fade: 56 px (tight — the bg-paper extends almost
-          // all the way to the editor column's left edge, covering
-          // more of the WaterRibbon than before so the stream
-          // doesn't bleed into the prose's left margin).
-          // Right fade: 128 px (wider — extra-soft transition into
-          // the visible gap before the nudge panel, so the wrapper's
-          // right edge dissolves into the stream instead of meeting
-          // the panel's glass border as a hard line).
+          // Symmetric absolute-pixel fades so the transition feels
+          // the same on both shoulders at any window size. Both
+          // sides 56 px — short enough that the wrapper doesn't
+          // expose a wide dark band against the nudge panel at
+          // narrow widths (the previous 128 px right fade created
+          // a visible dark stripe between the prose and the panel
+          // that looked like a stray shadow behind the panel),
+          // long enough that the bg-paper-to-stream transition
+          // stays soft instead of a hard edge.
           background:
-            "linear-gradient(90deg, transparent 0, var(--water-bg-paper) 56px, var(--water-bg-paper) calc(100% - 128px), transparent 100%)",
+            "linear-gradient(90deg, transparent 0, var(--water-bg-paper) 56px, var(--water-bg-paper) calc(100% - 56px), transparent 100%)",
         }}
       >
         <HeatmapStrip sceneId={sceneId} />
