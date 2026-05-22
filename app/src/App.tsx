@@ -14,6 +14,8 @@ import { SceneMetadataSheet } from "./scenes/SceneMetadataSheet";
 import { ipc, type SceneInfo } from "./ipc/commands";
 import { dialog } from "./ipc/dialog";
 import { WaterRibbon } from "./chrome/WaterRibbon";
+import { applyUpdateInBackground, checkForUpdate } from "./boot";
+import type { Update } from "@tauri-apps/plugin-updater";
 
 /** Track viewport dimensions for the App-level WaterRibbon. */
 function useWindowSize() {
@@ -48,6 +50,30 @@ export default function App() {
   // Scene id whose metadata sheet is open (M3 T21). `null` = closed.
   const [detailsSceneId, setDetailsSceneId] = useState<string | null>(null);
 
+  // True once any provider has been Tested green (or after the
+  // orchestrator has cached a successful bouquet from a real pill).
+  // Drives the "no provider configured" banner — without this signal
+  // a tester writes for a while expecting pills, sees nothing, and
+  // has no way to learn that a provider needs setup.
+  const [hasActiveProvider, setHasActiveProvider] = useState(false);
+  // Auto-updater state. `available` populates once `check()` returns
+  // a non-null `Update`; the writer dismisses via `setAvailable(null)`
+  // or applies via the toast's button.
+  const [updateAvailable, setUpdateAvailable] = useState<Update | null>(null);
+  const [updateApplied, setUpdateApplied] = useState(false);
+  // Run the update check exactly once per app boot. The Tauri plugin
+  // does its own deduping but we don't want a re-render to refetch.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const u = await checkForUpdate();
+      if (!cancelled && u) setUpdateAvailable(u);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Poll project-open status; cheap, lets the shell react to externally-triggered
   // open/close (the diagnostics_status command returns has_open_project + path).
   const refreshStatus = useCallback(async () => {
@@ -58,6 +84,11 @@ export default function App() {
       if (!s.has_open_project) {
         setActiveSceneId(null);
       }
+      // `provider_health` is empty until the writer Tests at least
+      // one provider. Once any provider reports ok, the banner clears.
+      setHasActiveProvider(
+        (s.provider_health ?? []).some((p) => p.ok === true),
+      );
     } catch {
       /* swallow */
     }
@@ -163,6 +194,20 @@ export default function App() {
           projectOpen={projectOpen}
           onGoHome={projectOpen ? handleCloseProject : undefined}
         />
+        {projectOpen && !hasActiveProvider && (
+          <NoProviderBanner onOpenSettings={() => setSettingsOpen(true)} />
+        )}
+        {updateAvailable && (
+          <UpdateToast
+            update={updateAvailable}
+            applied={updateApplied}
+            onApply={() => {
+              setUpdateApplied(true);
+              void applyUpdateInBackground(updateAvailable);
+            }}
+            onDismiss={() => setUpdateAvailable(null)}
+          />
+        )}
         {!projectOpen ? (
           <EmptyState
             onCreate={() => setCreateOpen(true)}
@@ -304,5 +349,175 @@ export default function App() {
         <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </div>
     </ThemeProvider>
+  );
+}
+
+/**
+ * Tiny glass toast in the bottom-right corner. Surfaces an
+ * auto-update notification without nagging — one click to apply +
+ * notice it's installed (will activate on next launch), one click to
+ * dismiss until next boot.
+ */
+function UpdateToast({
+  update,
+  applied,
+  onApply,
+  onDismiss,
+}: {
+  update: Update;
+  applied: boolean;
+  onApply: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      data-testid="update-toast"
+      role="status"
+      style={{
+        position: "fixed",
+        bottom: 16,
+        right: 16,
+        zIndex: 25,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        gap: 6,
+        padding: "10px 14px",
+        maxWidth: 320,
+        borderRadius: "var(--water-r-12, 12px)",
+        background:
+          "color-mix(in srgb, var(--water-bg-paper) 78%, transparent)",
+        backdropFilter: "blur(18px) saturate(160%)",
+        WebkitBackdropFilter: "blur(18px) saturate(160%)",
+        border:
+          "1px solid color-mix(in srgb, var(--water-hairline) 55%, transparent)",
+        boxShadow: "var(--water-elev-2)",
+        fontFamily: "var(--water-font-sans)",
+        fontSize: "var(--water-fs-meta)",
+        color: "var(--water-fg-default)",
+        animation:
+          "water-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
+      }}
+    >
+      <span style={{ fontWeight: 600 }}>Water {update.version} is available.</span>
+      <span style={{ color: "var(--water-fg-muted)", lineHeight: 1.4 }}>
+        {applied
+          ? "Update downloaded. Restart Water when you have a moment to finish installing."
+          : "Apply now to install on next launch."}
+      </span>
+      <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+        {!applied && (
+          <button
+            type="button"
+            onClick={onApply}
+            style={{
+              padding: "4px 10px",
+              border: "none",
+              borderRadius: "var(--water-r-8)",
+              background:
+                "color-mix(in srgb, var(--water-hue-flow) 24%, transparent)",
+              color: "var(--water-fg-default)",
+              cursor: "pointer",
+              fontFamily: "var(--water-font-sans)",
+              fontSize: "var(--water-fs-meta)",
+              fontWeight: 500,
+            }}
+          >
+            Apply
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onDismiss}
+          style={{
+            padding: "4px 10px",
+            border:
+              "1px solid color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
+            borderRadius: "var(--water-r-8)",
+            background: "transparent",
+            color: "var(--water-fg-muted)",
+            cursor: "pointer",
+            fontFamily: "var(--water-font-sans)",
+            fontSize: "var(--water-fs-meta)",
+          }}
+        >
+          {applied ? "Got it" : "Later"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Slim glass banner anchored to the top of the project area. Renders
+ * only when a project is open AND no provider has been Tested green.
+ *
+ * Without this hint, a tester writes a paragraph or two expecting
+ * pills, sees nothing happen, and has no way to learn that a provider
+ * needs to be set up first — the orchestrator's "no LlmRouter
+ * configured; skipping pill dispatch" warning only shows in stderr.
+ */
+function NoProviderBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <div
+      data-testid="no-provider-banner"
+      role="status"
+      style={{
+        position: "fixed",
+        top: 14,
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 30,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "8px 14px",
+        borderRadius: "var(--water-r-16)",
+        background:
+          "color-mix(in srgb, var(--water-bg-paper) 78%, transparent)",
+        backdropFilter: "blur(18px) saturate(160%)",
+        WebkitBackdropFilter: "blur(18px) saturate(160%)",
+        border:
+          "1px solid color-mix(in srgb, var(--water-hairline) 55%, transparent)",
+        boxShadow: "var(--water-elev-1)",
+        fontFamily: "var(--water-font-sans)",
+        fontSize: "var(--water-fs-meta)",
+        color: "var(--water-fg-default)",
+        animation:
+          "water-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background:
+            "color-mix(in srgb, var(--water-hue-drift) 70%, transparent)",
+          boxShadow:
+            "0 0 8px color-mix(in srgb, var(--water-hue-drift) 60%, transparent)",
+        }}
+      />
+      <span>Set up a provider to enable nudges.</span>
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        style={{
+          padding: "4px 10px",
+          border: "none",
+          borderRadius: "var(--water-r-8)",
+          background:
+            "color-mix(in srgb, var(--water-hue-flow) 22%, transparent)",
+          color: "var(--water-fg-default)",
+          cursor: "pointer",
+          fontFamily: "var(--water-font-sans)",
+          fontSize: "var(--water-fs-meta)",
+          fontWeight: 500,
+        }}
+      >
+        Open Settings
+      </button>
+    </div>
   );
 }

@@ -94,6 +94,14 @@ pub struct ScenePayload {
     pub body_text: String,
     pub character_count: u32,
     pub world_entry_count: u32,
+    /// Phase 6 — 0-indexed scene position in its manuscript. Optional
+    /// during the renderer-side rollout; when absent the orchestrator
+    /// omits the `Position in arc` line from pill prompts.
+    #[serde(default)]
+    pub scene_ordering: Option<u32>,
+    /// Phase 6 — total scenes in the manuscript. See `scene_ordering`.
+    #[serde(default)]
+    pub manuscript_scene_count: Option<u32>,
 }
 
 /// Push the current scene + project snapshot into the orchestrator. Called
@@ -122,6 +130,8 @@ pub async fn scene_state(state: State<'_, AppState>, payload: ScenePayload) -> R
         // since the (non-existent) previous pill. Real per-scene tracking
         // lands when the orchestrator persists per-scene last_pill_at.
         seconds_since_last_pill: 60,
+        scene_ordering: payload.scene_ordering,
+        manuscript_scene_count: payload.manuscript_scene_count,
     };
     let project = ProjectSnapshot {
         character_count: payload.character_count,

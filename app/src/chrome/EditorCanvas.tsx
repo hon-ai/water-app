@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ipc, type SceneInfo } from "../ipc/commands";
+import { ipc, type EditorPillRow, type SceneInfo } from "../ipc/commands";
+import { onWaterEvent } from "../ipc/events";
 import { Editor } from "../editor/Editor";
+import { DiagnosticsList } from "../editor/DiagnosticsList";
+import { extractEditorBlocks } from "../editor/extractBlocks";
 import { PillLayer } from "../pill/PillLayer";
 import { HeatmapStrip } from "../heat/HeatmapStrip";
+import { LiveModelChip } from "./LiveModelChip";
 import { PinnedColumn } from "../pill/PinnedColumn";
 import { useElementWidth } from "../pill/useElementWidth";
 import {
@@ -22,6 +26,11 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
   const [bodyDirty, setBodyDirty] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const bodyDebounce = useRef<number | undefined>(undefined);
+  // Phase 5 — live editor pills for this scene. Drives both the
+  // diagnostics list under the editor and the inline-underline
+  // decorations dispatched via the `water:set-editor-underlines`
+  // event bridge.
+  const [editorPills, setEditorPills] = useState<EditorPillRow[]>([]);
   // Live width of the editor pane; drives the narrow-viewport fallback for
   // both <PillLayer> (translucent capsules) and <PinnedColumn> (24 px tab).
   const mainRef = useRef<HTMLElement>(null);
@@ -64,6 +73,8 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
     setSavedAt(null);
     let cancelled = false;
     let loadedWordCount = 0;
+    let loadedOrdering: number | null = null;
+    let loadedManuscriptSceneCount: number | null = null;
     (async () => {
       try {
         const list = await ipc.sceneList();
@@ -73,6 +84,8 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           setTitle(me.name);
           setTitleAtLastSave(me.name);
           loadedWordCount = me.word_count;
+          loadedOrdering = me.ordering;
+          loadedManuscriptSceneCount = list.length;
         }
       } catch {
         /* swallow */
@@ -85,7 +98,9 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
         setBody(b);
         // Best-effort: M2 only knows scene-level word_count + body. POV /
         // location / present-characters / project-level counts arrive in
-        // M3/M4; ship 0 / empty until then.
+        // M3/M4; ship 0 / empty until then. Phase 6 — ordering fields
+        // come from the scene-list fetch above; the orchestrator uses
+        // them to derive the arc-position bucket for pill prompts.
         ipc
           .sceneState({
             sceneId,
@@ -96,6 +111,8 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
             bodyText: b,
             characterCount: 0,
             worldEntryCount: 0,
+            sceneOrdering: loadedOrdering,
+            manuscriptSceneCount: loadedManuscriptSceneCount,
           })
           .catch(() => {});
       })
@@ -106,6 +123,56 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
         window.clearTimeout(bodyDebounce.current);
         bodyDebounce.current = undefined;
       }
+    };
+  }, [sceneId]);
+
+  // Phase 5 — hydrate editor pills + underlines on scene switch.
+  // The store keeps non-dismissed pills across sessions, so a
+  // fresh open shows the writer what was flagged last time.
+  // Also subscribes to `editor_pills:updated` so a dismiss from
+  // elsewhere refreshes the underlines here.
+  useEffect(() => {
+    let cancelled = false;
+    const refetch = async () => {
+      try {
+        const raw = await ipc.editorPillsList(sceneId);
+        // Tauri commands return their declared type in production
+        // but mocks/test stubs sometimes resolve to `undefined`; the
+        // coerce keeps the renderer state invariant (always an array).
+        const live: EditorPillRow[] = Array.isArray(raw) ? raw : [];
+        if (cancelled) return;
+        setEditorPills(live);
+        window.dispatchEvent(
+          new CustomEvent("water:set-editor-underlines", {
+            detail: live.map((p) => ({
+              pillId: p.id,
+              blockId: p.anchor_block_id,
+              start: p.anchor_start,
+              end: p.anchor_end,
+              severity: p.severity,
+            })),
+          }),
+        );
+      } catch {
+        /* swallow */
+      }
+    };
+    void refetch();
+    let unsub: (() => void) | undefined;
+    void (async () => {
+      const u = await onWaterEvent("editor_pills:updated", (e) => {
+        if (e.scene_id === sceneId) void refetch();
+      });
+      if (cancelled) {
+        u();
+        return;
+      }
+      unsub = u;
+    })();
+    return () => {
+      cancelled = true;
+      unsub?.();
+      window.dispatchEvent(new Event("water:clear-editor-underlines"));
     };
   }, [sceneId]);
 
@@ -148,10 +215,11 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           // character_dissonance, the no_universe_yet inverse) was
           // dark.
           void (async () => {
-            const [metaR, charsR, segsR] = await Promise.allSettled([
+            const [metaR, charsR, segsR, listR] = await Promise.allSettled([
               ipc.sceneReadMetadata(sceneId),
               ipc.characterList(),
               ipc.worldSegmentList(),
+              ipc.sceneList(),
             ]);
             if (cancelled) return;
             const meta =
@@ -175,6 +243,16 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
                 0,
               );
             }
+            // Phase 6 — scene ordering for arc-position derivation.
+            // Falls to null when the list call failed; orchestrator
+            // simply omits the arc line.
+            let sceneOrdering: number | null = null;
+            let manuscriptSceneCount: number | null = null;
+            if (listR.status === "fulfilled") {
+              manuscriptSceneCount = listR.value.length;
+              const me = listR.value.find((s) => s.id === sceneId);
+              if (me) sceneOrdering = me.ordering;
+            }
             ipc
               .sceneState({
                 sceneId,
@@ -185,8 +263,51 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
                 bodyText: body,
                 characterCount,
                 worldEntryCount,
+                sceneOrdering,
+                manuscriptSceneCount,
               })
               .catch(() => {});
+            // Phase 5 — run the diagnostic engine across the
+            // rendered blocks. Fire-and-forget; on response we
+            // update local state + dispatch the underline anchors
+            // into the editor's PM plugin.
+            const blocks = extractEditorBlocks();
+            if (blocks.length > 0) {
+              try {
+                const raw = await ipc.editorPillsRun(sceneId, blocks);
+                const live: EditorPillRow[] = Array.isArray(raw) ? raw : [];
+                if (cancelled) return;
+                setEditorPills(live);
+                window.dispatchEvent(
+                  new CustomEvent("water:set-editor-underlines", {
+                    detail: live.map((p) => ({
+                      pillId: p.id,
+                      blockId: p.anchor_block_id,
+                      start: p.anchor_start,
+                      end: p.anchor_end,
+                      severity: p.severity,
+                    })),
+                  }),
+                );
+              } catch {
+                /* swallow — diagnostics is best-effort */
+              }
+              // Phase 5.8 — also fire LLM polish requests for blocks
+              // substantial enough to warrant a paragraph-level
+              // observation. The orchestrator enforces a per-scene
+              // cap (5 / session) + per-block cooldown (30s), so the
+              // bulk of these are no-ops. Fire-and-forget; polish
+              // results arrive via `editor_pills:updated`.
+              for (const b of blocks) {
+                const words = b.text.split(/\s+/).filter(Boolean).length;
+                if (words < 25) continue;
+                void ipc
+                  .editorPolishRequest(sceneId, b.blockId, b.text)
+                  .catch(() => {
+                    /* swallow — best-effort */
+                  });
+              }
+            }
           })();
           // Autosuggest fan-out. Two scanners run in parallel:
           //   1. character — name-match against linked + known characters
@@ -258,18 +379,34 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
 
   return (
     <main
-      ref={mainRef}
       style={{
         flex: 1,
+        display: "flex",
+        flexDirection: "row",
+        // `position: relative` so absolutely-positioned children
+        // (LiveModelChip) anchor to the outer main rather than to
+        // the inner scrolling editor div. Without this, the chip
+        // would scroll with the prose since it'd sit inside the
+        // scroll container's coordinate system.
         position: "relative",
-        // Transparent so the App-level stream shows on the shoulders
-        // (the empty area to the left + right of the centered prose
-        // column). The prose column itself paints bg-paper for
-        // readability over the moving ribbon.
+        // Transparent at the outer layer; the inner editor div +
+        // pill panel paint their own surfaces.
         background: "transparent",
-        overflow: "auto",
+        // The inner editor column owns its own vertical scroll;
+        // the panel scrolls independently.
+        overflow: "hidden",
       }}
     >
+      <div
+        ref={mainRef}
+        style={{
+          flex: 1,
+          position: "relative",
+          background: "transparent",
+          overflow: "auto",
+          minWidth: 0,
+        }}
+      >
       <div
         style={{
           position: "absolute",
@@ -318,8 +455,12 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           display: "flex",
           flexDirection: "column",
           gap: 4,
+          // Asymmetric fade — push the left opaque edge further right
+          // by a few % so the stream stops bleeding into the prose
+          // column. Right edge unchanged (pills + pinned column own
+          // that shoulder anyway).
           background:
-            "linear-gradient(90deg, transparent 0%, var(--water-bg-paper) 18%, var(--water-bg-paper) 82%, transparent 100%)",
+            "linear-gradient(90deg, transparent 0%, var(--water-bg-paper) 22%, var(--water-bg-paper) 82%, transparent 100%)",
         }}
       >
         <HeatmapStrip sceneId={sceneId} />
@@ -369,9 +510,120 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           }}
           placeholder="Begin where the universe begins."
         />
+        <DiagnosticsList
+          pills={editorPills}
+          onAccept={(pill) => {
+            if (!pill.suggestion) return;
+            // Splice the suggestion into the manuscript via the
+            // editor's event bridge. The PM tr is dispatched
+            // synchronously so the underline + row both clear
+            // before the diagnostic engine re-runs on autosave.
+            window.dispatchEvent(
+              new CustomEvent("water:accept-editor-pill", {
+                detail: {
+                  blockId: pill.anchor_block_id,
+                  start: pill.anchor_start,
+                  end: pill.anchor_end,
+                  replacement: pill.suggestion,
+                },
+              }),
+            );
+            // Optimistically remove the row; mirror the dismiss flow.
+            setEditorPills((prev) => prev.filter((p) => p.id !== pill.id));
+            window.dispatchEvent(
+              new CustomEvent("water:set-editor-underlines", {
+                detail: editorPills
+                  .filter((p) => p.id !== pill.id)
+                  .map((p) => ({
+                    pillId: p.id,
+                    blockId: p.anchor_block_id,
+                    start: p.anchor_start,
+                    end: p.anchor_end,
+                    severity: p.severity,
+                  })),
+              }),
+            );
+            void ipc.editorPillDismiss(pill.id).catch(() => {});
+          }}
+          onDismiss={(id) => {
+            // Optimistic local removal so the row + underline
+            // disappear before the IPC round-trip lands.
+            setEditorPills((prev) => prev.filter((p) => p.id !== id));
+            window.dispatchEvent(
+              new CustomEvent("water:set-editor-underlines", {
+                detail: editorPills
+                  .filter((p) => p.id !== id)
+                  .map((p) => ({
+                    pillId: p.id,
+                    blockId: p.anchor_block_id,
+                    start: p.anchor_start,
+                    end: p.anchor_end,
+                    severity: p.severity,
+                  })),
+              }),
+            );
+            void ipc.editorPillDismiss(id).catch(() => {
+              /* swallow — the editor_pills:updated event from a
+                 future re-run will reconcile if the dismiss
+                 transiently failed. */
+            });
+          }}
+        />
       </div>
-      <PillLayer mainWidth={mainWidth} sceneId={sceneId} />
       <PinnedColumn mainWidth={mainWidth} sceneId={sceneId} />
+      </div>
+      {/* LiveModelChip lives at `<main>` level (not inside the
+          scrollable editor div) so its `position: absolute; bottom:
+          14` anchors to main's viewport-stable bottom edge. Inside
+          the editor div, `bottom` would resolve against the
+          content's full scrollable height — the chip would scroll
+          off-screen along with the prose. */}
+      <LiveModelChip />
+      {/* Right-side nudge panel — fixed-width flex sibling of the
+          editor column. Replaces the previous absolute-positioned
+          overlay so pills never overlap prose at any window width,
+          and the column reflows correctly on window resize without
+          the manual coord math (which used to leave the column cut
+          off after a compress + widen cycle). */}
+      <aside
+        aria-label="nudges"
+        className="water-floating-panel"
+        style={{
+          width: 280,
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          margin: "10px 10px 10px 0",
+          background:
+            "color-mix(in srgb, var(--water-bg-paper) 55%, transparent)",
+          backdropFilter: "blur(22px) saturate(160%)",
+          WebkitBackdropFilter: "blur(22px) saturate(160%)",
+          border:
+            "1px solid color-mix(in srgb, var(--water-hairline) 60%, transparent)",
+          borderRadius: "var(--water-r-24)",
+          boxShadow: "var(--water-elev-2)",
+          overflow: "hidden",
+        }}
+      >
+        <header
+          style={{
+            padding: "16px 18px 10px",
+            borderBottom:
+              "1px solid color-mix(in srgb, var(--water-hairline) 35%, transparent)",
+            fontFamily: "var(--water-font-sans)",
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: 0.6,
+            color: "var(--water-fg-muted)",
+          }}
+        >
+          Nudges
+        </header>
+        <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+          <PillLayer mainWidth={mainWidth} sceneId={sceneId} />
+        </div>
+      </aside>
     </main>
   );
 }

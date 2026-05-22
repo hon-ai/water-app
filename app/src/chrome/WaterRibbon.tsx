@@ -335,8 +335,18 @@ export function WaterRibbon({
   if (parentWidth <= 0) return null;
 
   const t = performance.now() / 1000;
-  const W = parentWidth;
-  const displayedAnchors = getRibbonDisplayed();
+  // Extend the drawing surface past the viewport on both sides so
+  // the strand's start + end live outside the visible bounds. The
+  // wrapper below is shifted -RIBBON_BLEED on left + extends
+  // +RIBBON_BLEED past right so the geometry lines up; anchors
+  // (which are in window-space) get a +RIBBON_BLEED offset before
+  // being fed to `buildStrand`.
+  const RIBBON_BLEED_DRAW = 240;
+  const W = parentWidth + 2 * RIBBON_BLEED_DRAW;
+  const displayedAnchors = getRibbonDisplayed().map((a) => ({
+    ...a,
+    x: a.x + RIBBON_BLEED_DRAW,
+  }));
 
   // One unified strand always — kernel smoothing for scene-driven
   // shape, blended with ambient noise based on total weight. When
@@ -365,7 +375,14 @@ export function WaterRibbon({
     columnMaxWidth > 0
       ? Math.min(columnMaxWidth, Math.max(0, parentWidth - 48))
       : 0;
-  const columnLeft = columnWidth > 0 ? (parentWidth - columnWidth) / 2 : 0;
+  // Mask coords live in the *expanded* surface (which is shifted
+  // -RIBBON_BLEED_DRAW relative to the viewport). The column is
+  // centered against the viewport, so its left/right in surface
+  // coords gets the bleed offset added back.
+  const columnLeft =
+    columnWidth > 0
+      ? RIBBON_BLEED_DRAW + (parentWidth - columnWidth) / 2
+      : 0;
   const columnRight = columnLeft + columnWidth;
   const SOFT = 48;
   const maskImage =
@@ -377,7 +394,7 @@ export function WaterRibbon({
           transparent ${columnLeft}px,
           transparent ${columnRight}px,
           black ${columnRight + SOFT}px,
-          black ${parentWidth}px
+          black ${W}px
         )`
       : undefined;
 
@@ -396,9 +413,18 @@ export function WaterRibbon({
   const narrowGradient =
     "linear-gradient(90deg, black 0%, black 88%, transparent 100%)";
 
+  // Extend the wrapper past the visible viewport on both sides so
+  // the strand's geometric edges live outside the visible bounds.
+  // The drawn SVG width below is bumped by the same amount; together
+  // they keep the cutoff invisible to the writer at any window size.
+  const RIBBON_BLEED = 240;
+
   const wrapperStyle: CSSProperties = {
     position: "absolute",
-    inset: 0,
+    top: 0,
+    bottom: 0,
+    left: -RIBBON_BLEED,
+    right: -RIBBON_BLEED,
     pointerEvents: "none",
     overflow: "hidden",
     zIndex,

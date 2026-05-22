@@ -1,0 +1,25 @@
+version = "1"
+id = "rabbit_fan_4"
+instruction = """
+Produce exactly four children of the parent thought below — one for each
+direction. Stay in the parent's speaker voice. Each child ≤ 22 words.
+
+Directions (write one of each, in order):
+  closer    — zoom in on the same beat: a smaller, sharper version
+              of what the parent observed.
+  wider     — zoom out to the surrounding arc: place the parent
+              observation against what's coming or what just was.
+  opposite  — invert the parent's stance: what if the character is
+              wrong about this? what if the scene plays the other way?
+  deeper    — the subtext the character isn't admitting to themselves.
+              one layer beneath the parent's notice.
+
+Output strict JSON. No commentary, no markdown.
+[
+  {"direction": "closer",   "text": "..."},
+  {"direction": "wider",    "text": "..."},
+  {"direction": "opposite", "text": "..."},
+  {"direction": "deeper",   "text": "..."}
+]
+"""
+output_format = "json"

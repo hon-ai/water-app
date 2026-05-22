@@ -1,5 +1,6 @@
 pub mod block_anchored_drift;
 pub mod character_dissonance;
+pub mod idle_pause;
 pub mod idle_pause_with_present_character;
 pub mod no_universe_yet;
 pub mod pace_floor;
@@ -24,6 +25,7 @@ pub fn builtin_triggers() -> Vec<Box<dyn Trigger>> {
         Box::new(no_universe_yet::NoUniverseYet),
         Box::new(character_dissonance::CharacterDissonance),
         Box::new(idle_pause_with_present_character::IdlePauseWithPresentCharacter),
+        Box::new(idle_pause::IdlePause),
     ]
 }
 
@@ -32,10 +34,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn factory_returns_ten_triggers_with_unique_ids() {
+    fn factory_returns_eleven_triggers_with_unique_ids() {
         let triggers = builtin_triggers();
-        assert_eq!(triggers.len(), 10);
+        assert_eq!(triggers.len(), 11);
         let ids: std::collections::HashSet<_> = triggers.iter().map(|t| t.id()).collect();
-        assert_eq!(ids.len(), 10);
+        assert_eq!(ids.len(), 11);
     }
 }

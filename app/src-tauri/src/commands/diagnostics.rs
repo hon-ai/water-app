@@ -62,7 +62,15 @@ pub async fn diagnostics_status(state: State<'_, AppState>) -> Result<Diagnostic
     let (router_primary_id, provider_health) = match router_arc {
         Some(r) => {
             let primary = r.primary_id().map(|id| id.as_str().to_string());
-            let healths = r.health().await;
+            // Read the cached health populated by `generate_bouquet`
+            // outcomes (Test button, level-0 pills, rabbit-hole fan).
+            // The previous `r.health().await` here fired a real HTTP
+            // request to each provider on every diagnostics poll —
+            // OpenRouter rate-limited us with 429 after a couple of
+            // minutes of the 3-second App.tsx poll loop. The cache
+            // is authoritative until the next live bouquet call
+            // updates it.
+            let healths = r.cached_health().await;
             let pheaths = healths
                 .into_iter()
                 .map(|(id, result)| ProviderHealth {

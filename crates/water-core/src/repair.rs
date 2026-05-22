@@ -156,6 +156,7 @@ mod tests {
             .join(format!("{scene_id}.md"));
         let file = SceneFile {
             frontmatter: crate::scene_md::SceneFrontmatter {
+                water_scene: true,
                 id: scene_id.clone(),
                 name: "S".into(),
                 chapter_id: None,
@@ -194,7 +195,11 @@ mod tests {
                 .path(),
         )
         .unwrap();
-        assert!(scene_file.contains("First. ^bk-"));
-        assert!(scene_file.contains("Second. ^bk-"));
+        // Leading-token convention: each paragraph starts with
+        // `^bk-XXXX` followed by a space and the prose.
+        assert!(scene_file.contains(" First."), "got: {scene_file}");
+        assert!(scene_file.contains(" Second."), "got: {scene_file}");
+        assert!(!scene_file.contains("First. ^bk-"));
+        assert!(!scene_file.contains("Second. ^bk-"));
     }
 }

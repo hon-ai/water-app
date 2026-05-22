@@ -85,8 +85,11 @@ export function LinkPopup({
     pointerEvents: "auto",
     zIndex: 41,
     minWidth: 280,
+    // Opacity-only fade — `water-pill-fade-in` would override the
+    // `translateX(-50%)` horizontal centering and jump the popup
+    // sideways once the animation settles.
     animation:
-      "water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
+      "water-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
   };
 
   const inputStyle: CSSProperties = {

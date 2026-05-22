@@ -9,6 +9,18 @@ export function EmptyState({ onCreate, onOpen }: Props) {
   // Glass-on-tint primary: sea-tint gradient laid over translucent
   // paper so the stream reads through. Matches the rest of the
   // matte-glass UI system.
+  const primaryBase = {
+    background:
+      "linear-gradient(135deg, color-mix(in srgb, var(--water-sea-300) 32%, transparent), color-mix(in srgb, var(--water-sea-glow) 16%, transparent)), color-mix(in srgb, var(--water-bg-paper) 68%, transparent)",
+    boxShadow:
+      "var(--water-elev-1), 0 0 24px color-mix(in srgb, var(--water-sea-glow) 20%, transparent), inset 0 1px 0 color-mix(in srgb, white 22%, transparent)",
+  };
+  const primaryHover = {
+    background:
+      "linear-gradient(135deg, color-mix(in srgb, var(--water-sea-300) 48%, transparent), color-mix(in srgb, var(--water-sea-glow) 28%, transparent)), color-mix(in srgb, var(--water-bg-paper) 74%, transparent)",
+    boxShadow:
+      "var(--water-elev-2), 0 0 36px color-mix(in srgb, var(--water-sea-glow) 38%, transparent), inset 0 1px 0 color-mix(in srgb, white 32%, transparent)",
+  };
   const primaryBtn: React.CSSProperties = {
     padding: "10px 20px",
     border:
@@ -18,15 +30,22 @@ export function EmptyState({ onCreate, onOpen }: Props) {
     fontSize: "var(--water-fs-ui)",
     fontWeight: 500,
     cursor: "pointer",
-    background:
-      "linear-gradient(135deg, color-mix(in srgb, var(--water-sea-300) 32%, transparent), color-mix(in srgb, var(--water-sea-glow) 16%, transparent)), color-mix(in srgb, var(--water-bg-paper) 68%, transparent)",
     backdropFilter: "blur(20px) saturate(160%) contrast(104%)",
     WebkitBackdropFilter: "blur(20px) saturate(160%) contrast(104%)",
     color: "var(--water-fg-default)",
-    boxShadow:
-      "var(--water-elev-1), 0 0 24px color-mix(in srgb, var(--water-sea-glow) 20%, transparent), inset 0 1px 0 color-mix(in srgb, white 22%, transparent)",
     transition:
-      "background var(--water-dur-tiny) var(--water-ease-out-soft), box-shadow var(--water-dur-tiny) var(--water-ease-out-soft)",
+      "background var(--water-dur-tiny) var(--water-ease-out-soft), box-shadow var(--water-dur-tiny) var(--water-ease-out-soft), transform var(--water-dur-tiny) var(--water-ease-out-soft)",
+    ...primaryBase,
+  };
+  const secondaryBase = {
+    background: "color-mix(in srgb, var(--water-bg-paper) 70%, transparent)",
+    boxShadow:
+      "var(--water-elev-1), inset 0 1px 0 color-mix(in srgb, white 18%, transparent)",
+  };
+  const secondaryHover = {
+    background: "color-mix(in srgb, var(--water-bg-paper) 84%, transparent)",
+    boxShadow:
+      "var(--water-elev-2), 0 0 18px color-mix(in srgb, var(--water-sea-glow) 16%, transparent), inset 0 1px 0 color-mix(in srgb, white 28%, transparent)",
   };
   const secondaryBtn: React.CSSProperties = {
     padding: "10px 20px",
@@ -37,14 +56,12 @@ export function EmptyState({ onCreate, onOpen }: Props) {
     fontSize: "var(--water-fs-ui)",
     fontWeight: 500,
     cursor: "pointer",
-    background: "color-mix(in srgb, var(--water-bg-paper) 70%, transparent)",
     backdropFilter: "blur(20px) saturate(160%) contrast(104%)",
     WebkitBackdropFilter: "blur(20px) saturate(160%) contrast(104%)",
     color: "var(--water-fg-default)",
-    boxShadow:
-      "var(--water-elev-1), inset 0 1px 0 color-mix(in srgb, white 18%, transparent)",
     transition:
-      "background var(--water-dur-tiny) var(--water-ease-out-soft)",
+      "background var(--water-dur-tiny) var(--water-ease-out-soft), box-shadow var(--water-dur-tiny) var(--water-ease-out-soft), transform var(--water-dur-tiny) var(--water-ease-out-soft)",
+    ...secondaryBase,
   };
 
   return (
@@ -119,10 +136,46 @@ export function EmptyState({ onCreate, onOpen }: Props) {
           A writing surface for true immersion.
         </p>
         <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
-          <button type="button" onClick={onCreate} style={primaryBtn}>
+          <button
+            type="button"
+            onClick={onCreate}
+            style={primaryBtn}
+            onMouseEnter={(e) => {
+              Object.assign(e.currentTarget.style, primaryHover);
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              Object.assign(e.currentTarget.style, primaryBase);
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
+            onFocus={(e) => {
+              Object.assign(e.currentTarget.style, primaryHover);
+            }}
+            onBlur={(e) => {
+              Object.assign(e.currentTarget.style, primaryBase);
+            }}
+          >
             Create new project
           </button>
-          <button type="button" onClick={onOpen} style={secondaryBtn}>
+          <button
+            type="button"
+            onClick={onOpen}
+            style={secondaryBtn}
+            onMouseEnter={(e) => {
+              Object.assign(e.currentTarget.style, secondaryHover);
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              Object.assign(e.currentTarget.style, secondaryBase);
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
+            onFocus={(e) => {
+              Object.assign(e.currentTarget.style, secondaryHover);
+            }}
+            onBlur={(e) => {
+              Object.assign(e.currentTarget.style, secondaryBase);
+            }}
+          >
             Open existing
           </button>
         </div>

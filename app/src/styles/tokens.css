@@ -110,6 +110,33 @@
   --water-scenes-w:  280px;
   --water-canvas-max: 720px;
 
+  /* ─────────────────── Heatmap palette ───────────────────
+     Light-mode default: a baby-blue → cloud-white wash so the
+     strip reads gently against the paper surface. Dark mode
+     overrides below to deep night-sky. Gas blobs + orb hues
+     also swap so the lava-lamp feels native to either theme. */
+  --water-heat-bg:
+    linear-gradient(90deg,
+      color-mix(in oklch, var(--water-sea-100), white 35%),
+      color-mix(in oklch, var(--water-sea-50), white 55%) 50%,
+      color-mix(in oklch, var(--water-sea-100), white 35%));
+  --water-heat-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 60%, transparent),
+    0 1px 2px color-mix(in srgb, var(--water-sea-400) 20%, transparent);
+  --water-heat-border:
+    color-mix(in srgb, var(--water-sea-300) 35%, transparent);
+  --water-heat-gas-1: var(--water-sea-300);
+  --water-heat-gas-2: var(--water-sea-200);
+  --water-heat-gas-3: var(--water-sea-glow);
+  --water-heat-orb-core: color-mix(in oklch, var(--water-sea-500), white 30%);
+  --water-heat-orb-glow: color-mix(in oklch, var(--water-sea-glow), transparent 40%);
+  --water-heat-orb-soft: color-mix(in oklch, var(--water-sea-200), white 30%);
+  --water-heat-text:    color-mix(in oklch, var(--water-sea-700), white 20%);
+  --water-heat-text-strong: color-mix(in oklch, var(--water-sea-800), white 10%);
+  --water-heat-text-muted:  color-mix(in oklch, var(--water-sea-600), white 25%);
+  --water-heat-chip-bg: color-mix(in srgb, var(--water-sea-200) 45%, transparent);
+  --water-heat-chip-bg-hover: color-mix(in srgb, var(--water-sea-300) 55%, transparent);
+
   /* ───────────────────── Z-stack ───────────────────── */
   --water-z-sheet:   50;
   --water-z-tooltip: 60;
@@ -188,6 +215,32 @@
     --water-elev-1: none;
     --water-elev-2: none;
     --water-elev-3: none;
+
+    /* Dark-mode heatmap: night-sky deep blue, glow hues stay
+       saturated so the gas + orbs read against the dark. */
+    --water-heat-bg:
+      linear-gradient(90deg,
+        color-mix(in oklch, var(--water-sea-700), transparent 12%),
+        color-mix(in oklch, var(--water-sea-800), transparent 8%) 50%,
+        color-mix(in oklch, var(--water-sea-700), transparent 12%));
+    --water-heat-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--water-sea-glow) 20%, transparent),
+      0 1px 2px color-mix(in srgb, var(--water-sea-800) 30%, transparent);
+    --water-heat-border:
+      color-mix(in srgb, var(--water-sea-600) 28%, transparent);
+    --water-heat-gas-1: var(--water-sea-300);
+    --water-heat-gas-2: var(--water-sea-glow);
+    --water-heat-gas-3: var(--water-sea-400);
+    --water-heat-orb-core: color-mix(in oklch, var(--water-sea-glow), white 25%);
+    --water-heat-orb-glow: color-mix(in oklch, var(--water-sea-glow), transparent 30%);
+    --water-heat-orb-soft: color-mix(in oklch, var(--water-sea-100), white 18%);
+    --water-heat-text:    color-mix(in oklch, var(--water-sea-glow), white 5%);
+    --water-heat-text-strong: white;
+    --water-heat-text-muted: color-mix(in oklch, var(--water-sea-100), transparent 25%);
+    --water-heat-chip-bg:
+      color-mix(in srgb, var(--water-sea-800) 35%, transparent);
+    --water-heat-chip-bg-hover:
+      color-mix(in srgb, var(--water-sea-700) 55%, transparent);
   }
 }
 
@@ -235,6 +288,32 @@
   --water-elev-1: none;
   --water-elev-2: none;
   --water-elev-3: none;
+
+  /* Manual dark — mirror the @media(prefers-color-scheme: dark)
+     heatmap palette so the explicit toggle behaves identically. */
+  --water-heat-bg:
+    linear-gradient(90deg,
+      color-mix(in oklch, var(--water-sea-700), transparent 12%),
+      color-mix(in oklch, var(--water-sea-800), transparent 8%) 50%,
+      color-mix(in oklch, var(--water-sea-700), transparent 12%));
+  --water-heat-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--water-sea-glow) 20%, transparent),
+    0 1px 2px color-mix(in srgb, var(--water-sea-800) 30%, transparent);
+  --water-heat-border:
+    color-mix(in srgb, var(--water-sea-600) 28%, transparent);
+  --water-heat-gas-1: var(--water-sea-300);
+  --water-heat-gas-2: var(--water-sea-glow);
+  --water-heat-gas-3: var(--water-sea-400);
+  --water-heat-orb-core: color-mix(in oklch, var(--water-sea-glow), white 25%);
+  --water-heat-orb-glow: color-mix(in oklch, var(--water-sea-glow), transparent 30%);
+  --water-heat-orb-soft: color-mix(in oklch, var(--water-sea-100), white 18%);
+  --water-heat-text:    color-mix(in oklch, var(--water-sea-glow), white 5%);
+  --water-heat-text-strong: white;
+  --water-heat-text-muted: color-mix(in oklch, var(--water-sea-100), transparent 25%);
+  --water-heat-chip-bg:
+    color-mix(in srgb, var(--water-sea-800) 35%, transparent);
+  --water-heat-chip-bg-hover:
+    color-mix(in srgb, var(--water-sea-700) 55%, transparent);
 }
 
 /* =====================================================================
@@ -338,6 +417,34 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Opacity-only fade. Use this on any element that already carries
+   its own positioning `transform` (selection toolbar, link popup,
+   GlassSelect's flip-above menu, anything anchored via
+   `translate(-50%, …)`). The `pill-fade-in` keyframe above sets a
+   transform on both `from` and `to`, which clobbers the element's
+   inline transform via the `animation-fill-mode: both` end-state —
+   the toolbar lands on top of its anchor instead of above it. */
+@keyframes water-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Obsidian-style wiki-link rendering. The mark wraps text inside the
+   editor; this style mirrors Obsidian's default link aesthetic (sea-
+   tinted, soft underline) so the writer recognizes a wiki-link
+   visually without overloading the existing `<a>` link styling. */
+.water-wikilink {
+  color: color-mix(in oklch, var(--water-sea-600) 75%, var(--water-fg-default));
+  border-bottom:
+    1px dashed color-mix(in srgb, var(--water-sea-400) 55%, transparent);
+  text-decoration: none;
+  cursor: pointer;
+}
+.water-wikilink:hover {
+  color: var(--water-sea-glow);
+  border-bottom-style: solid;
+}
+
 @keyframes water-surface-fade {
   from { opacity: 0; transform: translateX(6px); }
   to   { opacity: 1; transform: translateX(0); }
@@ -418,6 +525,74 @@ body {
   }
 }
 
+/* ──────────────── Phase 3 pill anatomy ────────────────
+   Content-signal left rail. The pill stays neutral (bg-raised) and
+   the rail carries the meaning — observation has no rail, the other
+   three signals get a 1.5px sea-palette stripe inside the rounded
+   border. Painted on a ::after so it sits above the breathe overlay
+   but below the message text. */
+.water-pill[data-content-signal="suggestion"]::after,
+.water-pill[data-content-signal="warning"]::after,
+.water-pill[data-content-signal="praise"]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 2px;
+  width: 1.5px;
+  border-radius: 1px;
+  pointer-events: none;
+}
+.water-pill[data-content-signal="suggestion"]::after {
+  background: var(--water-sea-300);
+}
+.water-pill[data-content-signal="warning"]::after {
+  background: var(--water-sea-600);
+}
+.water-pill[data-content-signal="praise"]::after {
+  background: color-mix(in srgb, var(--water-sea-glow) 50%, transparent);
+}
+
+/* Chevron-down affordance. Sits at the bottom-right of the pill,
+   fully transparent at rest, fades up on hover or keyboard focus.
+   Signals "click to deepen" (rabbit hole). */
+.water-pill-chevron {
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--water-fg-muted);
+  opacity: 0;
+  transition: opacity var(--water-dur-tiny) var(--water-ease-out-soft);
+  pointer-events: none;
+}
+.water-pill:hover .water-pill-chevron,
+.water-pill:focus-visible .water-pill-chevron {
+  opacity: 0.7;
+}
+
+/* Speaker chip — 12×12 disc, persona hue background, single-glyph
+   monogram inside. Vertically centered on the first text line. */
+.water-pill-chip {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--water-font-sans);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  color: color-mix(in oklch, var(--water-fg-strong) 75%, transparent);
+  background: color-mix(in oklch, var(--water-pill-chip-hue, var(--water-sea-300)) 60%, var(--water-bg-paper));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--water-pill-chip-hue, var(--water-sea-300)) 70%, transparent);
+}
+
 /* ───────────────────── Water-ribbon drift ─────────────────────
    Animates the WaterRibbon's SVG L→R for a continuous flow. The
    SVG content is sized 3× wide; translating by 1W creates the
@@ -458,6 +633,109 @@ body {
   [data-testid="water-ribbon"] svg,
   [data-testid="water-ribbon"] g,
   [data-testid="canvas-flow-ribbon"] g {
+    animation: none !important;
+  }
+}
+
+/* ───────────────── Heatmap lava-lamp animations ─────────────────
+   Two animation families drive the strip:
+     - water-heat-gas-{1,2,3}: the drifting radial-gradient blobs
+       (the "amorphous blue gas"). Slow translate + scale cycles
+       in the 22-28s range, so each blob breathes independently.
+     - water-heat-orb-{0..5}: the spray-dot family. Tiny translate
+       offsets + opacity envelopes over 10-26s, six variants so the
+       24-orb field doesn't visibly tile.
+   Per-instance durations + delays are set inline so the rhythm is
+   organic; the keyframes only describe the *shape* of the motion. */
+@keyframes water-heat-gas-1 {
+  0%   { transform: translate(-4%, 0)   scale(1.00); }
+  50%  { transform: translate( 6%, 2%) scale(1.12); }
+  100% { transform: translate(-4%, 0)   scale(1.00); }
+}
+@keyframes water-heat-gas-2 {
+  0%   { transform: translate( 2%, -2%) scale(1.05); }
+  50%  { transform: translate(-6%, 3%)  scale(0.95); }
+  100% { transform: translate( 2%, -2%) scale(1.05); }
+}
+@keyframes water-heat-gas-3 {
+  0%   { transform: translate(-2%, 1%)  scale(0.98); }
+  50%  { transform: translate( 4%, -2%) scale(1.08); }
+  100% { transform: translate(-2%, 1%)  scale(0.98); }
+}
+
+/* Orb lifecycle keyframes — fade in over the first 15-25% of the
+   cycle, hold briefly, fade out over the last 15-25%. Six variants
+   so the 24-orb field doesn't pulse in lockstep. Combined with the
+   per-orb setTimeout repositioning in HeatmapStrip.tsx, this yields
+   the WaterRibbon's appear-and-disappear feel: each orb materializes
+   somewhere, glows, fades, then re-emerges elsewhere. */
+@keyframes water-heat-orb-life-0 {
+  0%   { transform: translate(0, 0);          opacity: 0; }
+  18%  { transform: translate(1px, -0.5px);   opacity: 0.85; }
+  45%  { transform: translate(2px, -1.5px);   opacity: 0.95; }
+  72%  { transform: translate(1px, -0.5px);   opacity: 0.7; }
+  100% { transform: translate(0, 0);          opacity: 0; }
+}
+@keyframes water-heat-orb-life-1 {
+  0%   { transform: translate(0, 0);          opacity: 0; }
+  20%  { transform: translate(-1px, 0.5px);   opacity: 0.9; }
+  55%  { transform: translate(-3px, 1px);     opacity: 1.0; }
+  82%  { transform: translate(-2px, 0.5px);   opacity: 0.6; }
+  100% { transform: translate(0, 0);          opacity: 0; }
+}
+@keyframes water-heat-orb-life-2 {
+  0%   { transform: translate(0, 0);          opacity: 0; }
+  15%  { transform: translate(1.5px, 0);      opacity: 0.7; }
+  50%  { transform: translate(4px, 0.5px);    opacity: 0.85; }
+  78%  { transform: translate(2px, 0.2px);    opacity: 0.55; }
+  100% { transform: translate(0, 0);          opacity: 0; }
+}
+@keyframes water-heat-orb-life-3 {
+  0%   { transform: translate(0, 0);          opacity: 0; }
+  22%  { transform: translate(-0.5px, -0.5px); opacity: 0.95; }
+  50%  { transform: translate(-1.5px, -2px);  opacity: 1.0; }
+  75%  { transform: translate(-1px, -1px);    opacity: 0.7; }
+  100% { transform: translate(0, 0);          opacity: 0; }
+}
+@keyframes water-heat-orb-life-4 {
+  0%   { transform: translate(0, 0);          opacity: 0; }
+  20%  { transform: translate(0.5px, 1px);    opacity: 0.8; }
+  55%  { transform: translate(1px, 2.5px);    opacity: 0.9; }
+  80%  { transform: translate(0.5px, 1.5px);  opacity: 0.65; }
+  100% { transform: translate(0, 0);          opacity: 0; }
+}
+@keyframes water-heat-orb-life-5 {
+  0%   { transform: translate(0, 0);          opacity: 0; }
+  17%  { transform: translate(-1px, 0);       opacity: 0.7; }
+  50%  { transform: translate(-3px, 0);       opacity: 0.85; }
+  77%  { transform: translate(-2px, 0);       opacity: 0.55; }
+  100% { transform: translate(0, 0);          opacity: 0; }
+}
+
+.water-heat-chip:hover {
+  background: var(--water-heat-chip-bg-hover) !important;
+  color: var(--water-heat-text-strong) !important;
+}
+
+@keyframes water-heat-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-testid="heatmap-drift-dots"] > div,
+  [data-testid="heatmap-gas"] > div {
+    animation: none !important;
+  }
+  [data-testid="heatmap-metric-picker"] {
     animation: none !important;
   }
 }

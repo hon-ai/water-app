@@ -31,6 +31,35 @@ type Rect = { left: number; top: number; width: number; height: number };
 function rectFromSelection(view: EditorView): Rect | null {
   const { from, to } = view.state.selection;
   if (from === to) return null;
+  // Preferred path: ask the browser for the actual rendered
+  // bounding rect of the live DOM selection. For multi-line
+  // selections this returns the union across all visual lines —
+  // its `top` is the top of the highest line, not just the top
+  // of one endpoint's line. Computing from PM's `coordsAtPos`
+  // alone misses the union (each call returns a cursor-shaped
+  // rect for a single position, not the lines in between), which
+  // is how the toolbar used to land mid-selection on multi-line
+  // highlights.
+  try {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      const r = range.getBoundingClientRect();
+      if (r.width > 0 || r.height > 0) {
+        return {
+          left: r.left,
+          top: r.top,
+          width: r.width,
+          height: r.height,
+        };
+      }
+    }
+  } catch {
+    /* DOM Range API absent (jsdom) — fall through */
+  }
+  // Fallback: PM endpoint coords. Still computes a bounding box
+  // but only over the two endpoints; multi-line selections will
+  // be approximate. Always at least correct for single-line.
   try {
     const fromCoords = view.coordsAtPos(from);
     const toCoords = view.coordsAtPos(to);
@@ -40,9 +69,6 @@ function rectFromSelection(view: EditorView): Rect | null {
     const bottom = Math.max(fromCoords.bottom, toCoords.bottom);
     return { left, top, width: right - left, height: bottom - top };
   } catch {
-    // coordsAtPos can throw in jsdom or before layout; null falls through
-    // to a (0,0) default in the render path so tests can still assert
-    // presence.
     return null;
   }
 }
@@ -151,18 +177,34 @@ export function SelectionToolbar({ editorView, onLinkClick }: Props) {
   const italicActive = selectionHasMark(editorView, "em");
   const linkActive = selectionHasMark(editorView, "link");
 
-  // Position the toolbar above the selection's top edge with a real
-  // vertical gap (translate handles the toolbar's own height; the
-  // extra -14px keeps a visible margin between the toolbar's bottom
-  // and the highlighted text). Anchor: top edge of selection.
+  // Position the toolbar above the selection's top edge with a
+  // real vertical gap. `top: rect.top` lands the toolbar's anchor
+  // on the top of the highest highlighted line; the transform
+  // pushes the toolbar's bottom 16px above that line. When the
+  // selection is near the top of the viewport (no room above),
+  // flip the toolbar below the selection so it stays visible.
+  const TOOLBAR_GAP = 16;
+  // Conservative toolbar-height estimate for the flip decision
+  // (real height varies with content); 44px covers the icon row
+  // + padding with margin to spare.
+  const TOOLBAR_HEIGHT_EST = 44;
+  const wantsFlipBelow =
+    rect !== null && rect.top < TOOLBAR_HEIGHT_EST + TOOLBAR_GAP;
   const left = rect ? rect.left + rect.width / 2 : 0;
-  const top = rect ? rect.top : 0;
+  const top = rect
+    ? wantsFlipBelow
+      ? rect.top + rect.height
+      : rect.top
+    : 0;
+  const transform = wantsFlipBelow
+    ? `translate(-50%, ${TOOLBAR_GAP}px)`
+    : `translate(-50%, calc(-100% - ${TOOLBAR_GAP}px))`;
 
   const toolbarStyle: CSSProperties = {
     position: "fixed",
     left,
     top,
-    transform: "translate(-50%, calc(-100% - 14px))",
+    transform,
     display: "flex",
     flexDirection: "row",
     gap: 6,
@@ -174,8 +216,13 @@ export function SelectionToolbar({ editorView, onLinkClick }: Props) {
       "0 0 18px color-mix(in oklch, var(--water-hue-coherence) 50%, transparent)",
     pointerEvents: "auto",
     zIndex: 40,
+    // Opacity-only fade. `water-pill-fade-in` ALSO animates
+    // `transform`, which would wipe out the
+    // `translate(-50%, calc(-100% - 16px))` that anchors the
+    // toolbar above the selection — landing it directly on the
+    // highlighted line once the animation settles.
     animation:
-      "water-pill-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
+      "water-fade-in var(--water-dur-small) var(--water-ease-out-soft) both",
   };
 
   const iconButtonStyle = (active: boolean): CSSProperties => ({

@@ -113,7 +113,13 @@ async fn audit_loop<P: LlmProvider + ?Sized>(
         let speaker = personas
             .by_id(&fx.speaker)
             .ok_or_else(|| format!("unknown persona: {}", fx.speaker))?;
-        let req_prompt = assemble_level_0(&prompts, &*speaker, &fx.trigger, &fx.scene_excerpt)?;
+        let req_prompt = assemble_level_0(
+            &prompts,
+            &*speaker,
+            &fx.trigger,
+            &fx.scene_excerpt,
+            &crate::prompts::PromptContext::default(),
+        )?;
         let req = GenerateRequest {
             system: req_prompt.system,
             user: req_prompt.user,

@@ -55,6 +55,8 @@ mod tests {
             characters_present: vec![],
             word_count: 250,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot {
             character_count: 0,
@@ -69,6 +71,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         assert!(NoUniverseYet.evaluate(&ctx).is_some());
     }
@@ -90,6 +93,8 @@ mod tests {
             characters_present: vec![],
             word_count: 250,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot {
             character_count: 2,
@@ -104,6 +109,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         assert!(NoUniverseYet.evaluate(&ctx).is_none());
     }

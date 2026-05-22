@@ -297,6 +297,8 @@ mod tests {
             characters_present: vec![],
             word_count: 100,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot::default();
         let characters = crate::character::registry::CharacterRegistry::empty();
@@ -308,6 +310,7 @@ mod tests {
             characters: &characters,
             world_registry: test_util::test_world_registry(),
             prompts: test_util::test_prompts(),
+            tuning: test_util::test_tuning(),
         };
         assert!(WorldDrift.evaluate(&ctx).is_none());
     }
@@ -335,6 +338,8 @@ mod tests {
             characters_present: vec![],
             word_count: 100,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot::default();
         let characters = crate::character::registry::CharacterRegistry::empty();
@@ -346,6 +351,7 @@ mod tests {
             characters: &characters,
             world_registry: test_util::test_world_registry(),
             prompts: test_util::test_prompts(),
+            tuning: test_util::test_tuning(),
         };
         assert!(WorldDrift.evaluate(&ctx).is_none());
     }
@@ -375,6 +381,8 @@ mod tests {
             characters_present: vec![],
             word_count: 100,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot::default();
         let characters = crate::character::registry::CharacterRegistry::empty();
@@ -387,6 +395,7 @@ mod tests {
             // Default WorldRegistry is empty.
             world_registry: test_util::test_world_registry(),
             prompts: test_util::test_prompts(),
+            tuning: test_util::test_tuning(),
         };
         assert!(WorldDrift.evaluate(&ctx).is_none());
     }
@@ -471,6 +480,8 @@ mod tests {
             characters_present: vec![],
             word_count: 100,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project_snap = ProjectSnapshot::default();
         let characters = crate::character::registry::CharacterRegistry::empty();
@@ -482,6 +493,7 @@ mod tests {
             characters: &characters,
             world_registry: &world_reg,
             prompts: test_util::test_prompts(),
+            tuning: test_util::test_tuning(),
         };
 
         let cand = WorldDrift

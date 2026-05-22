@@ -1,0 +1,115 @@
+# Cross-platform release build.
+#
+# Triggers on push of a tag matching `v*` (e.g. `v0.1.0-alpha`).
+# Builds Windows / macOS / Linux installers in parallel and attaches
+# them to a GitHub Release that the maintainer can review + publish.
+#
+# Local equivalent: `pnpm --filter @water/app tauri build` on each OS.
+# Doing it via CI removes the "I only have one machine" bottleneck +
+# gives reproducible builds.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Hand-fire from the Actions tab when iterating on the workflow
+  # itself, before any tags exist.
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # required to create the GitHub Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            label: linux
+          - platform: windows-latest
+            label: windows
+          - platform: macos-latest
+            label: macos
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Rust toolchain + dependency cache ──────────────────────
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct cache key per platform so the cache restoration
+          # doesn't smear OS-specific artifacts across runners.
+          key: ${{ matrix.platform }}-release
+
+      # ── Node + pnpm for the frontend build ─────────────────────
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          run_install: false
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      # ── Linux-only system packages required by Tauri ───────────
+      # webkit2gtk + a few small libs that the Tauri bundler / GTK
+      # dependency need. Mac + Windows ship the equivalents.
+      - name: Linux deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libssl-dev libgtk-3-dev
+
+      # ── Run the Tauri build + attach artifacts to a draft Release ─
+      # `tauri-action` does heavy lifting: invokes the right bundler
+      # per OS (NSIS / WiX on Windows, dmgbuild on macOS, deb +
+      # AppImage on Linux), then uploads the produced artifacts to
+      # the release tagged below.
+      - name: Build + upload
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signing keys for the auto-updater. Generate locally with
+          # `pnpm tauri signer generate`, then add the PRIVATE key as
+          # the repo secret `TAURI_SIGNING_PRIVATE_KEY` + the passphrase
+          # as `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The public key
+          # lives in `tauri.conf.json`. Without these secrets the
+          # build still succeeds but the resulting installer can't
+          # produce signed `.sig` files — the updater will refuse
+          # the package on update check.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # The tag that triggered the run. tauri-action also accepts
+          # `__VERSION__` to substitute from `package.json`; we use
+          # the tag verbatim so release-vs-tag never drifts.
+          tagName: ${{ github.ref_name }}
+          releaseName: "Water ${{ github.ref_name }}"
+          releaseBody: |
+            Auto-generated release. See `docs/TESTER.md` in the repo
+            for setup instructions.
+
+            **Windows**: download the `.msi`, run, accept SmartScreen
+            warning ("More info → Run anyway") until we ship signing.
+            **macOS**: download the `.dmg`, drag to Applications.
+            **Linux**: `.AppImage` or `.deb` depending on distro.
+          # Keep the release as a draft so the maintainer can review
+          # the bundles before clicking Publish.
+          releaseDraft: true
+          # Don't publish under the same tag if the workflow re-runs.
+          prerelease: false
+          projectPath: app
+          # Tauri-action builds whatever's in `tauri.conf.json`'s
+          # `bundle.targets`. We currently target ["app", "dmg",
+          # "msi", "nsis"]; the action picks the OS-relevant subset
+          # at runtime.
+          args: ""

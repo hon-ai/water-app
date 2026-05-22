@@ -10,7 +10,7 @@
 //!   mount to rehydrate the existing pin set.
 
 use crate::events::emit;
-use crate::orchestrator_service::{parse_id, OrchestratorRequest};
+use crate::orchestrator_service::{parse_id, OrchestratorRequest, OutcomeSignal};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -40,6 +40,14 @@ pub async fn pill_expand(state: State<'_, AppState>, parent_pill_id: String) -> 
     };
     if let Some(h) = handle {
         let pid = parse_id(&parent_pill_id)?;
+        // v8: register engagement before kicking off the expand
+        // pipeline. Click is non-terminal; the actual reward applies
+        // on the subsequent Pin / Dismiss / Evict.
+        h.send(OrchestratorRequest::RecordOutcome {
+            pill_id: pid.clone(),
+            outcome: OutcomeSignal::Click,
+        })
+        .await;
         h.send(OrchestratorRequest::Expand {
             parent_pill_id: pid,
         })
@@ -175,12 +183,38 @@ pub async fn pill_pin(
     block_id: String,
     snippet: String,
 ) -> Result<PinPillResponse, String> {
-    let (db, root, project_id) = {
+    let (db, root, project_id, orch) = {
         let proj = state.project.lock().await;
         let p = proj.as_ref().ok_or("no project open")?;
-        (p.db.clone(), p.root.clone(), p.project_id.clone())
+        (
+            p.db.clone(),
+            p.root.clone(),
+            p.project_id.clone(),
+            p.orchestrator.as_ref().cloned(),
+        )
     };
-    let resp = pill_pin_core(db, root, project_id, pill.clone(), scene_id, block_id, snippet).await?;
+    let resp = pill_pin_core(
+        db,
+        root,
+        project_id,
+        pill.clone(),
+        scene_id,
+        block_id,
+        snippet,
+    )
+    .await?;
+    // v8: terminal positive — record before the renderer is notified
+    // so a subsequent pill:emerged from the same telemetry tick sees
+    // the bumped sensitivity.
+    if let Some(h) = orch {
+        if let Ok(pid) = parse_id(&pill.pill_id) {
+            h.send(OrchestratorRequest::RecordOutcome {
+                pill_id: pid,
+                outcome: OutcomeSignal::Pin,
+            })
+            .await;
+        }
+    }
     emit(&app, "pill:pinned", pill).map_err(|e| e.to_string())?;
     Ok(resp)
 }
@@ -194,10 +228,26 @@ pub async fn pill_dismiss(
     // Delete from pinned_pill if present. "no project open" is not an
     // error here — un-pinning during shutdown should still emit events so
     // the renderer can clean up its state.
-    let db_opt = {
+    let (db_opt, orch) = {
         let proj = state.project.lock().await;
-        proj.as_ref().map(|p| p.db.clone())
+        match proj.as_ref() {
+            Some(p) => (Some(p.db.clone()), p.orchestrator.as_ref().cloned()),
+            None => (None, None),
+        }
     };
+    // v8: terminal negative — record before deletion so a subsequent
+    // emerge from the same tick reads the tightened sensitivity. The
+    // attribution table silently ignores ids it doesn't know about,
+    // so the "user un-pinning a long-ago pinned pill" case is safe.
+    if let Some(h) = orch {
+        if let Ok(pid) = parse_id(&pill_id) {
+            h.send(OrchestratorRequest::RecordOutcome {
+                pill_id: pid,
+                outcome: OutcomeSignal::Dismiss,
+            })
+            .await;
+        }
+    }
     if let Some(db) = db_opt {
         let g = db.lock().await;
         let _ = g.conn().execute(
@@ -221,6 +271,124 @@ pub async fn pill_dismiss(
         pill_id: String,
     }
     emit(&app, "pill:unpinned", Unpinned { pill_id }).map_err(|e| e.to_string())
+}
+
+/// Phase 4 — open the rabbit hole on a pill. Inserts a root in
+/// `rabbit_thought` and dispatches the first fan_4 LLM call. The
+/// renderer subscribes to `deepen:ready` to receive the children.
+///
+/// The renderer passes the pill's text + speaker + block target
+/// rather than the orchestrator looking them up — the service-side
+/// `Pill.text` never gets written back after the LLM call lands
+/// (legacy quirk), so the renderer is the authoritative source.
+#[tauri::command]
+pub async fn pill_deepen(
+    state: State<'_, AppState>,
+    pill_id: String,
+    parent_text: String,
+    speaker_id: String,
+    block_target_id: Option<String>,
+) -> Result<(), String> {
+    let handle = {
+        let proj = state.project.lock().await;
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
+    };
+    if let Some(h) = handle {
+        let pid = parse_id(&pill_id)?;
+        h.send(OrchestratorRequest::DeepenPill {
+            pill_id: pid,
+            parent_text,
+            speaker_id,
+            block_target_id,
+        })
+        .await;
+    }
+    Ok(())
+}
+
+/// Phase 4 — fan four further children from an existing rabbit
+/// thought (writer descended via the deepen panel).
+#[tauri::command]
+pub async fn rabbit_deepen_thought(
+    state: State<'_, AppState>,
+    thought_id: String,
+) -> Result<(), String> {
+    let handle = {
+        let proj = state.project.lock().await;
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
+    };
+    if let Some(h) = handle {
+        let tid = parse_id(&thought_id)?;
+        h.send(OrchestratorRequest::DeepenThought { thought_id: tid })
+            .await;
+    }
+    Ok(())
+}
+
+/// Phase 4 — toggle the resonance flag on a rabbit thought.
+#[tauri::command]
+pub async fn rabbit_set_resonance(
+    state: State<'_, AppState>,
+    thought_id: String,
+    resonant: bool,
+) -> Result<(), String> {
+    let handle = {
+        let proj = state.project.lock().await;
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
+    };
+    if let Some(h) = handle {
+        let tid = parse_id(&thought_id)?;
+        h.send(OrchestratorRequest::SetRabbitResonance {
+            thought_id: tid,
+            resonant,
+        })
+        .await;
+    }
+    Ok(())
+}
+
+/// v8: Settings → "Reset trigger learning" hook. Deletes every
+/// `trigger_feedback` row and resets the orchestrator's in-memory
+/// tuning back to defaults. The next pill emission will run with
+/// every threshold at its M2 default until the writer rebuilds
+/// signal through fresh outcomes.
+#[tauri::command]
+pub async fn feedback_reset(state: State<'_, AppState>) -> Result<(), String> {
+    let orch = {
+        let proj = state.project.lock().await;
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
+    };
+    if let Some(h) = orch {
+        h.send(OrchestratorRequest::ResetLearning).await;
+    }
+    Ok(())
+}
+
+/// v8: renderer-side FIFO eviction signal. The renderer's
+/// `PillLayer` keeps at most `MAX_ON_SCREEN` capsules; when it
+/// drops the oldest one, it calls this command so the orchestrator
+/// can finalize the attribution. The outcome reward is computed
+/// based on whether the pill had been clicked first (engagement
+/// vs. pure ignore).
+#[tauri::command]
+pub async fn pill_evicted(
+    state: State<'_, AppState>,
+    pill_id: String,
+) -> Result<(), String> {
+    let orch = {
+        let proj = state.project.lock().await;
+        proj.as_ref().and_then(|p| p.orchestrator.as_ref().cloned())
+    };
+    if let Some(h) = orch {
+        if let Ok(pid) = parse_id(&pill_id) {
+            h.send(OrchestratorRequest::RecordOutcome {
+                pill_id: pid,
+                outcome: OutcomeSignal::Evict,
+            })
+            .await;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]

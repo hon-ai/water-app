@@ -377,6 +377,7 @@ mod tests {
             .join(format!("{scene_id}.md"));
         crate::scene_md::SceneFile {
             frontmatter: SceneFrontmatter {
+                water_scene: true,
                 id: scene_id,
                 name: "Opening".into(),
                 chapter_id: None,
@@ -470,6 +471,7 @@ mod tests {
             .join(format!("{scene_id}.md"));
         crate::scene_md::SceneFile {
             frontmatter: SceneFrontmatter {
+                water_scene: true,
                 id: scene_id.clone(),
                 name: "Opening".into(),
                 chapter_id: None,
@@ -590,6 +592,7 @@ mod tests {
             .join(format!("{scene_id}.md"));
         crate::scene_md::SceneFile {
             frontmatter: SceneFrontmatter {
+                water_scene: true,
                 id: scene_id.clone(),
                 name: "Stranded".into(),
                 chapter_id: None,

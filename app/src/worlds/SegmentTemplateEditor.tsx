@@ -5,6 +5,7 @@ import {
   type WorldTemplateFieldKind,
   type WorldTemplateSchema,
 } from "../ipc/commands";
+import { GlassSelect } from "../chrome/GlassSelect";
 
 type EditableKind = "short_text" | "long_text" | "string_list";
 
@@ -204,18 +205,24 @@ export function SegmentTemplateEditor({
                 disabled={locked}
                 data-testid={`field-label-${i}`}
               />
-              <select
-                value={f.kind}
-                onChange={(e) =>
-                  updateField(i, { kind: e.target.value as EditableKind })
-                }
-                disabled={locked}
+              <div
+                style={{ minWidth: 130 }}
                 data-testid={`field-kind-${i}`}
               >
-                <option value="short_text">short text</option>
-                <option value="long_text">long text</option>
-                <option value="string_list">list</option>
-              </select>
+                <GlassSelect
+                  ariaLabel="Field kind"
+                  disabled={locked}
+                  value={f.kind}
+                  options={[
+                    { value: "short_text", label: "short text" },
+                    { value: "long_text", label: "long text" },
+                    { value: "string_list", label: "list" },
+                  ]}
+                  onChange={(next) =>
+                    updateField(i, { kind: next as EditableKind })
+                  }
+                />
+              </div>
               <input
                 type="text"
                 value={f.promptQuestion}

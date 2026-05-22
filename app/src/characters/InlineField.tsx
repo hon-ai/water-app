@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { IntakeField, IntakeFieldKind } from "../ipc/commands";
+import { GlassSelect } from "../chrome/GlassSelect";
 
 /**
  * Reusable inline-edit cell primitive (M3 T18).
@@ -65,6 +66,24 @@ export function InlineField({ field, value, onSave }: Props) {
     }
   };
 
+  /** Like commit(), but takes the value to save explicitly — used by
+   *  the choice editor since GlassSelect's onChange fires with the
+   *  new value before setDraft has flushed to closure. */
+  const commitWith = async (next: unknown) => {
+    if (deepEqual(next, value)) {
+      setEditing(false);
+      return;
+    }
+    setStatus("saving");
+    try {
+      await onSave(next);
+      setStatus("saved");
+      setEditing(false);
+    } catch {
+      setStatus("error");
+    }
+  };
+
   const cancel = () => {
     setDraft(value);
     setEditing(false);
@@ -97,7 +116,7 @@ export function InlineField({ field, value, onSave }: Props) {
   return (
     <div className="water-inline-field" data-editing="true">
       <label>{field.label}</label>
-      {renderEditor(field, draft, setDraft, inputRef, commit, cancel)}
+      {renderEditor(field, draft, setDraft, inputRef, commit, cancel, commitWith)}
       {status === "saving" && <span data-testid="status-chip">Saving…</span>}
       {status === "saved" && <span data-testid="status-chip">Saved</span>}
       {status === "error" && (
@@ -118,6 +137,7 @@ function renderEditor(
   >,
   commit: () => Promise<void>,
   cancel: () => void,
+  commitWith: (next: unknown) => Promise<void>,
 ) {
   const kind = field.kind;
   switch (kind.type) {
@@ -206,32 +226,20 @@ function renderEditor(
       );
     case "choice":
       return (
-        <select
-          ref={(el) => {
-            inputRef.current = el;
-          }}
-          aria-label={field.label}
+        <GlassSelect
+          ariaLabel={field.label}
           value={asString(draft)}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            void commit();
+          placeholder="Choose…"
+          options={kind.options.map((opt) => ({ value: opt, label: opt }))}
+          onChange={(next) => {
+            // Choice commits immediately — picking is the gesture,
+            // there's no separate Enter / Confirm step. Use the
+            // explicit-value commit so we don't lose the click to
+            // setDraft's async update cycle.
+            setDraft(next);
+            void commitWith(next);
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              cancel();
-            }
-          }}
-        >
-          <option value="" disabled>
-            Choose…
-          </option>
-          {kind.options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+        />
       );
   }
 }

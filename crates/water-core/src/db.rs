@@ -114,14 +114,14 @@ mod tests {
     #[test]
     fn schema_version_row_matches_latest_migration() {
         // `Db::open_in_memory` ratchets to the latest migration; the
-        // `schema_version` table is human-readable bookkeeping kept in sync
-        // by each migration script. As of v7 (multi-location presence
-        // for the M6 canvas multi-lane view), the current version is 7.
+        // `schema_version` table is human-readable bookkeeping kept in
+        // sync by each migration script. As of v10 (editor_pill table
+        // for the Phase-5 diagnostic surface), the current version is 10.
         let db = Db::open_in_memory().unwrap();
         let v: i64 = db
             .conn()
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 7);
+        assert_eq!(v, 10);
     }
 }

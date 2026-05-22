@@ -157,7 +157,50 @@ const marksWithLinkTitle = linkSpec
     })
   : baseMarks;
 
+// Strikethrough mark — `~~text~~` in CommonMark + GFM. Parsed from
+// any of `<s>`, `<del>`, or legacy `<strike>` so pasted HTML round-
+// trips. Serialized in the markdown serializer (./serialize.ts).
+const strikeSpec = {
+  parseDOM: [{ tag: "s" }, { tag: "del" }, { tag: "strike" }],
+  toDOM: (): DOMOutputSpec => ["s", 0],
+};
+
+const marksWithStrike = marksWithLinkTitle.addToEnd("strike", strikeSpec);
+
+// Wikilink mark — Obsidian-style `[[target]]` or `[[target|alias]]`.
+// The `target` attribute is the link destination (a scene name, note
+// title, or arbitrary string). The mark's *text content* is what the
+// reader sees: when `target === text`, the serializer emits the
+// short form; when they differ, the pipe form. Rendered as an `<a>`
+// with `data-wikilink="true"` so the renderer can theme it
+// distinctly from regular links.
+const wikilinkSpec = {
+  attrs: { target: { default: "" } },
+  inclusive: false,
+  parseDOM: [
+    {
+      tag: "a[data-wikilink='true']",
+      getAttrs: (dom: HTMLElement | string) => {
+        const el = dom as HTMLElement;
+        return { target: el.getAttribute("data-wikilink-target") ?? "" };
+      },
+    },
+  ],
+  toDOM: (mark: Mark): DOMOutputSpec => [
+    "a",
+    {
+      "data-wikilink": "true",
+      "data-wikilink-target": mark.attrs["target"],
+      class: "water-wikilink",
+      title: `Wiki-link: ${mark.attrs["target"]}`,
+    },
+    0,
+  ],
+};
+
+const marksWithWikilink = marksWithStrike.addToEnd("wikilink", wikilinkSpec);
+
 export const schema = new Schema({
   nodes: withLists,
-  marks: marksWithLinkTitle,
+  marks: marksWithWikilink,
 });

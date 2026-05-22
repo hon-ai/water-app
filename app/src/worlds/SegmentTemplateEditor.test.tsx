@@ -64,9 +64,15 @@ describe("SegmentTemplateEditor", () => {
     fireEvent.change(screen.getByTestId("field-label-0"), {
       target: { value: "Notable Items" },
     });
-    fireEvent.change(screen.getByTestId("field-kind-0"), {
-      target: { value: "string_list" },
-    });
+    // The field-kind cell now wraps a GlassSelect — open it and pick
+    // the "list" option (the GlassSelect label for "string_list").
+    const kindCell = screen.getByTestId("field-kind-0");
+    const kindTrigger = kindCell.querySelector(
+      'button[data-glass-select="true"]',
+    ) as HTMLButtonElement | null;
+    expect(kindTrigger).not.toBeNull();
+    fireEvent.click(kindTrigger!);
+    fireEvent.click(await screen.findByRole("option", { name: /^list$/ }));
     fireEvent.click(screen.getByTestId("save-button"));
     await waitFor(() => expect(ipc.worldSegmentCreate).toHaveBeenCalled());
     const call = (ipc.worldSegmentCreate as ReturnType<typeof vi.fn>).mock

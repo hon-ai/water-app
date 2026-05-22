@@ -78,12 +78,18 @@ const TRIGGER_NO_UNIVERSE_YET: &str =
     include_str!("../../../../prompts/triggers/no_universe_yet.toml");
 const TRIGGER_CHARACTER_DISSONANCE: &str =
     include_str!("../../../../prompts/triggers/character_dissonance.toml");
-const TRIGGER_IDLE_PAUSE: &str =
+const TRIGGER_IDLE_PAUSE_WITH_PRESENT_CHARACTER: &str =
     include_str!("../../../../prompts/triggers/idle_pause_with_present_character.toml");
+const TRIGGER_IDLE_PAUSE: &str =
+    include_str!("../../../../prompts/triggers/idle_pause.toml");
 
 const TASK_PILL_LEVEL_0: &str = include_str!("../../../../prompts/tasks/pill_level_0.toml");
 const TASK_PILL_EXPAND: &str = include_str!("../../../../prompts/tasks/pill_expand.toml");
 const TASK_PILL_REGENERATE: &str = include_str!("../../../../prompts/tasks/pill_regenerate.toml");
+const TASK_RABBIT_FAN_4: &str = include_str!("../../../../prompts/tasks/rabbit_fan_4.toml");
+const TASK_RABBIT_DEEPEN_INHERIT: &str =
+    include_str!("../../../../prompts/tasks/rabbit_deepen_inherit.toml");
+const TASK_EDITOR_POLISH: &str = include_str!("../../../../prompts/tasks/editor_polish.toml");
 
 const TASK_PILL_DISSONANCE_CHECK: &str =
     include_str!("../../../../prompts/tasks/pill_dissonance_check.toml");
@@ -119,6 +125,7 @@ impl PromptLibrary {
             TRIGGER_WORLD_DRIFT,
             TRIGGER_NO_UNIVERSE_YET,
             TRIGGER_CHARACTER_DISSONANCE,
+            TRIGGER_IDLE_PAUSE_WITH_PRESENT_CHARACTER,
             TRIGGER_IDLE_PAUSE,
         ] {
             let p: TriggerPrompt = toml::from_str(src).map_err(|e| e.to_string())?;
@@ -126,7 +133,14 @@ impl PromptLibrary {
         }
 
         let mut tasks: HashMap<String, TaskPrompt> = HashMap::new();
-        for src in [TASK_PILL_LEVEL_0, TASK_PILL_EXPAND, TASK_PILL_REGENERATE] {
+        for src in [
+            TASK_PILL_LEVEL_0,
+            TASK_PILL_EXPAND,
+            TASK_PILL_REGENERATE,
+            TASK_RABBIT_FAN_4,
+            TASK_RABBIT_DEEPEN_INHERIT,
+            TASK_EDITOR_POLISH,
+        ] {
             let p: TaskPrompt = toml::from_str(src).map_err(|e| e.to_string())?;
             tasks.insert(p.id.clone(), p);
         }
@@ -209,8 +223,11 @@ mod tests {
     fn library_loads_all_built_in_prompts() {
         let lib = PromptLibrary::load_builtin().unwrap();
         assert_eq!(lib.tone.version, "1");
-        assert_eq!(lib.triggers.len(), 10);
-        assert_eq!(lib.tasks.len(), 3);
+        assert_eq!(lib.triggers.len(), 11);
+        // 6 tasks as of Phase 5.8: pill_level_0, pill_expand,
+        // pill_regenerate, rabbit_fan_4, rabbit_deepen_inherit,
+        // editor_polish.
+        assert_eq!(lib.tasks.len(), 6);
         assert_eq!(lib.confirmations.len(), 2);
         assert!(lib
             .tone

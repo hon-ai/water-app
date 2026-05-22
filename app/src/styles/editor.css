@@ -141,3 +141,56 @@
 .water-editor:has(> .ProseMirror > p:only-child:empty)::before {
   opacity: 1;
 }
+
+/* ---------- Pill trigger-phrase highlight (Phase 3.5 §C.6.c) ----------
+   Painted by the prosemirror trigger-highlight plugin as an inline
+   decoration on the resolved char range. Uses the active palette so
+   sea-themed projects light triggers in their palette hue. Tuned to
+   read clearly against the manuscript paper but never compete with
+   the writer's prose at rest — fades up on apply, away on clear. */
+.water-editor .water-trigger-highlight {
+  background: color-mix(in oklch, var(--water-sea-200), transparent 70%);
+  border-bottom: 1.5px solid var(--water-sea-400);
+  border-radius: 2px;
+  padding: 0 1px;
+  transition: background var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .water-editor .water-trigger-highlight {
+    transition: none;
+  }
+}
+
+/* ---------- Phase 5 editor-pill inline underline (UX_SPEC §E.4) ----------
+   Dotted underline beneath any span flagged by the rule-based or
+   LLM diagnostic engine. Hue per severity bucket so warnings (red-
+   tinted sea-600) stand out from suggestions (sea-300) and gentle
+   observations (sea-200). Tuned to read as "the editor noticed
+   something here" without disturbing reading flow — no background
+   fill, just the underline. */
+.water-editor .water-editor-underline {
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+  cursor: help;
+  transition:
+    text-decoration-color var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+.water-editor .water-editor-underline-observation {
+  text-decoration-color: color-mix(in oklch, var(--water-sea-200), transparent 30%);
+}
+.water-editor .water-editor-underline-suggestion {
+  text-decoration-color: color-mix(in oklch, var(--water-sea-300), transparent 20%);
+}
+.water-editor .water-editor-underline-warning {
+  text-decoration-color: color-mix(in oklch, var(--water-sea-600), transparent 20%);
+}
+.water-editor .water-editor-underline:hover {
+  text-decoration-color: var(--water-sea-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .water-editor .water-editor-underline { transition: none; }
+}

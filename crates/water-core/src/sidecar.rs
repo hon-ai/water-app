@@ -57,6 +57,15 @@ impl Sidecar {
             .arg("--port")
             .arg(spec.port.to_string())
             .current_dir(&spec.working_dir)
+            // Force-flush Python stdout. When uvicorn is spawned with
+            // piped stdout (no TTY), Python's stdout is block-buffered
+            // by default — the `WATER_SIDECAR_PORT=` line we wait for
+            // in `main.py` may sit in the buffer until uvicorn does
+            // its own flush, which can exceed `boot_timeout`. Setting
+            // PYTHONUNBUFFERED switches stdout/stderr to unbuffered
+            // mode for the lifetime of this child process, so the
+            // marker reaches us as soon as `print()` returns.
+            .env("PYTHONUNBUFFERED", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);

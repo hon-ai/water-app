@@ -14,6 +14,14 @@ interface Props {
    * pinned where it appeared even if the strip later re-renders.
    */
   anchor: DOMRect | null;
+  /**
+   * Ref to the trigger button. Clicks on it must NOT be treated as
+   * outside-clicks — otherwise the picker's outside-mousedown handler
+   * closes the picker immediately before the button's onClick toggles
+   * it, resulting in a re-open. Excluding the trigger lets the toggle
+   * land cleanly.
+   */
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
 /**
@@ -32,14 +40,21 @@ export function HeatmapMetricPicker({
   onToggle,
   onClose,
   anchor,
+  triggerRef,
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
 
-  // Close on outside click + Escape.
+  // Close on outside click + Escape. Clicks on the trigger button are
+  // excluded so the trigger's own onClick can toggle the picker shut
+  // (without this guard, this handler closes first and the button
+  // re-opens it).
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if (ref.current && ref.current.contains(target)) return;
+      if (triggerRef?.current && triggerRef.current.contains(target)) return;
+      onClose();
     };
     const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -50,7 +65,7 @@ export function HeatmapMetricPicker({
       window.removeEventListener("mousedown", handler);
       window.removeEventListener("keydown", esc);
     };
-  }, [open, onClose]);
+  }, [open, onClose, triggerRef]);
 
   if (!open || !anchor) return null;
 
@@ -84,17 +99,25 @@ export function HeatmapMetricPicker({
         top,
         left,
         width: PICKER_WIDTH,
-        padding: 8,
-        // Fully opaque so the editor body behind the strip doesn't
-        // bleed through. Portal escapes any stacking context the
-        // editor canvas may have set up.
-        background: "var(--water-bg-paper)",
+        padding: 10,
+        // Deep-sea glass: the picker is the heatmap's child surface,
+        // so the substrate echoes the strip's deep-blue. A bright
+        // inner highlight + sea-glow outer halo make it read as
+        // luminous fog rather than another floating paper panel.
+        background:
+          "linear-gradient(180deg, color-mix(in oklch, var(--water-sea-700), transparent 18%), color-mix(in oklch, var(--water-sea-800), transparent 8%))",
+        backdropFilter: "blur(24px) saturate(160%)",
+        WebkitBackdropFilter: "blur(24px) saturate(160%)",
+        border:
+          "1px solid color-mix(in srgb, var(--water-sea-glow) 22%, transparent)",
         borderRadius: "var(--water-r-16)",
-        boxShadow: "var(--water-elev-2)",
+        boxShadow:
+          "0 12px 32px color-mix(in srgb, var(--water-sea-800) 35%, transparent), inset 0 1px 0 color-mix(in srgb, var(--water-sea-glow) 28%, transparent), 0 0 28px color-mix(in srgb, var(--water-sea-glow) 12%, transparent)",
+        color: "color-mix(in srgb, var(--water-sea-glow) 80%, white)",
         zIndex: 10000,
         textAlign: "left",
         animation:
-          "water-pill-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
+          "water-heat-picker-in var(--water-dur-small) var(--water-ease-out-soft) both",
       }}
     >
       <div
@@ -105,7 +128,7 @@ export function HeatmapMetricPicker({
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: 0.6,
-          color: "var(--water-fg-muted)",
+          color: "color-mix(in srgb, var(--water-sea-glow) 70%, white)",
           textAlign: "left",
         }}
       >
@@ -134,7 +157,7 @@ export function HeatmapMetricPicker({
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background =
-                "color-mix(in srgb, var(--water-fg-faint) 8%, transparent)";
+                "color-mix(in srgb, var(--water-sea-glow) 14%, transparent)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "transparent";
@@ -170,7 +193,7 @@ export function HeatmapMetricPicker({
                 fontFamily: "var(--water-font-sans)",
                 fontSize: "var(--water-fs-ui)",
                 fontWeight: 500,
-                color: "var(--water-fg-default)",
+                color: "color-mix(in srgb, white 92%, var(--water-sea-100))",
                 textAlign: "left",
               }}
             >
@@ -203,7 +226,8 @@ export function HeatmapMetricPicker({
                 fontFamily: "var(--water-font-sans)",
                 fontSize: 11,
                 lineHeight: 1.45,
-                color: "var(--water-fg-muted)",
+                color:
+                  "color-mix(in srgb, var(--water-sea-100) 80%, transparent)",
                 textAlign: "left",
               }}
             >

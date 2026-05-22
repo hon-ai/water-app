@@ -159,6 +159,43 @@ describe("markdownFromDoc <-> docFromMarkdown round-trip", () => {
     const md = "^bk-0001 a\\*b\\*c\n";
     expect(roundTrip(md)).toBe(md);
   });
+
+  it("round-trips a bare wikilink", () => {
+    const md = "^bk-0001 see [[Library]]\n";
+    expect(roundTrip(md)).toBe(md);
+  });
+
+  it("round-trips a wikilink with alias", () => {
+    const md = "^bk-0001 the [[The Library's Secret|library]] looms\n";
+    expect(roundTrip(md)).toBe(md);
+  });
+
+  it("renders the wikilink mark to a styled anchor", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", { blockId: "^bk-0001" }, [
+        schema.text("see "),
+        schema.text("Library", [
+          schema.marks.wikilink!.create({ target: "Library" }),
+        ]),
+      ]),
+    ]);
+    expect(markdownFromDoc(doc)).toBe("^bk-0001 see [[Library]]\n");
+  });
+
+  it("serializes wikilink alias form when target differs from text", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", { blockId: "^bk-0001" }, [
+        schema.text("the ", []),
+        schema.text("library", [
+          schema.marks.wikilink!.create({ target: "The Library's Secret" }),
+        ]),
+        schema.text(" looms", []),
+      ]),
+    ]);
+    expect(markdownFromDoc(doc)).toBe(
+      "^bk-0001 the [[The Library's Secret|library]] looms\n",
+    );
+  });
 });
 
 describe("markdownFromDoc round-trip property test", () => {

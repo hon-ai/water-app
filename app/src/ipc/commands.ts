@@ -1,5 +1,26 @@
 import { invoke } from "@tauri-apps/api/core";
 
+/**
+ * Phase 5 — a persisted editor pill (diagnostic finding). Mirrors
+ * `EditorPillRow` in `crates/water-core/src/editor/store.rs`.
+ */
+export interface EditorPillRow {
+  id: string;
+  scene_id: string;
+  rule: string;
+  severity: "observation" | "suggestion" | "warning";
+  message: string;
+  suggestion: string | null;
+  anchor_block_id: string;
+  anchor_start: number;
+  anchor_end: number;
+  text_snippet: string;
+  content_hash: string;
+  dismissed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface OpenProjectInfo {
   root: string;
   name: string;
@@ -596,10 +617,21 @@ export const ipc = {
   sceneCanvasResetAll: (): Promise<void> =>
     invoke("scene_canvas_reset_all"),
 
-  providerTest: (providerId: string): Promise<string[]> =>
-    invoke("provider_test", { providerId }),
+  /** Test a provider end-to-end. `model` (optional) is the model id the
+   *  writer has chosen in the model picker — if omitted, the Rust side
+   *  falls back to the adapter's hardcoded default. The chosen model is
+   *  also applied as the router's default-model override after a
+   *  successful test, so subsequent calls keep using it. */
+  providerTest: (providerId: string, model?: string): Promise<string[]> =>
+    invoke("provider_test", { providerId, model: model ?? null }),
   providerSetKey: (providerId: string, key: string): Promise<void> =>
     invoke("provider_set_key", { providerId, key }),
+  /** Set the active model override for a provider. Empty `model`
+   *  clears the override (provider falls back to its default).
+   *  Renderer persists locally + re-applies on boot so the choice
+   *  survives restarts. */
+  providerSetModel: (providerId: string, model: string): Promise<void> =>
+    invoke("provider_set_model", { providerId, model }),
 
   diagnosticsStatus: (): Promise<DiagnosticsStatus> =>
     invoke("diagnostics_status"),
@@ -629,6 +661,11 @@ export const ipc = {
     bodyText: string;
     characterCount: number;
     worldEntryCount: number;
+    /** Phase 6 — 0-indexed position of this scene in its manuscript.
+     *  Optional; absent → orchestrator omits the arc-position line. */
+    sceneOrdering?: number | null;
+    /** Phase 6 — total scenes in the manuscript. See `sceneOrdering`. */
+    manuscriptSceneCount?: number | null;
   }): Promise<void> =>
     invoke("scene_state", {
       payload: {
@@ -640,6 +677,8 @@ export const ipc = {
         body_text: payload.bodyText,
         character_count: payload.characterCount,
         world_entry_count: payload.worldEntryCount,
+        scene_ordering: payload.sceneOrdering ?? null,
+        manuscript_scene_count: payload.manuscriptSceneCount ?? null,
       },
     }),
   /**
@@ -659,6 +698,83 @@ export const ipc = {
     invoke("pill_pin", { pill, sceneId, blockId, snippet }),
   pillDismiss: (pill_id: string): Promise<void> =>
     invoke("pill_dismiss", { pillId: pill_id }),
+  /** v8: notify the orchestrator that the renderer evicted this
+   *  pill via FIFO. Used by the adaptive sensitivity learner —
+   *  fire-and-forget; failures are swallowed. */
+  pillEvicted: (pill_id: string): Promise<void> =>
+    invoke("pill_evicted", { pillId: pill_id }),
+  /** v8: Settings "Reset trigger learning" — wipes
+   *  `trigger_feedback` and resets the orchestrator's in-memory
+   *  tuning. Buried in Settings on purpose; the system is meant
+   *  to be invisible. */
+  feedbackReset: (): Promise<void> => invoke("feedback_reset"),
+
+  /** Phase 4 — open the rabbit hole on a pill. Persists a root
+   *  thought and dispatches the first fan_4 LLM call. The renderer
+   *  listens for `deepen:ready` to receive the four children.
+   *
+   *  Passes the pill's text + speaker + block target through the
+   *  IPC because the service-side Pill record never gets its
+   *  `text` field written back after the LLM call lands; the
+   *  renderer is the source of truth here. */
+  pillDeepen: (
+    pill_id: string,
+    parent_text: string,
+    speaker_id: string,
+    block_target_id: string | null,
+  ): Promise<void> =>
+    invoke("pill_deepen", {
+      pillId: pill_id,
+      parentText: parent_text,
+      speakerId: speaker_id,
+      blockTargetId: block_target_id,
+    }),
+  /** Phase 4 — fan four further children from an existing rabbit
+   *  thought (writer descended via the deepen panel). */
+  rabbitDeepenThought: (thought_id: string): Promise<void> =>
+    invoke("rabbit_deepen_thought", { thoughtId: thought_id }),
+  /** Phase 4 — toggle the resonance flag on a rabbit thought.
+   *  Resonant nodes (and ancestors) are protected from auto-trim;
+   *  Phase 6 prompts will read recent resonant picks as a
+   *  voice-preference signal. */
+  rabbitSetResonance: (thought_id: string, resonant: boolean): Promise<void> =>
+    invoke("rabbit_set_resonance", { thoughtId: thought_id, resonant }),
+
+  /** Phase 5 — kick the diagnostic engine across a scene's blocks.
+   *  Renderer extracts [(blockId, text), …] from the PM doc and
+   *  passes them; the orchestrator persists findings and emits
+   *  `editor_pills:updated`. Returns the live (non-dismissed) set
+   *  for the caller to render synchronously. */
+  editorPillsRun: (
+    scene_id: string,
+    blocks: Array<{ blockId: string; text: string }>,
+  ): Promise<EditorPillRow[]> =>
+    invoke("editor_pills_run", {
+      payload: {
+        scene_id,
+        blocks: blocks.map((b) => ({ block_id: b.blockId, text: b.text })),
+      },
+    }),
+  /** Phase 5 — read active (non-dismissed) editor pills for a scene. */
+  editorPillsList: (scene_id: string): Promise<EditorPillRow[]> =>
+    invoke("editor_pills_list", { sceneId: scene_id }),
+  /** Phase 5 — flag an editor pill as dismissed. */
+  editorPillDismiss: (id: string): Promise<void> =>
+    invoke("editor_pill_dismiss", { id }),
+  /** Phase 5.8 — request an LLM polish pass on a paragraph. The
+   *  orchestrator throttles per scene (5/session) and per block
+   *  (30s cooldown) before spending the call. Fire-and-forget;
+   *  success surfaces via `editor_pills:updated`. */
+  editorPolishRequest: (
+    scene_id: string,
+    block_id: string,
+    text: string,
+  ): Promise<void> =>
+    invoke("editor_polish_request", {
+      sceneId: scene_id,
+      blockId: block_id,
+      text,
+    }),
   pinnedList: (): Promise<import("../pill/types").Pill[]> =>
     invoke("pinned_list"),
 

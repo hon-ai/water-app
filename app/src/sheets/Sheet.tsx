@@ -116,10 +116,24 @@ export function Sheet({ open, onClose, title, children }: Props) {
         width: "min(420px, 90vw)",
         maxHeight: "100vh",
         padding: 0,
-        border: "none",
-        background: "var(--water-bg-raised)",
+        // Matte-glass treatment — matches .water-floating-panel so the
+        // water-ribbon reads softly through every popup (character
+        // intake, settings, scene metadata, world entry, pinned pill).
+        border:
+          "1px solid color-mix(in srgb, var(--water-hairline) 55%, transparent)",
+        background:
+          "color-mix(in srgb, var(--water-bg-paper) 72%, transparent)",
+        backdropFilter: "blur(28px) saturate(170%) contrast(105%)",
+        WebkitBackdropFilter: "blur(28px) saturate(170%) contrast(105%)",
         color: "var(--water-fg-default)",
-        boxShadow: "var(--water-elev-3)",
+        boxShadow:
+          "var(--water-elev-3), inset 0 1px 0 color-mix(in srgb, white 24%, transparent)",
+        // The inner body `<div>` below owns the only vertical scroll
+        // for this Sheet — without this `hidden` on the dialog
+        // itself, the dialog ALSO renders its own scroll layer
+        // (default behavior on tall content), giving two stacked
+        // vertical scrollbars on the right edge.
+        overflow: "hidden",
         transform,
         transition,
       }}

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 32 32" fill="none">
+  <!--
+    Water StreamMark — three nested arcs suggesting a stream's
+    current. Mirrors the React component at
+    `app/src/chrome/StreamMark.tsx`. Painted with the deep-sea
+    palette by default; converters (ImageMagick, resvg, etc.)
+    rasterize at the target icon sizes.
+  -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="hsl(196, 90%, 64%)" />
+      <stop offset="50%" stop-color="hsl(208, 64%, 36%)" />
+      <stop offset="100%" stop-color="hsl(214, 80%, 16%)" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="32" height="32" rx="7" fill="hsl(214, 80%, 11%)" />
+  <path d="M 2 10 Q 10 4 16 10 T 30 10"
+        stroke="url(#g)" stroke-width="2.24" stroke-linecap="round" fill="none" opacity="0.9" />
+  <path d="M 1 16 Q 9 22 16 16 T 31 16"
+        stroke="url(#g)" stroke-width="1.6" stroke-linecap="round" fill="none" />
+  <path d="M 3 22 Q 10 18 16 22 T 29 22"
+        stroke="url(#g)" stroke-width="1.12" stroke-linecap="round" fill="none" opacity="0.7" />
+</svg>

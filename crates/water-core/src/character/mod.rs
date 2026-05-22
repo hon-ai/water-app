@@ -22,10 +22,12 @@
 //! call it without instantiating a store.
 
 pub mod autosuggest;
+pub mod compact;
 pub mod intake;
 pub mod registry;
 
 pub use autosuggest::{suggest_for_scene_body, AutosuggestResult, AutosuggestRow};
+pub use compact::character_compact;
 pub use intake::{completion_pct, REQUIRED_FIELD_IDS};
 pub use registry::{CharacterRegistry, CharacterRegistryRow};
 

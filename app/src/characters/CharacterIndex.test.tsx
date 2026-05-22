@@ -78,9 +78,12 @@ describe("CharacterIndex", () => {
       <CharacterIndex onOpenCharacter={vi.fn()} onOpenIntake={vi.fn()} />,
     );
     await screen.findByText("Marcus Vale");
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "completion" },
-    });
+    // Open the GlassSelect chip and pick "Completion" — GlassSelect
+    // renders a button trigger + portal-mounted listbox rather than
+    // a native <select>, so we drive it via clicks instead of
+    // fireEvent.change.
+    fireEvent.click(screen.getByLabelText("Sort characters"));
+    fireEvent.click(screen.getByRole("option", { name: /Completion/i }));
     // `data-testid="character-card"` is on each CharacterCard's button,
     // and not on the "+ New character" button, so this filters cleanly.
     const cards = screen.getAllByTestId("character-card");

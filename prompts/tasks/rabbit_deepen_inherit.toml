@@ -1,0 +1,29 @@
+version = "1"
+id = "rabbit_deepen_inherit"
+instruction = """
+The parent below is itself a child of an earlier thought in the same
+voice. Generate four further children that *inherit the parent's
+stance* — don't re-fan from the original premise; sustain the line
+of inquiry the parent has already opened.
+
+Each child ≤ 22 words. Stay in the parent's speaker voice. Honor
+the same four directions:
+
+  closer    — tighten on the parent's specific notice. one more
+              concrete detail.
+  wider     — pull back without abandoning the parent's stance.
+              relate it to a wider beat in the same arc.
+  opposite  — the version of the parent's thought turned against
+              itself; not against the *original* premise.
+  deeper    — the underside of the parent. what the parent
+              implies but won't say.
+
+Output strict JSON.
+[
+  {"direction": "closer",   "text": "..."},
+  {"direction": "wider",    "text": "..."},
+  {"direction": "opposite", "text": "..."},
+  {"direction": "deeper",   "text": "..."}
+]
+"""
+output_format = "json"

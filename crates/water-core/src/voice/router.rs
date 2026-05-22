@@ -306,6 +306,8 @@ mod tests {
             ],
             word_count: 500,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         }
     }
 
@@ -349,6 +351,8 @@ mod tests {
             characters_present: vec![],
             word_count: 500,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let s =
             route_with_chars(&cand, &persona_reg, &char_reg, &scene, &cd, Instant::now()).unwrap();
