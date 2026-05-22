@@ -4,9 +4,9 @@
 //! The full sheet runs several thousand tokens. The compact pulls the
 //! load-bearing fields — name, role, want, need, the lie they believe,
 //! values, fears, voice — into a single labelled block. This stops the
-//! model from inventing motivations the writer hasn't established (the
-//! (scrubbed-project) lesson: pills about character without a sheet drift into
-//! generic prose).
+//! model from inventing motivations the writer hasn't established (a
+//! recurring failure mode in earlier prompt iterations: pills about
+//! character without a sheet drift into generic prose).
 //!
 //! The output is dropped into the system prompt verbatim. Fields are
 //! omitted when empty so a half-finished sheet doesn't burn tokens on
