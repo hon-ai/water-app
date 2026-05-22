@@ -1,6 +1,7 @@
 pub mod canvas;
 pub mod character;
 pub mod diagnostics;
+pub mod editor_pill;
 pub mod events;
 pub mod heat;
 pub mod pill;

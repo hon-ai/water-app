@@ -49,6 +49,14 @@ struct PersonaToml {
 #[derive(Debug, Deserialize)]
 struct PersonaPrompt {
     voice_profile: String,
+    /// Phase 6 — a single-line "what this voice won't do" clause
+    /// (UX_SPEC §F.4). Optional; absent for character speakers and
+    /// for legacy personas during migration. When present, the
+    /// persona's exposed `prompt_fragment` appends a labeled
+    /// `[won't do]` section so the model sees the negation as a
+    /// distinct block rather than buried in the voice description.
+    #[serde(default)]
+    wont_do: Option<String>,
 }
 
 fn default_threshold() -> f32 {
@@ -79,11 +87,19 @@ impl PersonaSpeaker {
                 parsed.version
             ));
         }
+        let prompt_fragment = match parsed.prompt.wont_do.as_ref() {
+            Some(w) if !w.trim().is_empty() => format!(
+                "{}\n\n[won't do]\n{}",
+                parsed.prompt.voice_profile.trim_end(),
+                w.trim()
+            ),
+            _ => parsed.prompt.voice_profile,
+        };
         Ok(Self {
             id: parsed.id,
             display_name: parsed.display_name,
             hue_token: parsed.hue_token,
-            prompt_fragment: parsed.prompt.voice_profile,
+            prompt_fragment,
             anti_loop_threshold: parsed.anti_loop_threshold,
             cooldown_ms: parsed.cooldown_ms,
         })

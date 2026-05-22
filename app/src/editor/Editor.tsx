@@ -18,6 +18,18 @@ import { baseKeymap, splitBlock, toggleMark } from "prosemirror-commands";
 import { splitListItem } from "prosemirror-schema-list";
 import { schema } from "./schema";
 import { blockIdPlugin } from "./blockIdPlugin";
+import {
+  setTriggerHighlight,
+  triggerHighlightPlugin,
+  type TriggerHighlight,
+} from "./triggerHighlightPlugin";
+import {
+  editorUnderlinePlugin,
+  setEditorUnderlines,
+  type UnderlineAnchor,
+} from "./editorUnderlinePlugin";
+import { acceptSuggestion, type AcceptAnchor } from "./acceptSuggestion";
+import { smartInputPlugin } from "./smartInputPlugin";
 import { docFromMarkdown, markdownFromDoc } from "./serialize";
 import { classifyCursor } from "./cursorClassifier";
 import { useIdleDetector } from "./useIdleDetector";
@@ -268,6 +280,7 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
           "Mod-Shift-z": redo,
           "Mod-b": toggleMark(schema.marks.strong!),
           "Mod-i": toggleMark(schema.marks.em!),
+          "Mod-Shift-x": toggleMark(schema.marks.strike!),
           "Mod-k": (state) => {
             // Mod-K opens the LinkPopup. If selection is collapsed and
             // inside a link, open in edit mode; otherwise require a
@@ -285,9 +298,25 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
           Enter: (s, dispatch) =>
             splitListItem(schema.nodes.list_item!)(s, dispatch) ||
             splitBlock(s, dispatch),
+          // Shift-Enter inserts a hard_break — a soft line break
+          // useful for stanzas, poetry, address blocks. Falls back
+          // to a literal newline when the schema's hard_break node
+          // somehow isn't present.
+          "Shift-Enter": (s, dispatch) => {
+            const hb = schema.nodes.hard_break;
+            if (!hb) return false;
+            if (dispatch) {
+              const tr = s.tr.replaceSelectionWith(hb.create()).scrollIntoView();
+              dispatch(tr);
+            }
+            return true;
+          },
         }),
         keymap(baseKeymap),
         blockIdPlugin(),
+        triggerHighlightPlugin(),
+        editorUnderlinePlugin(),
+        smartInputPlugin(),
       ],
     });
     // Run the block-id plugin's appendTransaction against the initial doc
@@ -415,6 +444,54 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     ];
     pendingInflectionRef.current = "none";
   }, [value]);
+
+  // Pill trigger-highlight bridge. PillLayer dispatches window
+  // CustomEvents instead of holding a direct EditorView reference;
+  // the editor listens here and forwards into the PM plugin. Using
+  // events keeps the pill margin decoupled from the editor's
+  // internals (Phase 3.5 — UX_SPEC.md §C.6.d).
+  useEffect(() => {
+    const onSet = (e: Event) => {
+      const detail = (e as CustomEvent<TriggerHighlight>).detail;
+      setTriggerHighlight(viewRef.current, detail);
+    };
+    const onClear = () => {
+      setTriggerHighlight(viewRef.current, null);
+    };
+    window.addEventListener("water:set-trigger-highlight", onSet);
+    window.addEventListener("water:clear-trigger-highlight", onClear);
+    return () => {
+      window.removeEventListener("water:set-trigger-highlight", onSet);
+      window.removeEventListener("water:clear-trigger-highlight", onClear);
+    };
+  }, []);
+
+  // Phase 5 — editor-pill underline bridge. EditorCanvas dispatches
+  // `water:set-editor-underlines` whenever the live editor-pill set
+  // for this scene changes (post-save diagnostics run + post-dismiss
+  // refetch). The editor listens here and forwards into the
+  // `editorUnderlinePlugin`.
+  useEffect(() => {
+    const onSet = (e: Event) => {
+      const detail = (e as CustomEvent<UnderlineAnchor[]>).detail;
+      setEditorUnderlines(viewRef.current, detail);
+    };
+    const onClear = () => {
+      setEditorUnderlines(viewRef.current, null);
+    };
+    const onAccept = (e: Event) => {
+      const detail = (e as CustomEvent<AcceptAnchor>).detail;
+      acceptSuggestion(viewRef.current, detail);
+    };
+    window.addEventListener("water:set-editor-underlines", onSet);
+    window.addEventListener("water:clear-editor-underlines", onClear);
+    window.addEventListener("water:accept-editor-pill", onAccept);
+    return () => {
+      window.removeEventListener("water:set-editor-underlines", onSet);
+      window.removeEventListener("water:clear-editor-underlines", onClear);
+      window.removeEventListener("water:accept-editor-pill", onAccept);
+    };
+  }, []);
 
   return (
     <>

@@ -8,6 +8,14 @@ use std::path::Path;
 // `canvas_x` / `canvas_y` as Option<f32>; PartialEq still works.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneFrontmatter {
+    /// Obsidian-readability marker. Always serializes as `true`; tells
+    /// an Obsidian user who's opened the Water project folder as a
+    /// vault which of their markdown files are Water scenes vs.
+    /// notes/lore they might keep alongside. Defaults to `true` on
+    /// read so legacy scene files (created before this field landed)
+    /// stay correctly tagged after their next save.
+    #[serde(default = "default_water_scene", rename = "water_scene")]
+    pub water_scene: bool,
     pub id: Id,
     pub name: String,
     pub chapter_id: Option<Id>,
@@ -40,6 +48,10 @@ pub struct SceneFrontmatter {
 
 fn default_status() -> String {
     "draft".to_owned()
+}
+
+fn default_water_scene() -> bool {
+    true
 }
 
 // `Eq` dropped in M6 — `SceneFrontmatter` now carries `Option<f32>`
@@ -115,6 +127,7 @@ mod tests {
     fn sample() -> SceneFile {
         SceneFile {
             frontmatter: SceneFrontmatter {
+                water_scene: true,
                 id: "01H8X400000000000000000000".parse().unwrap(),
                 name: "Test".into(),
                 chapter_id: None,

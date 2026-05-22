@@ -75,6 +75,8 @@ mod tests {
             characters_present: vec![],
             word_count: 500,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot::default();
         let characters = CharacterRegistry::empty();
@@ -86,6 +88,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         assert!(SceneFlowDip.evaluate(&ctx).is_some());
     }
@@ -110,6 +113,8 @@ mod tests {
             characters_present: vec![],
             word_count: 500,
             seconds_since_last_pill: 5,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot::default();
         let characters = CharacterRegistry::empty();
@@ -121,6 +126,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         assert!(SceneFlowDip.evaluate(&ctx).is_none());
     }
@@ -143,6 +149,8 @@ mod tests {
             characters_present: vec![],
             word_count: 500,
             seconds_since_last_pill,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         }
     }
 
@@ -165,6 +173,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         let cand = SceneFlowDip.evaluate(&ctx).expect("should fire");
         assert!(cand.reason.contains("heat_coherence_tail"), "got {:?}", cand.reason);
@@ -189,6 +198,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         let cand = SceneFlowDip.evaluate(&ctx).expect("should fire");
         assert!(cand.reason.contains("flow=") && !cand.reason.contains("heat"),
@@ -214,6 +224,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         assert!(SceneFlowDip.evaluate(&ctx).is_none());
     }

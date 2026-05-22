@@ -8,6 +8,17 @@ import "./styles/worlds.css";
 import "./styles/characters.css";
 import "./styles/sheets.css";
 import "./styles/intake.css";
+import { loadAndApplyFont } from "./theme/fonts";
+import { initSentry } from "./boot";
+
+// Apply the writer's saved manuscript serif (or the default) before
+// the first React render so the editor never flashes with the wrong
+// face. Safe no-op in SSR / test environments.
+loadAndApplyFont();
+
+// Sentry: only initializes when VITE_SENTRY_DSN is set at build
+// time. Dev builds without the var are completely offline.
+initSentry();
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("#root element not found");

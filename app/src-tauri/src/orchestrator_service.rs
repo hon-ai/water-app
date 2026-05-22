@@ -37,6 +37,9 @@ use water_core::llm::LlmRouter;
 use water_core::orchestrator::{
     anti_loop::max_overlap,
     eviction::pick_evictee,
+    feedback::{
+        classify_writer_mode, FeedbackStore, PillOutcome, TriggerTuning, WriterMode,
+    },
     state::{Pill, PillEvent},
     triggers::builtin_triggers,
     AnalysisSnapshot, ConfirmationRequest, CursorClassification, ProjectSnapshot, SceneSnapshot,
@@ -44,7 +47,12 @@ use water_core::orchestrator::{
 };
 use water_core::post_filter::{builtin_post_filters, FilterDecision, PostFilter};
 use water_core::prompts::{
-    assemble_level_0, assemble_pill_expand, assemble_pill_regenerate, PromptLibrary,
+    assemble_editor_polish, assemble_level_0, assemble_pill_expand, assemble_pill_regenerate,
+    assemble_rabbit_deepen_inherit, assemble_rabbit_fan_4, PromptContext, PromptLibrary,
+};
+use water_core::rabbit::{
+    ChildInsert as RabbitChildInsert, Direction as RabbitDirection, RabbitStore,
+    RootInsert as RabbitRootInsert, SpeakerKind as RabbitSpeakerKind,
 };
 use water_core::replay_log::{ReplayEntry, ReplayLog};
 use water_core::voice::registry::PersonaRegistry;
@@ -52,6 +60,48 @@ use water_core::voice::router::{route_with_chars, CooldownState};
 use water_core::voice::speaker::SpeakerArc;
 use water_core::world::WorldRegistry;
 use water_core::Id;
+
+/// Sidecar bridge — pure patcher. Applies a fresh `AnalyzeResponse`
+/// to `analysis` in place. Extracted from `on_block_analysis` so the
+/// patching logic is testable without an `AppHandle`.
+///
+/// Semantics:
+///   * Scene-level fields (`flow`/`coherence`/etc.) take the latest
+///     paragraph as a proxy for "current state" — a recent paragraph
+///     is a better signal than an arithmetic mean over the whole
+///     scene.
+///   * `block_metrics[block_id]` is upserted with flow / coherence /
+///     divergence so `block_anchored_drift` can read paragraph-
+///     specific values keyed by the just-finished block.
+///   * `valence_history` appends, capped at `VALENCE_HISTORY_CAP` so
+///     a long writing session can't grow it unboundedly.
+fn apply_block_analysis(
+    analysis: &mut AnalysisSnapshot,
+    block_id: String,
+    response: &water_core::ipc::AnalyzeResponse,
+) {
+    // f64 -> f32 narrows are safe: sidecar responses are in [0.0, 1.0].
+    analysis.flow = Some(response.flow as f32);
+    analysis.coherence = Some(response.coherence as f32);
+    analysis.engagement = Some(response.engagement as f32);
+    analysis.divergence = Some(response.divergence as f32);
+    analysis.pace = Some(response.pace as f32);
+    analysis.intensity = Some(response.intensity as f32);
+    analysis.valence = Some(response.valence as f32);
+    analysis.block_metrics.insert(
+        block_id,
+        water_core::orchestrator::BlockMetrics {
+            flow: Some(response.flow as f32),
+            coherence: Some(response.coherence as f32),
+            divergence: Some(response.divergence as f32),
+        },
+    );
+    analysis.valence_history.push(response.valence as f32);
+    if analysis.valence_history.len() > VALENCE_HISTORY_CAP {
+        let drop_n = analysis.valence_history.len() - VALENCE_HISTORY_CAP;
+        analysis.valence_history.drain(0..drop_n);
+    }
+}
 
 /// Average of the last `n` values in a slice. Returns `None` for
 /// empty input. Used to flatten the heat metric tracks into the
@@ -136,6 +186,19 @@ pub enum OrchestratorRequest {
         last_block_text: Option<String>,
     },
     Analysis(AnalysisSnapshot),
+    /// Sidecar-bridge delta: a fresh per-paragraph metric from
+    /// `Sidecar::analyze` came back. The handler patches the live
+    /// `AnalysisSnapshot` in place — scene-level fields take the
+    /// latest values, `block_metrics[block_id]` is upserted, and
+    /// `valence_history` appends (capped at
+    /// `VALENCE_HISTORY_CAP`). `scene_id` lets a late-arriving
+    /// response for a previously-active scene get dropped on the
+    /// floor instead of poisoning the current scene's analysis.
+    BlockAnalysis {
+        scene_id: Id,
+        block_id: String,
+        response: water_core::ipc::AnalyzeResponse,
+    },
     /// Scene + project snapshot AND the full scene body text. The
     /// orchestrator caches the body so each telemetry tick can build a
     /// prompt excerpt without re-reading from disk.
@@ -149,7 +212,79 @@ pub enum OrchestratorRequest {
     Dismiss {
         pill_id: Id,
     },
+    /// v8: pill lifecycle terminal for adaptive learning. Renderer
+    /// fires these from the IPC layer on pin / dismiss / evict / click.
+    /// The orchestrator looks up the attribution it stored at emerge
+    /// time, applies the reward to `trigger_feedback`, and refreshes
+    /// the in-memory `tuning` snapshot.
+    RecordOutcome {
+        pill_id: Id,
+        outcome: OutcomeSignal,
+    },
+    /// v8: wipe `trigger_feedback` and reset the in-memory tuning
+    /// snapshot. Fired from the Settings "Reset trigger learning"
+    /// button. Attribution map is also cleared so any in-flight
+    /// pills don't write a final reward against the just-cleared
+    /// state.
+    ResetLearning,
+    /// Phase 4: open the rabbit hole on a freshly-clicked pill.
+    /// Creates a root thought from the pill in the DB, then fans
+    /// four children from it. Emits `deepen:ready` when the LLM
+    /// returns.
+    ///
+    /// `parent_text` / `speaker_id` / `block_target_id` come from
+    /// the renderer's `Pill` record, not the service's own list.
+    /// The service-side `Pill.text` is never written back after
+    /// the LLM call lands (legacy: the LLM response goes straight
+    /// to the renderer via `pill:emerged` and the server record
+    /// stays at `text=None`), so re-looking-up here would always
+    /// see empty text.
+    DeepenPill {
+        pill_id: Id,
+        parent_text: String,
+        speaker_id: String,
+        block_target_id: Option<String>,
+    },
+    /// Phase 4: fan four children from an *existing* rabbit thought
+    /// (the writer clicked a child in the panel). Emits `deepen:ready`.
+    DeepenThought {
+        thought_id: Id,
+    },
+    /// Phase 4: toggle the resonance flag on a rabbit thought.
+    /// Resonant thoughts (and their ancestors) are protected from
+    /// auto-trim; future Phase-6 prompts read recent resonant picks
+    /// as a voice-preference signal.
+    SetRabbitResonance {
+        thought_id: Id,
+        resonant: bool,
+    },
+    /// Phase 5.8 — dispatch the LLM polish prompt against a single
+    /// paragraph. Renderer fires this on the post-save path. The
+    /// handler enforces the per-scene cap + per-block cooldown
+    /// before spending the LLM call.
+    EditorPolish {
+        scene_id: Id,
+        block_id: String,
+        block_text: String,
+    },
     Shutdown,
+}
+
+/// Renderer-side lifecycle events that map to learning rewards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeSignal {
+    /// Writer clicked the pill (opened the bouquet). Not terminal —
+    /// the orchestrator marks the attribution as `clicked` and waits
+    /// for the actual terminal (pin / dismiss / evict).
+    Click,
+    /// Writer pinned the pill. Terminal positive.
+    Pin,
+    /// Writer dismissed via the × button. Terminal negative.
+    Dismiss,
+    /// FIFO eviction; renderer drops the oldest on overflow.
+    /// Reward depends on whether the pill was clicked first.
+    Evict,
 }
 
 /// Handle exposed to Tauri commands. Cloneable — clones share the same
@@ -225,11 +360,93 @@ pub struct OrchestratorService {
     /// append request/response pairs without re-acquiring the service
     /// mutex. `None` is the production default (no IO overhead).
     replay_log: Option<Arc<ReplayLog>>,
+    /// v8: per-trigger learned sensitivity, reloaded from
+    /// `trigger_feedback` on project open + after every reward
+    /// observation. Passed into `TriggerContext` on each
+    /// `pick_best_trigger` call.
+    tuning: TriggerTuning,
+    /// v8: in-flight attribution per emerged pill. Built on
+    /// `pill:emerged`, drained on the terminal lifecycle event
+    /// (pin / dismiss / evict). Cleared on project close (the
+    /// service drops with the project).
+    attribution: HashMap<String, PillAttribution>,
+    /// Phase 5.8: per-scene count of LLM polish passes spent this
+    /// session. Capped at `POLISH_PASS_CAP_PER_SCENE`; manual
+    /// re-request will land in a follow-up. Cleared with the
+    /// service on project close.
+    polish_pass_counts: HashMap<String, u32>,
+    /// Phase 5.8: when we last polished a given (scene_id, block_id).
+    /// Used to throttle the post-save fire so consecutive saves
+    /// against the same block don't burn LLM calls.
+    polish_last_at: HashMap<(String, String), std::time::Instant>,
+    /// Sidecar bridge — optional handle to the per-project FastAPI
+    /// analysis sidecar. Cloned `Arc` so the underlying child
+    /// process lives until both this service and `OpenProject` drop
+    /// it. `None` when the sidecar failed to boot (project still
+    /// opens; sidecar-dependent triggers stay dark).
+    sidecar: Option<Arc<water_core::Sidecar>>,
+    /// Self-channel sender — clone of the original `mpsc` `tx` so
+    /// spawned tasks (notably the sidecar analyze fan-out) can
+    /// re-enter the loop with `OrchestratorRequest::BlockAnalysis`.
+    self_tx: mpsc::Sender<OrchestratorRequest>,
+    /// Per-block debounce for sidecar analyze fan-out. Without it
+    /// every idle pulse (>=3 s) would fire an HTTP round-trip for
+    /// the same paragraph the writer hasn't touched, burning the
+    /// sidecar's CPU on no new signal. Last-analyzed instant per
+    /// block id; gated against `BLOCK_ANALYZE_DEBOUNCE` below.
+    block_analyze_throttle: HashMap<String, std::time::Instant>,
+}
+
+/// Phase 5.8 — most polish passes per scene per session. The cap
+/// prevents the LLM from grinding through a long writing day
+/// uncapped. UX_SPEC §E.3 calls for 5; the writer can manually
+/// re-request once the cap is hit (UI for the request lands later).
+const POLISH_PASS_CAP_PER_SCENE: u32 = 5;
+/// Minimum seconds between polish dispatches for the same
+/// (scene, block). Prevents the autosave path from re-polishing a
+/// block the writer is rapidly editing in successive 2-second
+/// debounces.
+const POLISH_PER_BLOCK_COOLDOWN_SECS: u64 = 30;
+
+/// Sidecar bridge — per-block debounce for analyze fan-out. The
+/// orchestrator runs analyze only once per `BLOCK_ANALYZE_DEBOUNCE`
+/// for a given block id; a typical writing burst yields idle pulses
+/// every ~3 s, but the paragraph the writer just left often doesn't
+/// change again for many seconds. Without this gate, we'd burn the
+/// sidecar's CPU on signal-free re-analysis.
+const BLOCK_ANALYZE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(4);
+
+/// Sidecar bridge — keep at most the last N valence readings so
+/// `valence_spike` has a trailing baseline without `valence_history`
+/// growing unboundedly across a long session.
+const VALENCE_HISTORY_CAP: usize = 8;
+
+/// v8: per-pill bookkeeping for the learning loop. Captures the
+/// writer-mode classification at emerge time so terminal-event
+/// rewards stay attributable to the *moment* the pill appeared,
+/// not the moment the writer happened to interact.
+#[derive(Debug, Clone)]
+struct PillAttribution {
+    trigger_id: String,
+    mode: WriterMode,
+    clicked: bool,
 }
 
 impl OrchestratorService {
-    /// ~400-char window centered on the anchored block id, or first 400
-    /// chars if `block_id` is empty or not present in `scene_text`.
+    /// ~400-char excerpt anchored to the target block. Starts AT the
+    /// block-id marker (just before its content) and runs forward
+    /// 400 chars, plus a small 80-char prefix for grounding context
+    /// from whatever block precedes it.
+    ///
+    /// Why not center on the marker like the previous implementation
+    /// did: when the writer's cursor sits in block N, centering on
+    /// block N's marker would capture ~200 chars of block N-1's
+    /// content. The LLM, seeing more of N-1 than of N, would
+    /// naturally observe N-1's subject — while `block_target_id`
+    /// still pointed at N. The hover highlight then resolves to a
+    /// paragraph the pill never actually talked about. Anchoring
+    /// forward keeps the model's subject and the highlight subject
+    /// aligned.
     ///
     /// `String::find` operates on byte indices but we slice the resulting
     /// range directly. For block-id anchors (`^bk-####`) the matched
@@ -240,16 +457,51 @@ impl OrchestratorService {
     fn scene_excerpt_for(&self, block_id: &str) -> String {
         if !block_id.is_empty() {
             if let Some(pos) = self.scene_text.find(block_id) {
-                let start = back_to_char_boundary(&self.scene_text, pos.saturating_sub(200));
+                // Small prefix for grounding (writer's voice / arc),
+                // but not enough to outweigh the focus block.
+                let start = back_to_char_boundary(&self.scene_text, pos.saturating_sub(80));
                 let end = forward_to_char_boundary(
                     &self.scene_text,
-                    (pos + 200).min(self.scene_text.len()),
+                    (pos + 400).min(self.scene_text.len()),
                 );
                 return self.scene_text[start..end].to_string();
             }
         }
         let end = forward_to_char_boundary(&self.scene_text, 400.min(self.scene_text.len()));
         self.scene_text[..end].to_string()
+    }
+}
+
+/// Phase 6 — owned mirror of `PromptContext` so the orchestrator can
+/// build it without lifetime gymnastics across await points. Each
+/// `OwnedPromptContext::as_borrowed()` call materializes a fresh
+/// `PromptContext<'_>` that borrows from this owner.
+#[derive(Debug, Default)]
+struct OwnedPromptContext {
+    scene_name: Option<String>,
+    arc_position: Option<water_core::orchestrator::arc::ArcPosition>,
+    scene_ordering: Option<u32>,
+    manuscript_scene_count: Option<u32>,
+    pov_character_name: Option<String>,
+    location_name: Option<String>,
+    location_brief: Option<String>,
+    character_compact: Option<String>,
+    recent_resonance: Vec<String>,
+}
+
+impl OwnedPromptContext {
+    fn as_borrowed(&self) -> PromptContext<'_> {
+        PromptContext {
+            scene_name: self.scene_name.as_deref(),
+            arc_position: self.arc_position,
+            scene_ordering: self.scene_ordering,
+            manuscript_scene_count: self.manuscript_scene_count,
+            pov_character_name: self.pov_character_name.as_deref(),
+            location_name: self.location_name.as_deref(),
+            location_brief: self.location_brief.as_deref(),
+            character_compact: self.character_compact.as_deref(),
+            recent_resonance: &self.recent_resonance,
+        }
     }
 }
 
@@ -285,6 +537,7 @@ impl OrchestratorService {
         world_registry: WorldRegistry,
         project_root: PathBuf,
         db: Arc<Mutex<water_core::Db>>,
+        sidecar: Option<Arc<water_core::Sidecar>>,
     ) -> OrchestratorHandle {
         // Channel depth 64 was picked to comfortably absorb a burst of
         // typing-telemetry ticks (renderer fires ~one per keystroke). If
@@ -292,6 +545,11 @@ impl OrchestratorService {
         // fine because telemetry isn't latency-critical and back-pressure
         // naturally rate-limits the renderer.
         let (tx, mut rx) = mpsc::channel::<OrchestratorRequest>(64);
+        // Sidecar bridge: the spawned analyze tasks need to re-enter
+        // the loop with `BlockAnalysis`. Clone the tx up front so we
+        // can stash one in the service without racing the per-tick
+        // handler against its own channel close.
+        let self_tx = tx.clone();
         let prompts =
             Arc::new(PromptLibrary::load_builtin().expect("built-in prompts must load at startup"));
 
@@ -318,6 +576,49 @@ impl OrchestratorService {
             None
         };
 
+        // v8: prime the tuning snapshot from the DB so cold-boot
+        // sensitivities reflect last session's learning. Failure
+        // (e.g. legacy DB without the v8 table) falls back to the
+        // default tuning — every trigger fires with its original
+        // M2 threshold.
+        //
+        // Phase 4: auto-trim the rabbit-hole tree on project open.
+        // The trim is a single-write-transaction pass enforcing the
+        // 5000-row / 25-MB caps (spec §D.5.a). Both happen inside
+        // the same db-lock acquisition so we touch the lock once at
+        // startup rather than twice.
+        let tuning = {
+            let g = db.try_lock();
+            match g {
+                Ok(db_guard) => {
+                    // Trim first — cheap when the tree is under cap;
+                    // bounded by the leaf-then-interior passes when
+                    // it's over. Errors logged but never block boot.
+                    let trim_store = water_core::RabbitStore::new(&db_guard);
+                    match trim_store.auto_trim(water_core::RabbitCaps::default()) {
+                        Ok(report) if report.rows_removed > 0 => {
+                            tracing::info!(
+                                rows = report.rows_removed,
+                                bytes = report.bytes_freed,
+                                leaves = report.leaves_trimmed,
+                                interior = report.interior_trimmed,
+                                "rabbit_thought auto-trim ran at project open"
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!(error = %e, "rabbit auto-trim failed");
+                        }
+                    }
+                    water_core::orchestrator::feedback::FeedbackStore::new(&db_guard)
+                        .load_sensitivities()
+                        .map(TriggerTuning::new)
+                        .unwrap_or_default()
+                }
+                Err(_) => TriggerTuning::default(),
+            }
+        };
+
         let svc = Arc::new(Mutex::new(OrchestratorService {
             app,
             router,
@@ -336,6 +637,13 @@ impl OrchestratorService {
             analysis: AnalysisSnapshot::default(),
             scene_text: String::new(),
             replay_log,
+            tuning,
+            attribution: HashMap::new(),
+            polish_pass_counts: HashMap::new(),
+            polish_last_at: HashMap::new(),
+            sidecar,
+            self_tx,
+            block_analyze_throttle: HashMap::new(),
         }));
 
         tokio::spawn({
@@ -362,6 +670,13 @@ impl OrchestratorService {
             } => self.on_telemetry(telemetry, last_block_text).await,
             OrchestratorRequest::Analysis(a) => {
                 self.analysis = a;
+            }
+            OrchestratorRequest::BlockAnalysis {
+                scene_id,
+                block_id,
+                response,
+            } => {
+                self.on_block_analysis(scene_id, block_id, response);
             }
             OrchestratorRequest::SceneState(s, p, text) => {
                 // Scene-switch concern: cooldowns + bouquet_history carry
@@ -395,7 +710,565 @@ impl OrchestratorService {
                         water_core::orchestrator::state::transition(p, &PillEvent::UserDismiss);
                 }
             }
+            OrchestratorRequest::RecordOutcome { pill_id, outcome } => {
+                self.on_outcome(pill_id, outcome);
+            }
+            OrchestratorRequest::ResetLearning => {
+                self.on_reset_learning();
+            }
+            OrchestratorRequest::DeepenPill {
+                pill_id,
+                parent_text,
+                speaker_id,
+                block_target_id,
+            } => {
+                self.on_deepen_pill(pill_id, parent_text, speaker_id, block_target_id)
+                    .await;
+            }
+            OrchestratorRequest::DeepenThought { thought_id } => {
+                self.on_deepen_thought(thought_id).await;
+            }
+            OrchestratorRequest::SetRabbitResonance {
+                thought_id,
+                resonant,
+            } => {
+                self.on_set_rabbit_resonance(thought_id, resonant).await;
+            }
+            OrchestratorRequest::EditorPolish {
+                scene_id,
+                block_id,
+                block_text,
+            } => {
+                self.on_editor_polish(scene_id, block_id, block_text).await;
+            }
             OrchestratorRequest::Shutdown => {}
+        }
+    }
+
+    /// v8: apply a renderer-reported lifecycle event to the learning
+    /// store. Click is non-terminal and only marks the attribution;
+    /// Pin / Dismiss / Evict are terminal — they write a reward and
+    /// drop the row. After every terminal we refresh the in-memory
+    /// tuning so the *next* tick sees the updated sensitivity.
+    fn on_outcome(&mut self, pill_id: Id, outcome: OutcomeSignal) {
+        let key = pill_id.as_str().to_string();
+        let Some(attr) = self.attribution.get_mut(&key) else {
+            // No attribution row — either the renderer is firing
+            // outcome events for a pill that emerged before v8 was
+            // live, or attribution was already drained. Either way:
+            // silently ignore so we don't double-count or panic.
+            return;
+        };
+        match outcome {
+            OutcomeSignal::Click => {
+                attr.clicked = true;
+                return;
+            }
+            OutcomeSignal::Pin => {
+                let trigger_id = attr.trigger_id.clone();
+                let mode = attr.mode;
+                self.attribution.remove(&key);
+                self.record_reward(&trigger_id, PillOutcome::Pin, mode);
+            }
+            OutcomeSignal::Dismiss => {
+                let trigger_id = attr.trigger_id.clone();
+                let mode = attr.mode;
+                self.attribution.remove(&key);
+                self.record_reward(&trigger_id, PillOutcome::Dismiss, mode);
+            }
+            OutcomeSignal::Evict => {
+                let trigger_id = attr.trigger_id.clone();
+                let mode = attr.mode;
+                let clicked = attr.clicked;
+                self.attribution.remove(&key);
+                // A clicked-but-not-pinned eviction counts as
+                // engagement (writer opened it, didn't dismiss). A
+                // never-touched eviction is the soft negative.
+                let resolved = if clicked {
+                    PillOutcome::Click
+                } else {
+                    PillOutcome::Evict
+                };
+                self.record_reward(&trigger_id, resolved, mode);
+            }
+        }
+    }
+
+    /// Phase 6 — build the rich prompt context the assemblers
+    /// consume. Returns owned strings + an `as_borrowed()` method
+    /// so the assembler can borrow `&str` slices without us
+    /// fighting the lifetimes through async-await boundaries.
+    ///
+    /// `speaker_id` lets us look up a character-track speaker's
+    /// compact sheet. Persona ids resolve to no compact (the
+    /// persona's own prompt already says everything).
+    async fn build_owned_prompt_context(&self, speaker_id: &str) -> OwnedPromptContext {
+        let scene = self.scene.clone();
+        let mut owned = OwnedPromptContext::default();
+        if let Some(s) = scene.as_ref() {
+            owned.scene_ordering = s.scene_ordering;
+            owned.manuscript_scene_count = s.manuscript_scene_count;
+            if let (Some(o), Some(t)) = (s.scene_ordering, s.manuscript_scene_count) {
+                owned.arc_position = Some(
+                    water_core::orchestrator::arc::arc_position(o, t),
+                );
+            }
+            if let Some(pov_id) = s.pov_character_id.as_ref() {
+                if let Some(row) = self
+                    .characters
+                    .list()
+                    .iter()
+                    .find(|r| r.id == *pov_id)
+                {
+                    owned.pov_character_name = Some(row.name.clone());
+                }
+            }
+            if let Some(loc_id) = s.location_id.as_ref() {
+                if let Some(entry) = self.world_registry.by_id(loc_id) {
+                    owned.location_name = Some(entry.name.clone());
+                }
+            }
+            // Recent resonance — newest 3 picks in this scene. Skip the
+            // db-lock acquisition entirely when contended; the prompt
+            // simply omits the line for this tick.
+            if let Ok(db_guard) = self.db.try_lock() {
+                let store = water_core::RabbitStore::new(&db_guard);
+                if let Ok(rows) = store.recent_resonant(&s.id, 3) {
+                    owned.recent_resonance =
+                        rows.into_iter().map(|t| t.message).collect();
+                }
+            }
+        }
+        // Character compact — only when the speaker is a known
+        // character. Personas pass through.
+        if let Some(row) = self.characters.list().iter().find(|r| r.id.as_str() == speaker_id)
+        {
+            let compact = water_core::character::character_compact(&row.data);
+            if !compact.is_empty() {
+                owned.character_compact = Some(compact);
+            }
+        }
+        owned
+    }
+
+    /// Phase 4 — open the rabbit hole on a clicked pill. Creates a
+    /// root thought in `rabbit_thought`, then dispatches a fan_4
+    /// LLM call. Subsequent fans (writer clicks a child) route
+    /// through `on_deepen_thought` instead.
+    ///
+    /// Every early-return path emits `deepen:failed` so the
+    /// renderer-side DeepenPanel never spins forever — the panel
+    /// shows the "model declined" empty state and the writer can
+    /// close it cleanly. Common cases: pill not in service-side
+    /// list (cold-start restart), no scene context, or no LLM
+    /// provider configured.
+    async fn on_deepen_pill(
+        &mut self,
+        pill_id: Id,
+        parent_text: String,
+        speaker_id: String,
+        block_target_id: Option<String>,
+    ) {
+        if parent_text.trim().is_empty() {
+            // Renderer should never send an empty-text deepen, but
+            // defend so we surface the right reason if it does.
+            self.emit_deepen_failed(pill_id.as_str(), "pill has no text yet");
+            return;
+        }
+        let Some(scene) = self.scene.clone() else {
+            self.emit_deepen_failed(pill_id.as_str(), "no scene loaded");
+            return;
+        };
+        // Persist the root inside a short db lock; release before
+        // we hit the LLM await.
+        let root_id = {
+            let db_guard = self.db.lock().await;
+            let store = RabbitStore::new(&db_guard);
+            match store.insert_root(RabbitRootInsert {
+                scene_id: scene.id.clone(),
+                speaker_kind: RabbitSpeakerKind::Persona,
+                speaker_id: speaker_id.clone(),
+                message: parent_text.clone(),
+            }) {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!(error = %e, "deepen_pill: insert_root failed");
+                    self.emit_deepen_failed(
+                        pill_id.as_str(),
+                        &format!("persist failed: {e}"),
+                    );
+                    return;
+                }
+            }
+        };
+        // From this point on, `root_id` is the deepen-panel's
+        // parent_id. spawn_fan_4 will emit deepen:ready /
+        // deepen:failed against it.
+        self.spawn_fan_4(
+            root_id,
+            speaker_id,
+            parent_text,
+            block_target_id.unwrap_or_default(),
+            /* inherit */ false,
+        )
+        .await;
+    }
+
+    /// Emit a `deepen:failed` event keyed by parent id (either a
+    /// pill id at level-0 or a rabbit_thought id at deeper levels)
+    /// so the renderer can stop spinning + surface a reason.
+    fn emit_deepen_failed(&self, parent_id: &str, reason: &str) {
+        let _ = emit(
+            &self.app,
+            "deepen:failed",
+            serde_json::json!({
+                "parent_id": parent_id,
+                "reason": reason,
+            }),
+        );
+    }
+
+    /// Phase 4 — fan four further children from an existing rabbit
+    /// thought (writer descended via the deepen panel). Uses
+    /// `rabbit_deepen_inherit` so the children stay in the
+    /// parent's stance instead of re-fanning the original premise.
+    async fn on_deepen_thought(&mut self, thought_id: Id) {
+        let (parent_text, speaker_id) = {
+            let db_guard = self.db.lock().await;
+            let conn = db_guard.conn();
+            let r: rusqlite::Result<(String, String)> = conn.query_row(
+                "SELECT message, speaker_id FROM rabbit_thought WHERE id = ?1",
+                rusqlite::params![thought_id.as_str()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            );
+            match r {
+                Ok(v) => v,
+                Err(_) => {
+                    tracing::debug!(
+                        thought = thought_id.as_str(),
+                        "deepen_thought: thought not found"
+                    );
+                    self.emit_deepen_failed(thought_id.as_str(), "thought not found");
+                    return;
+                }
+            }
+        };
+        self.spawn_fan_4(
+            thought_id,
+            speaker_id,
+            parent_text,
+            String::new(),
+            /* inherit */ true,
+        )
+        .await;
+    }
+
+    /// Phase 5.8 — dispatch a one-paragraph LLM polish call.
+    /// Throttles via the per-scene cap + per-block cooldown so
+    /// rapid autosaves don't burn the LLM budget. On success,
+    /// persists the response as an editor_pill row with
+    /// `rule = editor_polish` and emits `editor_pills:updated` so
+    /// the diagnostics tab + inline-underline pipeline pick it up.
+    async fn on_editor_polish(
+        &mut self,
+        scene_id: Id,
+        block_id: String,
+        block_text: String,
+    ) {
+        if block_text.trim().is_empty() {
+            return;
+        }
+        // Per-scene cap.
+        let scene_key = scene_id.as_str().to_string();
+        let used = *self.polish_pass_counts.get(&scene_key).unwrap_or(&0);
+        if used >= POLISH_PASS_CAP_PER_SCENE {
+            tracing::debug!(scene = %scene_key, used, "polish cap reached; skipping");
+            return;
+        }
+        // Per-block cooldown.
+        let now = std::time::Instant::now();
+        let block_key = (scene_key.clone(), block_id.clone());
+        if let Some(prev) = self.polish_last_at.get(&block_key) {
+            if now.duration_since(*prev).as_secs() < POLISH_PER_BLOCK_COOLDOWN_SECS {
+                return;
+            }
+        }
+        // Editor persona is the speaker for every polish call.
+        let Some(speaker): Option<SpeakerArc> = self.personas.by_id("editor") else {
+            tracing::warn!("editor persona missing; polish skipped");
+            return;
+        };
+        let owned_ctx = self.build_owned_prompt_context("editor").await;
+        let ctx = owned_ctx.as_borrowed();
+        let Ok(prompt) =
+            assemble_editor_polish(&self.prompts, &*speaker, &block_text, &ctx)
+        else {
+            tracing::warn!("editor_polish prompt assembly failed");
+            return;
+        };
+        let router_arc = {
+            let g = self.router.lock().await;
+            g.clone()
+        };
+        let Some(router_arc) = router_arc else {
+            tracing::debug!("no LlmRouter configured; skipping polish dispatch");
+            return;
+        };
+
+        // Reserve a slot now — incrementing pessimistically. If the
+        // LLM call fails downstream we don't refund (the cap is a
+        // session-cost guard, not a strict accounting).
+        self.polish_pass_counts
+            .entry(scene_key.clone())
+            .and_modify(|n| *n += 1)
+            .or_insert(1);
+        self.polish_last_at.insert(block_key, now);
+
+        let app = self.app.clone();
+        let db = self.db.clone();
+        let prompt_system = prompt.system.clone();
+        let prompt_user = prompt.user.clone();
+        let scene_id_str = scene_key.clone();
+        let block_id_for_persist = block_id.clone();
+        let block_text_for_persist = block_text.clone();
+        tokio::spawn(async move {
+            let raw = match router_arc
+                .generate_raw_with_default(prompt_system.clone(), prompt_user.clone())
+                .await
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(error = %e, "editor_polish LLM call failed");
+                    return;
+                }
+            };
+            let trimmed = raw.trim();
+            if trimmed == "PASS" || trimmed.is_empty() {
+                // Model declined; the spec'd silence path.
+                return;
+            }
+            // Persist. The store is idempotent on (scene, block,
+            // message) so a duplicate response is a no-op.
+            let db_guard = db.lock().await;
+            let store = water_core::editor::EditorPillStore::new(&db_guard);
+            let parsed_scene_id =
+                match water_core::Id::from_str(&scene_id_str) {
+                    Ok(id) => id,
+                    Err(_) => return,
+                };
+            if let Err(e) = store.insert_polish(
+                &parsed_scene_id,
+                &block_id_for_persist,
+                &block_text_for_persist,
+                trimmed,
+            ) {
+                tracing::warn!(error = %e, "editor_polish insert failed");
+                return;
+            }
+            drop(db_guard);
+            let _ = emit(
+                &app,
+                "editor_pills:updated",
+                serde_json::json!({
+                    "scene_id": scene_id_str,
+                    "count": 0_u32,  // renderer refetches by id; count is informational
+                }),
+            );
+        });
+    }
+
+    /// Phase 4 — toggle resonance. Fire-and-forget DB write; any
+    /// failure logs but does not surface to the renderer, since
+    /// the renderer can re-issue if the next read of the tree
+    /// doesn't show the flag flipped.
+    async fn on_set_rabbit_resonance(&mut self, thought_id: Id, resonant: bool) {
+        let db_guard = self.db.lock().await;
+        let store = RabbitStore::new(&db_guard);
+        if let Err(e) = store.set_resonance(&thought_id, resonant) {
+            tracing::warn!(error = %e, "set_rabbit_resonance failed");
+        }
+    }
+
+    /// Shared LLM dispatch for both the initial fan from a pill
+    /// (inherit=false → `rabbit_fan_4` prompt) and subsequent fans
+    /// from an existing thought (inherit=true → `rabbit_deepen_inherit`).
+    /// Spawns a task; emits `deepen:ready` on success or
+    /// `deepen:failed` on parse / LLM error.
+    async fn spawn_fan_4(
+        &mut self,
+        parent_id: Id,
+        speaker_id: String,
+        parent_text: String,
+        block_target_id: String,
+        inherit: bool,
+    ) {
+        let Some(speaker): Option<SpeakerArc> = self.personas.by_id(&speaker_id) else {
+            tracing::warn!(speaker = %speaker_id, "deepen: persona not found");
+            self.emit_deepen_failed(parent_id.as_str(), "persona not found");
+            return;
+        };
+        let scene_excerpt = self.scene_excerpt_for(&block_target_id);
+        let owned_ctx = self.build_owned_prompt_context(&speaker_id).await;
+        let ctx = owned_ctx.as_borrowed();
+        let prompt = if inherit {
+            assemble_rabbit_deepen_inherit(
+                &self.prompts,
+                &*speaker,
+                &parent_text,
+                &scene_excerpt,
+                &ctx,
+            )
+        } else {
+            assemble_rabbit_fan_4(&self.prompts, &*speaker, &parent_text, &scene_excerpt, &ctx)
+        };
+        let Ok(prompt) = prompt else {
+            tracing::warn!("deepen prompt assembly failed");
+            self.emit_deepen_failed(parent_id.as_str(), "prompt assembly failed");
+            return;
+        };
+        let router_arc = {
+            let g = self.router.lock().await;
+            g.clone()
+        };
+        let Some(router_arc) = router_arc else {
+            tracing::debug!("no LlmRouter configured; skipping deepen dispatch");
+            self.emit_deepen_failed(
+                parent_id.as_str(),
+                "no LLM provider configured — open Settings → Providers and Test one",
+            );
+            return;
+        };
+
+        let app = self.app.clone();
+        let db = self.db.clone();
+        let prompt_system = prompt.system.clone();
+        let prompt_user = prompt.user.clone();
+        let parent_id_clone = parent_id.clone();
+        tokio::spawn(async move {
+            #[derive(serde::Deserialize, Clone)]
+            struct Item {
+                direction: String,
+                text: String,
+            }
+
+            let items: Vec<Item> = match router_arc
+                .generate_structured_with_default(prompt_system.clone(), prompt_user.clone())
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(error = %e, "deepen LLM call failed");
+                    let _ = emit(
+                        &app,
+                        "deepen:failed",
+                        serde_json::json!({
+                            "parent_id": parent_id_clone.as_str(),
+                            "reason": e.to_string(),
+                        }),
+                    );
+                    return;
+                }
+            };
+
+            // Map response → ChildInsert in fan order. We don't
+            // require all four directions to be present (model may
+            // drop one); we trust the model's order otherwise.
+            let mut children_in = Vec::with_capacity(items.len());
+            for it in &items {
+                children_in.push(RabbitChildInsert {
+                    speaker_kind: RabbitSpeakerKind::Persona,
+                    speaker_id: speaker_id.clone(),
+                    message: it.text.clone(),
+                    direction: RabbitDirection::from_str(&it.direction),
+                });
+            }
+
+            let new_ids = {
+                let db_guard = db.lock().await;
+                let store = RabbitStore::new(&db_guard);
+                match store.insert_children(&parent_id_clone, &children_in) {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "deepen: insert_children failed");
+                        let _ = emit(
+                            &app,
+                            "deepen:failed",
+                            serde_json::json!({
+                                "parent_id": parent_id_clone.as_str(),
+                                "reason": format!("persist: {e}"),
+                            }),
+                        );
+                        return;
+                    }
+                }
+            };
+
+            let children_out: Vec<serde_json::Value> = new_ids
+                .iter()
+                .zip(items.iter())
+                .map(|(id, it)| {
+                    serde_json::json!({
+                        "id": id.as_str(),
+                        "direction": it.direction,
+                        "text": it.text,
+                    })
+                })
+                .collect();
+            let _ = emit(
+                &app,
+                "deepen:ready",
+                serde_json::json!({
+                    "parent_id": parent_id_clone.as_str(),
+                    "children": children_out,
+                }),
+            );
+        });
+    }
+
+    /// v8: drop every trigger_feedback row and reset the in-memory
+    /// tuning back to defaults. Also clears the attribution map so
+    /// in-flight pills don't try to record against the just-cleared
+    /// table after their lifecycle event lands.
+    fn on_reset_learning(&mut self) {
+        let Ok(db_guard) = self.db.try_lock() else {
+            tracing::warn!("reset_learning: db lock contended; skipping");
+            return;
+        };
+        let store = FeedbackStore::new(&db_guard);
+        if let Err(e) = store.reset() {
+            tracing::warn!(error = %e, "failed to reset trigger_feedback");
+            return;
+        }
+        drop(db_guard);
+        self.tuning = TriggerTuning::default();
+        self.attribution.clear();
+    }
+
+    /// Write one reward observation and refresh `self.tuning` from
+    /// the DB so subsequent triggers see the updated sensitivity.
+    /// Errors are logged but never panic — the learning loop is
+    /// best-effort and must never block pill emission.
+    fn record_reward(&mut self, trigger_id: &str, outcome: PillOutcome, mode: WriterMode) {
+        let db_arc = self.db.clone();
+        // SQLite work is synchronous + short; the orchestrator loop
+        // is on its own task so try_lock is fine. If contention
+        // hits (heat compute holding the lock), skip this tick;
+        // the writer's next outcome event will re-attempt.
+        let Ok(db_guard) = db_arc.try_lock() else {
+            return;
+        };
+        let store = FeedbackStore::new(&db_guard);
+        if let Err(e) = store.record_outcome(trigger_id, outcome, mode) {
+            tracing::warn!(error = %e, trigger = %trigger_id, "failed to record pill outcome");
+            return;
+        }
+        match store.load_sensitivities() {
+            Ok(map) => {
+                self.tuning = TriggerTuning::new(map);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to reload tuning after outcome");
+            }
         }
     }
 
@@ -524,6 +1397,97 @@ impl OrchestratorService {
         // compute lands.
     }
 
+    /// Sidecar bridge — spawn a non-blocking analyze request for the
+    /// just-finished paragraph. Three gates:
+    ///   1. sidecar is `Some` (failed-boot projects stay dormant);
+    ///   2. there's a current scene to attribute the response to
+    ///      (no scene → don't even mint the request);
+    ///   3. the block hasn't been analyzed in the last
+    ///      `BLOCK_ANALYZE_DEBOUNCE` (paragraphs don't change every
+    ///      idle pulse, but they fire one anyway).
+    /// On success the spawned task re-enters the loop with
+    /// `BlockAnalysis`, which patches `self.analysis` so the NEXT
+    /// telemetry tick's trigger evaluation sees the fresh metrics.
+    fn maybe_kick_sidecar_analyze(&mut self, block_id: &str, text: &str) {
+        let Some(sidecar) = self.sidecar.clone() else {
+            return;
+        };
+        let Some(scene) = self.scene.as_ref() else {
+            return;
+        };
+        let now = std::time::Instant::now();
+        if let Some(last) = self.block_analyze_throttle.get(block_id) {
+            if now.duration_since(*last) < BLOCK_ANALYZE_DEBOUNCE {
+                return;
+            }
+        }
+        // Drop empty paragraphs on the floor — they'd just round-trip
+        // a uniform default response and burn CPU.
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.block_analyze_throttle
+            .insert(block_id.to_string(), now);
+        let scene_id = scene.id.clone();
+        let block_id_owned = block_id.to_string();
+        let text_owned = trimmed.to_string();
+        let tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let req = water_core::ipc::AnalyzeRequest {
+                text: text_owned,
+                scene_id: scene_id.as_str().to_string(),
+            };
+            match sidecar.analyze(&req).await {
+                Ok(response) => {
+                    let _ = tx
+                        .send(OrchestratorRequest::BlockAnalysis {
+                            scene_id,
+                            block_id: block_id_owned,
+                            response,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    // Sidecar may be transiently unhealthy
+                    // (supervisor will surface it through the
+                    // `sidecar:status` event). Log + move on; next
+                    // idle pulse will retry once the debounce
+                    // expires.
+                    tracing::debug!(error = %e, "sidecar analyze failed");
+                }
+            }
+        });
+    }
+
+    /// Sidecar bridge — patch in a fresh per-paragraph analysis result.
+    /// Scene-level fields take the latest values (a recent paragraph is
+    /// a better proxy for "the writer's current state" than an
+    /// arithmetic average across the scene). `block_metrics[block_id]`
+    /// is upserted so `block_anchored_drift` can read its
+    /// paragraph-specific divergence/coherence. `valence_history`
+    /// appends, bounded by `VALENCE_HISTORY_CAP` so a long writing
+    /// session doesn't grow the vector unboundedly.
+    ///
+    /// `scene_id` guard: if the response arrives after a scene switch,
+    /// drop it on the floor rather than poison the active scene's
+    /// snapshot with stale signal.
+    fn on_block_analysis(
+        &mut self,
+        scene_id: Id,
+        block_id: String,
+        response: water_core::ipc::AnalyzeResponse,
+    ) {
+        if let Some(scene) = self.scene.as_ref() {
+            if scene.id != scene_id {
+                return;
+            }
+        } else {
+            return;
+        }
+        apply_block_analysis(&mut self.analysis, block_id, &response);
+    }
+
     async fn on_telemetry(&mut self, t: TypingTelemetry, last_block_text: Option<String>) {
         // Apply the renderer's idle-pulse block text BEFORE evaluating
         // triggers so `character_dissonance` (which reads
@@ -532,6 +1496,16 @@ impl OrchestratorService {
         // preserve the prior value in that case so a trigger that fired on
         // the previous idle pulse can still gate against it.
         if let Some(text) = last_block_text {
+            // Sidecar bridge: kick a non-blocking analyze for this
+            // paragraph BEFORE moving the text into the snapshot. The
+            // response (debounced + per-block-throttled) lands in the
+            // loop later as `BlockAnalysis` and patches scene-level
+            // flow/coherence/divergence/pace/intensity/valence plus
+            // `block_metrics[block_id]`, lifting the five sidecar-
+            // dependent triggers (block_anchored_drift, topic_drift,
+            // pace_floor, valence_spike, scene_flow_dip) out of the
+            // dormant `AnalysisSnapshot::default()` state.
+            self.maybe_kick_sidecar_analyze(&t.block_id, &text);
             self.analysis.last_block_text = Some(text);
         }
         // Gate 1: never surface mid-sentence (spec § 6.1).
@@ -565,6 +1539,7 @@ impl OrchestratorService {
             &self.characters,
             &self.world_registry,
             &self.prompts,
+            &self.tuning,
         ) else {
             return;
         };
@@ -622,11 +1597,14 @@ impl OrchestratorService {
         // Assemble the level-0 prompt. ~400-char window centered on the
         // anchored block (or scene start when there's no anchor).
         let scene_excerpt = self.scene_excerpt_for(&t.block_id);
+        let owned_ctx = self.build_owned_prompt_context(speaker.id()).await;
+        let ctx = owned_ctx.as_borrowed();
         let prompt = match assemble_level_0(
             &self.prompts,
             &*speaker,
             &cand.trigger_id,
             &scene_excerpt,
+            &ctx,
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -667,6 +1645,21 @@ impl OrchestratorService {
         self.pills.push(pill);
         self.cooldowns.note_emit(&speaker_id);
         self.last_pill_emit_at = Some(std::time::Instant::now());
+
+        // v8: record attribution at emerge time. Mode is classified
+        // from the telemetry tick that fired this pill — captured
+        // here so terminal-event rewards stay anchored to *that
+        // moment*, not the (potentially much later) moment of
+        // interaction.
+        let writer_mode = classify_writer_mode(&t);
+        self.attribution.insert(
+            pill_id_str.clone(),
+            PillAttribution {
+                trigger_id: trigger_id.clone(),
+                mode: writer_mode,
+                clicked: false,
+            },
+        );
 
         // Eviction: pick_evictee operates on `OnScreen` pills only. The
         // service currently never transitions service-side pills out of
@@ -819,6 +1812,8 @@ impl OrchestratorService {
                 .collect()
         };
 
+        let owned_ctx = self.build_owned_prompt_context(speaker.id()).await;
+        let ctx = owned_ctx.as_borrowed();
         let prompt = if regenerate {
             assemble_pill_regenerate(
                 &self.prompts,
@@ -827,6 +1822,7 @@ impl OrchestratorService {
                 &parent_text,
                 &scene_excerpt,
                 &prior_first_words,
+                &ctx,
             )
         } else {
             assemble_pill_expand(
@@ -835,6 +1831,7 @@ impl OrchestratorService {
                 &parent.trigger_id,
                 &parent_text,
                 &scene_excerpt,
+                &ctx,
             )
         };
         let Ok(prompt) = prompt else {
@@ -998,6 +1995,7 @@ impl OrchestratorService {
 
 /// Evaluate the 10 built-in triggers and return the highest-priority
 /// candidate, if any. Extracted so on_telemetry stays readable.
+#[allow(clippy::too_many_arguments)]
 fn pick_best_trigger(
     t: &TypingTelemetry,
     analysis: &AnalysisSnapshot,
@@ -1006,6 +2004,7 @@ fn pick_best_trigger(
     characters: &CharacterRegistry,
     world_registry: &WorldRegistry,
     prompts: &PromptLibrary,
+    tuning: &TriggerTuning,
 ) -> Option<TriggerCandidate> {
     let ctx = TriggerContext {
         telemetry: t,
@@ -1015,6 +2014,7 @@ fn pick_best_trigger(
         characters,
         world_registry,
         prompts,
+        tuning,
     };
     let triggers = builtin_triggers();
     triggers
@@ -1107,6 +2107,79 @@ async fn run_stage2_confirmation(
 /// `?`-propagate.
 pub fn parse_id(s: &str) -> Result<Id, String> {
     Id::from_str(s).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod sidecar_bridge_tests {
+    //! Unit tests for the sidecar→orchestrator bridge. The full
+    //! end-to-end (telemetry → analyze → BlockAnalysis → patch)
+    //! requires a Tauri `AppHandle` + a live mpsc channel, but the
+    //! patching logic is pure — covered here directly.
+    use super::*;
+    use water_core::ipc::AnalyzeResponse;
+
+    fn sample(valence: f64) -> AnalyzeResponse {
+        AnalyzeResponse {
+            word_count: 12,
+            flow: 0.7,
+            coherence: 0.6,
+            engagement: 0.5,
+            divergence: 0.3,
+            pace: 0.45,
+            intensity: 0.55,
+            valence,
+            status: "normal".into(),
+        }
+    }
+
+    #[test]
+    fn patches_scene_level_fields_and_inserts_block_metrics() {
+        let mut analysis = AnalysisSnapshot::default();
+        apply_block_analysis(&mut analysis, "bk-1".into(), &sample(0.4));
+        // Scene-level fields populated.
+        assert!((analysis.flow.unwrap() - 0.7).abs() < 1e-3);
+        assert!((analysis.coherence.unwrap() - 0.6).abs() < 1e-3);
+        assert!((analysis.divergence.unwrap() - 0.3).abs() < 1e-3);
+        assert!((analysis.pace.unwrap() - 0.45).abs() < 1e-3);
+        assert!((analysis.valence.unwrap() - 0.4).abs() < 1e-3);
+        // Per-block row keyed by the just-finished block.
+        let bm = analysis.block_metrics.get("bk-1").expect("block row");
+        assert!((bm.divergence.unwrap() - 0.3).abs() < 1e-3);
+        // valence_history starts at length 1.
+        assert_eq!(analysis.valence_history.len(), 1);
+    }
+
+    #[test]
+    fn valence_history_caps_at_constant() {
+        let mut analysis = AnalysisSnapshot::default();
+        for i in 0..(VALENCE_HISTORY_CAP + 5) {
+            apply_block_analysis(&mut analysis, format!("bk-{i}"), &sample(i as f64 / 100.0));
+        }
+        assert_eq!(analysis.valence_history.len(), VALENCE_HISTORY_CAP);
+        // The drained head is the OLDEST values; tail should be the
+        // last reading.
+        let tail = *analysis.valence_history.last().unwrap();
+        let expected_tail = (VALENCE_HISTORY_CAP + 4) as f32 / 100.0;
+        assert!((tail - expected_tail).abs() < 1e-3);
+    }
+
+    #[test]
+    fn upserting_same_block_replaces_row() {
+        let mut analysis = AnalysisSnapshot::default();
+        apply_block_analysis(&mut analysis, "bk-1".into(), &sample(0.1));
+        apply_block_analysis(
+            &mut analysis,
+            "bk-1".into(),
+            &AnalyzeResponse {
+                divergence: 0.9,
+                ..sample(0.1)
+            },
+        );
+        // One row, latest values.
+        assert_eq!(analysis.block_metrics.len(), 1);
+        let bm = analysis.block_metrics.get("bk-1").unwrap();
+        assert!((bm.divergence.unwrap() - 0.9).abs() < 1e-3);
+    }
 }
 
 #[cfg(test)]

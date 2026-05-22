@@ -15,20 +15,33 @@ const BID_ONLY = /^\^bk-[A-Za-z0-9]{4}$/;
 const MARK_OPEN: Record<string, (mark: PMMark) => string> = {
   strong: () => "**",
   em: () => "*",
+  strike: () => "~~",
   link: () => `[`, // open of [text](url); close is special-cased below
+  // Wikilink: open as `[[`; if `target` differs from the text content
+  // the close-side appends `|text]]` instead of the bare `]]` — that
+  // logic lives in the per-child serializer in inlineToMarkdown
+  // because it needs the text we're about to emit, not just the mark.
+  wikilink: () => `[[`,
 };
 
 const MARK_CLOSE: Record<string, (mark: PMMark) => string> = {
   strong: () => "**",
   em: () => "*",
+  strike: () => "~~",
   link: (mark) => `](${mark.attrs.href as string})`,
+  // Closing for wikilink is handled inline in inlineToMarkdown
+  // (it depends on whether target equals the visible text). This
+  // entry is a safe fallback for the close-stack drain path.
+  wikilink: () => `]]`,
 };
 
 // Marks emit in this nesting order (outermost → innermost).
 // Link wraps because [foo](url) is atomic in CommonMark; nesting inside
-// causes parsing pain. Strong wraps em because **bold *italic*** is the
-// canonical nested-emphasis form.
-const MARK_PRIORITY = ["link", "strong", "em"] as const;
+// causes parsing pain. Strike wraps strong wraps em so the canonical
+// rendering is `~~**bold *italic***~~` when all three combine.
+// Wikilink behaves like link — atomic, no nesting of marks inside it
+// for round-trip safety.
+const MARK_PRIORITY = ["wikilink", "link", "strike", "strong", "em"] as const;
 
 function escapeLiterals(text: string): string {
   // Escape CommonMark inline metacharacters so literal `*`, `_`, `[`, `]`,
@@ -63,6 +76,25 @@ export function inlineToMarkdown(blockNode: PMNode): string {
 
   blockNode.forEach((child) => {
     if (!child.isText) return;
+    // Wikilink fast path: atomic emit, bypassing the generic mark
+    // stack. A wikilink span is one text run with the mark applied;
+    // we emit `[[target]]` when target == text, otherwise
+    // `[[target|alias]]`. Other marks combine fine on top in CSS
+    // but for round-trip we deliberately don't nest formatting
+    // marks inside wikilinks (Obsidian's parser doesn't support
+    // that and the resulting source would be brittle).
+    const wikilinkMark = child.marks.find((m) => m.type.name === "wikilink");
+    if (wikilinkMark) {
+      closeUntil(0);
+      const target = (wikilinkMark.attrs["target"] as string) ?? "";
+      const text = child.text ?? "";
+      if (target === text || target === "") {
+        out += `[[${text}]]`;
+      } else {
+        out += `[[${target}|${text}]]`;
+      }
+      return;
+    }
     const wanted = marksInPriorityOrder(child.marks);
     // Find longest common prefix of openStack and wanted.
     let common = 0;
@@ -216,7 +248,12 @@ export function docFromMarkdown(schema: Schema, md: string): PMNode {
   );
 }
 
-type InlineMark = { name: "strong" | "em" | "link"; href?: string };
+type InlineMark = {
+  name: "strong" | "em" | "strike" | "link" | "wikilink";
+  href?: string;
+  /** Wikilink target — set when `name === "wikilink"`. */
+  target?: string;
+};
 
 type InlineRun = { text: string; marks: InlineMark[] };
 
@@ -307,6 +344,26 @@ function tokenizeInline(line: string, seedMarks: InlineMark[]): InlineRun[] {
       // Fall through to literal
     }
 
+    // Strikethrough: ~~
+    if (ch === "~" && next === "~") {
+      const strikeOpen = active.some((m) => m.name === "strike");
+      const peekInside2 = line[i + 2];
+      if (!strikeOpen && isFlankCharOutside(prev) && isFlankCharInside(peekInside2)) {
+        flush();
+        active.push({ name: "strike" });
+        i += 2;
+        continue;
+      }
+      if (strikeOpen && isFlankCharInside(prev) && isFlankCharOutside(peekInside2)) {
+        flush();
+        const idx = active.findIndex((m) => m.name === "strike");
+        if (idx >= 0) active.splice(idx, 1);
+        i += 2;
+        continue;
+      }
+      // Fall through to literal
+    }
+
     // Italic: *
     if (ch === "*" && next !== "*") {
       const emOpen = active.some((m) => m.name === "em");
@@ -325,6 +382,37 @@ function tokenizeInline(line: string, seedMarks: InlineMark[]): InlineRun[] {
         continue;
       }
       // Fall through to literal
+    }
+
+    // Wikilink: [[target]] or [[target|alias]]. Recognized before
+    // the regular link parser because `[[` would otherwise be eaten
+    // by `[`. Wikilinks are atomic and never contain other marks,
+    // so the inner text is emitted as a single run.
+    if (
+      ch === "[" &&
+      next === "[" &&
+      !active.some((m) => m.name === "wikilink" || m.name === "link")
+    ) {
+      const closeIdx = line.indexOf("]]", i + 2);
+      if (closeIdx > i + 2) {
+        const inside = line.slice(i + 2, closeIdx);
+        // Reject if the inside contains another `[[` — that would
+        // be malformed; treat the outer `[` as literal so we don't
+        // swallow real content.
+        if (!inside.includes("[[")) {
+          const pipe = inside.indexOf("|");
+          const target = pipe >= 0 ? inside.slice(0, pipe) : inside;
+          const alias = pipe >= 0 ? inside.slice(pipe + 1) : inside;
+          flush();
+          runs.push({
+            text: alias,
+            marks: [...active, { name: "wikilink", target }],
+          });
+          i = closeIdx + 2;
+          continue;
+        }
+      }
+      // Fall through to literal — single `[` consumed below.
     }
 
     // Link: [text](url) — text is recursively tokenized so inline marks
@@ -372,7 +460,10 @@ export function markdownToInlineNodes(
     .map((r) => {
       const marks = r.marks.map((m) => {
         if (m.name === "link") return schema.marks.link!.create({ href: m.href ?? "" });
+        if (m.name === "wikilink")
+          return schema.marks.wikilink!.create({ target: m.target ?? "" });
         if (m.name === "strong") return schema.marks.strong!.create();
+        if (m.name === "strike") return schema.marks.strike!.create();
         return schema.marks.em!.create();
       });
       return schema.text(r.text, marks);

@@ -26,6 +26,22 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg", "msi", "nsis"],
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/icon.ico"],
+    "resources": {
+      "../../sidecar/pyproject.toml": "sidecar/pyproject.toml",
+      "../../sidecar/uv.lock": "sidecar/uv.lock",
+      "../../sidecar/README.md": "sidecar/README.md",
+      "../../sidecar/src/water_sidecar/**/*": "sidecar/src/water_sidecar/"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/hon-ai/water-app/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_PUBLIC_KEY_FROM_TAURI_SIGNER_GENERATE",
+      "dialog": false
+    }
   }
 }

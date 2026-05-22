@@ -1,3 +1,4 @@
+use crate::orchestrator::feedback::{loosen_above, loosen_below};
 use crate::orchestrator::{SpeakerTrack, Trigger, TriggerCandidate, TriggerContext};
 
 pub struct TopicDrift;
@@ -15,7 +16,10 @@ impl Trigger for TopicDrift {
         }
         let coh = ctx.analysis.coherence?;
         let div = ctx.analysis.divergence?;
-        if coh < 0.35 && div > 0.5 {
+        let s = ctx.tuning.sensitivity_for(self.id());
+        let coh_bar = loosen_below(0.35, s);
+        let div_bar = loosen_above(0.5, s);
+        if coh < coh_bar && div > div_bar {
             Some(TriggerCandidate {
                 trigger_id: self.id().to_string(),
                 priority: 7.0,
@@ -58,6 +62,8 @@ mod tests {
             characters_present: vec![],
             word_count: 500,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot::default();
         let characters = CharacterRegistry::empty();
@@ -69,6 +75,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         assert!(TopicDrift.evaluate(&ctx).is_some());
     }

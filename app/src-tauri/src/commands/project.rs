@@ -90,8 +90,15 @@ pub async fn create_project(
 
     let scheduler = SnapshotScheduler::spawn(db.clone(), root.clone());
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
-    let orchestrator =
-        spawn_orchestrator_for_project(&app, &state, &db, &project_id, root.clone()).await;
+    let orchestrator = spawn_orchestrator_for_project(
+        &app,
+        &state,
+        &db,
+        &project_id,
+        root.clone(),
+        sidecar.clone(),
+    )
+    .await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -195,8 +202,15 @@ pub async fn open_project(
     }
 
     let (sidecar, supervisor) = boot_sidecar_for_project(&app).await;
-    let orchestrator =
-        spawn_orchestrator_for_project(&app, &state, &db, &water.project_id, root.clone()).await;
+    let orchestrator = spawn_orchestrator_for_project(
+        &app,
+        &state,
+        &db,
+        &water.project_id,
+        root.clone(),
+        sidecar.clone(),
+    )
+    .await;
 
     let info = OpenProjectInfo {
         root: root.to_string_lossy().to_string(),
@@ -261,6 +275,7 @@ async fn spawn_orchestrator_for_project(
     db: &Arc<Mutex<water_core::Db>>,
     project_id: &water_core::Id,
     project_root: PathBuf,
+    sidecar: Option<Arc<Sidecar>>,
 ) -> Option<crate::orchestrator_service::OrchestratorHandle> {
     // Personas + characters + world are all loaded under a single DB-lock
     // acquisition so we don't race a writer between the reads. The project
@@ -323,6 +338,7 @@ async fn spawn_orchestrator_for_project(
         world_registry,
         project_root,
         db.clone(),
+        sidecar,
     );
     Some(handle)
 }
@@ -335,17 +351,33 @@ fn sanitize_dir_name(name: &str) -> String {
         .replace(' ', "-")
 }
 
-/// Resolve the sidecar workspace path in dev mode.
+/// Resolve the sidecar workspace path. Tries the packaged-resource
+/// path first (via Tauri's resource dir), falling back to the dev
+/// `CARGO_MANIFEST_DIR/../../sidecar` location. Either way we
+/// confirm the candidate by checking for `pyproject.toml` — that's
+/// what `uv run` reads to resolve dependencies.
 ///
-/// In dev, the working dir is `app/src-tauri/`, so the sidecar lives at
-/// `../../sidecar`. Resolved at compile time via `CARGO_MANIFEST_DIR` for
-/// stability. For packaged builds we'll need `tauri::path::resource_dir`;
-/// that lands with the packaging work outside M1.1.
-fn dev_sidecar_dir() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+/// Returns `None` when neither location has a sidecar — surface as
+/// "sidecar disabled" to the writer, exactly the same as the
+/// uv-missing case.
+fn sidecar_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    // Packaged build: resources copied into <install>/resources/sidecar/.
+    if let Ok(resource_root) = app.path().resource_dir() {
+        let candidate = resource_root.join("sidecar");
+        if candidate.join("pyproject.toml").exists() {
+            return Some(candidate);
+        }
+    }
+    // Dev build: workspace-relative path, resolved at compile time.
+    let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("sidecar")
+        .join("sidecar");
+    if dev.join("pyproject.toml").exists() {
+        return Some(dev);
+    }
+    None
 }
 
 /// Best-effort sidecar boot. Returns `(None, None)` if `uv` is missing or
@@ -360,12 +392,28 @@ async fn boot_sidecar_for_project(
             return (None, None);
         }
     };
+    let working_dir = match sidecar_dir(app) {
+        Some(p) => p,
+        None => {
+            tracing::warn!(
+                "sidecar workspace not found in resource dir or dev path; sidecar disabled"
+            );
+            return (None, None);
+        }
+    };
     let spec = SidecarSpec {
-        working_dir: dev_sidecar_dir(),
+        working_dir,
         uv_bin: uv_path,
         port: 18765,
         host: "127.0.0.1".into(),
-        boot_timeout: Duration::from_secs(20),
+        // 60s instead of 20s. The cold-start path (first run on a
+        // fresh machine, or after `uv.lock` refresh) downloads
+        // Python 3.12 + resolves wheels for fastapi/uvicorn/pydantic
+        // before uvicorn even starts. On a slow connection 20s
+        // wasn't enough — the sidecar timed out and the five
+        // stylometric triggers stayed dark. Warm-start is ~1s so
+        // the larger budget has no cost.
+        boot_timeout: Duration::from_secs(60),
     };
     let sc = match Sidecar::spawn(spec).await {
         Ok(sc) => Arc::new(sc),

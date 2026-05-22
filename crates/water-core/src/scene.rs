@@ -49,6 +49,7 @@ impl<'a> SceneStore<'a> {
         std::fs::create_dir_all(self.scenes_dir())?;
 
         let frontmatter = SceneFrontmatter {
+            water_scene: true,
             id: id.clone(),
             name: ns.name.clone(),
             chapter_id: ns.chapter_id.clone(),
@@ -426,8 +427,14 @@ mod tests {
             .unwrap();
         assert_eq!(row.word_count, 4);
         let file = store.read(&scene.id).unwrap();
-        assert!(file.body.contains("Hello there. ^bk-"));
-        assert!(file.body.contains("Another one. ^bk-"));
+        // Leading-token convention (matches the PM serializer): each
+        // paragraph starts with `^bk-XXXX` followed by a space and the
+        // prose. See `block::ensure_block_ids` for the format.
+        assert!(file.body.contains("^bk-"));
+        assert!(file.body.contains(" Hello there."));
+        assert!(file.body.contains(" Another one."));
+        assert!(!file.body.contains("Hello there. ^bk-"));
+        assert!(!file.body.contains("Another one. ^bk-"));
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub mod assembler;
 pub mod loader;
 
 pub use assembler::{
-    assemble_level_0, assemble_pill_expand, assemble_pill_regenerate, PromptRequest,
+    assemble_editor_polish, assemble_level_0, assemble_pill_expand, assemble_pill_regenerate,
+    assemble_rabbit_deepen_inherit, assemble_rabbit_fan_4, PromptContext, PromptRequest,
 };
 pub use loader::{PromptLibrary, TaskPrompt, ToneClauses, TriggerPrompt};

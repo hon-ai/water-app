@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CharacterCard } from "./CharacterCard";
 import { ipc } from "../ipc/commands";
 import type { CharacterIndexEntry } from "../ipc/commands";
+import { GlassSelect } from "../chrome/GlassSelect";
 
 /**
  * Top-level grid view of every character in the project (M3 T19, spec § 9).
@@ -104,16 +105,27 @@ export function CharacterIndex({
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search characters"
         />
-        <label>
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            minWidth: 180,
+          }}
+        >
           Sort:
-          <select
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
-          >
-            <option value="name">Name</option>
-            <option value="completion">Completion</option>
-            <option value="created">Created</option>
-          </select>
+          <div style={{ flex: 1, minWidth: 120 }}>
+            <GlassSelect
+              ariaLabel="Sort characters"
+              value={sortKey}
+              options={[
+                { value: "name", label: "Name" },
+                { value: "completion", label: "Completion" },
+                { value: "created", label: "Created" },
+              ]}
+              onChange={(next) => setSortKey(next as SortKey)}
+            />
+          </div>
         </label>
         <button type="button" onClick={() => void handleNew()}>
           + New character

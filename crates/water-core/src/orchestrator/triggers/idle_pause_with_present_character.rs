@@ -64,6 +64,7 @@ mod tests {
                 characters: &self.characters,
                 world_registry: crate::orchestrator::test_util::test_world_registry(),
                 prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
             }
         }
     }
@@ -89,6 +90,8 @@ mod tests {
             characters_present,
             word_count: 500,
             seconds_since_last_pill,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         Fixture {
             telem,

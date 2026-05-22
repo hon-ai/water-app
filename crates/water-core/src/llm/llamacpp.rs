@@ -1,5 +1,5 @@
 use super::anthropic::{build_user_with_exclusions, parse_bouquet_json};
-use super::{BouquetRequest, BouquetVariant, LlmProvider, ProviderId};
+use super::{BouquetRequest, BouquetVariant, GenerateRequest, LlmProvider, ProviderId};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -143,6 +143,60 @@ impl LlmProvider for LlamaCppProvider {
             .map(|c| c.message.content)
             .ok_or_else(|| Error::Provider("llamacpp: no choices".into()))?;
         parse_bouquet_json(&text, req.n_variants)
+    }
+
+    /// Single-shot text generation. Used by level-0 pill dispatch.
+    /// `req.model` defaults to "default" — llama.cpp's server picks
+    /// whatever model it was loaded with.
+    async fn generate_raw(&self, req: GenerateRequest) -> Result<String> {
+        let model = if req.model.is_empty() {
+            "default"
+        } else {
+            &req.model
+        };
+        let max_tokens = if req.max_output_tokens == 0 {
+            512
+        } else {
+            req.max_output_tokens
+        };
+        let body = ChatRequest {
+            model,
+            temperature: req.temperature,
+            max_tokens,
+            messages: vec![
+                ChatMessage {
+                    role: "system",
+                    content: &req.system,
+                },
+                ChatMessage {
+                    role: "user",
+                    content: &req.user,
+                },
+            ],
+        };
+        let mut req_builder = self
+            .http
+            .post(format!("{}/v1/chat/completions", self.base_url))
+            .json(&body);
+        if let Some(k) = &self.api_key {
+            req_builder = req_builder.bearer_auth(k);
+        }
+        let r = req_builder
+            .send()
+            .await
+            .map_err(|e| Error::Provider(format!("llamacpp raw: {e}")))?;
+        let r = r
+            .error_for_status()
+            .map_err(|e| Error::Provider(format!("llamacpp raw http: {e}")))?;
+        let resp: ChatResponse = r
+            .json()
+            .await
+            .map_err(|e| Error::Provider(format!("llamacpp raw json: {e}")))?;
+        resp.choices
+            .into_iter()
+            .next()
+            .map(|c| c.message.content)
+            .ok_or_else(|| Error::Provider("llamacpp raw: no choices".into()))
     }
 }
 

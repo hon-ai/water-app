@@ -69,34 +69,62 @@ describe("PillLayer", () => {
     const handlers = mockHandlers();
     render(<PillLayer />);
     await waitFor(() => expect(handlers.emerged).toBeDefined());
-    act(() =>
-      handlers.emerged!(samplePill({ pill_id: "p1", text: "A", block_target_id: null })),
-    );
+    // Use multi-word texts so assertions can't collide with the
+    // single-letter speaker-chip glyphs (E/A/D/C/H) added in Phase 3.
     act(() =>
       handlers.emerged!(
-        samplePill({ pill_id: "p2", speaker_id: "editor", hue_token: "--water-hue-editor", text: "B", block_target_id: null }),
+        samplePill({ pill_id: "p1", text: "first-pill", block_target_id: null }),
       ),
     );
     act(() =>
       handlers.emerged!(
-        samplePill({ pill_id: "p3", speaker_id: "architect", hue_token: "--water-hue-architect", text: "C", block_target_id: null }),
+        samplePill({
+          pill_id: "p2",
+          speaker_id: "editor",
+          hue_token: "--water-hue-editor",
+          text: "second-pill",
+          block_target_id: null,
+        }),
       ),
     );
     act(() =>
       handlers.emerged!(
-        samplePill({ pill_id: "p4", speaker_id: "echo", hue_token: "--water-hue-echo", text: "D", block_target_id: null }),
+        samplePill({
+          pill_id: "p3",
+          speaker_id: "architect",
+          hue_token: "--water-hue-architect",
+          text: "third-pill",
+          block_target_id: null,
+        }),
       ),
     );
     act(() =>
       handlers.emerged!(
-        samplePill({ pill_id: "p5", speaker_id: "chorus", hue_token: "--water-hue-chorus", text: "E", block_target_id: null }),
+        samplePill({
+          pill_id: "p4",
+          speaker_id: "echo",
+          hue_token: "--water-hue-echo",
+          text: "fourth-pill",
+          block_target_id: null,
+        }),
       ),
     );
-    // FIFO @ MAX_ON_SCREEN=4: A evicts, B + C + D + E remain.
-    expect(screen.queryByText("A")).toBeNull();
-    expect(screen.getByText("B")).toBeInTheDocument();
-    expect(screen.getByText("C")).toBeInTheDocument();
-    expect(screen.getByText("D")).toBeInTheDocument();
-    expect(screen.getByText("E")).toBeInTheDocument();
+    act(() =>
+      handlers.emerged!(
+        samplePill({
+          pill_id: "p5",
+          speaker_id: "chorus",
+          hue_token: "--water-hue-chorus",
+          text: "fifth-pill",
+          block_target_id: null,
+        }),
+      ),
+    );
+    // FIFO @ MAX_ON_SCREEN=4: first-pill evicts, the rest remain.
+    expect(screen.queryByText("first-pill")).toBeNull();
+    expect(screen.getByText("second-pill")).toBeInTheDocument();
+    expect(screen.getByText("third-pill")).toBeInTheDocument();
+    expect(screen.getByText("fourth-pill")).toBeInTheDocument();
+    expect(screen.getByText("fifth-pill")).toBeInTheDocument();
   });
 });

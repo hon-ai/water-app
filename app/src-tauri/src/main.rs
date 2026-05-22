@@ -18,6 +18,12 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        // Auto-updater. Pointed at the `latest.json` manifest that
+        // `tauri-action` attaches to each GitHub Release. The JS
+        // side calls `check()` in `App.tsx` once on boot; if the
+        // pubkey in `tauri.conf.json` is the placeholder, the
+        // renderer catches the resulting error silently.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::project::create_project,
@@ -43,6 +49,7 @@ fn main() {
             commands::character::character_autosuggest_for_scene,
             commands::provider::provider_test,
             commands::provider::provider_set_key,
+            commands::provider::provider_set_model,
             commands::diagnostics::diagnostics_status,
             commands::events::bus_ping,
             commands::events::typing_telemetry,
@@ -51,7 +58,16 @@ fn main() {
             commands::pill::pill_regenerate,
             commands::pill::pill_pin,
             commands::pill::pill_dismiss,
+            commands::pill::pill_evicted,
+            commands::pill::feedback_reset,
+            commands::pill::pill_deepen,
+            commands::pill::rabbit_deepen_thought,
+            commands::pill::rabbit_set_resonance,
             commands::pill::pinned_list,
+            commands::editor_pill::editor_pills_run,
+            commands::editor_pill::editor_pills_list,
+            commands::editor_pill::editor_pill_dismiss,
+            commands::editor_pill::editor_polish_request,
             commands::world::world_segment_list,
             commands::world::world_segment_create,
             commands::world::world_segment_update_template,

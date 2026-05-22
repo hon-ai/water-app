@@ -2,7 +2,9 @@
 //! See docs/superpowers/specs/2026-05-17-m2-editor-pill-engine.md § 6.
 
 pub mod anti_loop;
+pub mod arc;
 pub mod eviction;
+pub mod feedback;
 pub mod lemma_overlap;
 pub mod state;
 pub mod triggers;
@@ -81,6 +83,13 @@ pub struct SceneSnapshot {
     pub characters_present: Vec<Id>,
     pub word_count: u32,
     pub seconds_since_last_pill: u64,
+    /// Phase 6 — 0-indexed position of this scene in its manuscript.
+    /// Used (with `manuscript_scene_count`) to derive an arc-position
+    /// label for the prompt context. Optional during the renderer-side
+    /// rollout; absent → assembler omits the "Position in arc" line.
+    pub scene_ordering: Option<u32>,
+    /// Phase 6 — total scenes in the manuscript. See `scene_ordering`.
+    pub manuscript_scene_count: Option<u32>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -101,6 +110,12 @@ pub struct TriggerContext<'a> {
     /// acceptable for tests that don't exercise world-track logic.
     pub world_registry: &'a crate::world::WorldRegistry,
     pub prompts: &'a crate::prompts::loader::PromptLibrary,
+    /// v8: per-trigger learned sensitivity. Absent ids fall back to
+    /// `feedback::SENSITIVITY_DEFAULT` (0.5), which preserves the
+    /// pre-learning behavior. Triggers consume this via
+    /// `feedback::loosen_above` / `loosen_below` on their numeric
+    /// thresholds.
+    pub tuning: &'a crate::orchestrator::feedback::TriggerTuning,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +208,15 @@ pub mod test_util {
         static REG: OnceLock<crate::world::WorldRegistry> = OnceLock::new();
         REG.get_or_init(crate::world::WorldRegistry::default)
     }
+
+    /// Return a borrow of a `'static` default (empty) `TriggerTuning`
+    /// for tests that don't exercise learned-sensitivity behavior.
+    /// Absent ids resolve to `SENSITIVITY_DEFAULT`, so tests that
+    /// existed before v8 keep the same thresholds.
+    pub fn test_tuning() -> &'static crate::orchestrator::feedback::TriggerTuning {
+        static TUN: OnceLock<crate::orchestrator::feedback::TriggerTuning> = OnceLock::new();
+        TUN.get_or_init(crate::orchestrator::feedback::TriggerTuning::default)
+    }
 }
 
 #[cfg(test)]
@@ -255,6 +279,8 @@ mod tests {
             characters_present: vec![],
             word_count: 0,
             seconds_since_last_pill: 0,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let project = ProjectSnapshot::default();
         let characters = crate::character::registry::CharacterRegistry::empty();
@@ -267,6 +293,7 @@ mod tests {
             characters: &characters,
             world_registry: &world_reg,
             prompts,
+            tuning: test_util::test_tuning(),
         };
         assert_eq!(ctx.world_registry.segments().count(), 6);
     }

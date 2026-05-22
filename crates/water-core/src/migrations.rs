@@ -27,6 +27,9 @@ const V4_WORLD_BIBLE: &str = include_str!("../sql/v4_world_bible.sql");
 const V5_HEATMAP: &str = include_str!("../sql/v5_heatmap.sql");
 const V6_CANVAS: &str = include_str!("../sql/v6_canvas.sql");
 const V7_LOCATION_PRESENCE: &str = include_str!("../sql/v7_location_presence.sql");
+const V8_TRIGGER_FEEDBACK: &str = include_str!("../sql/v8_trigger_feedback.sql");
+const V9_RABBIT_HOLE: &str = include_str!("../sql/v9_rabbit_hole.sql");
+const V10_EDITOR_PILL: &str = include_str!("../sql/v10_editor_pill.sql");
 
 #[must_use]
 pub fn all() -> Migrations<'static> {
@@ -38,6 +41,9 @@ pub fn all() -> Migrations<'static> {
         M::up(V5_HEATMAP),
         M::up(V6_CANVAS),
         M::up(V7_LOCATION_PRESENCE),
+        M::up(V8_TRIGGER_FEEDBACK),
+        M::up(V9_RABBIT_HOLE),
+        M::up(V10_EDITOR_PILL),
     ])
 }
 
@@ -115,7 +121,7 @@ mod tests {
 
         // Db::open now sees a v1 DB and ratchets to latest.
         let db = Db::open(&path).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 7);
+        assert_eq!(current_version(db.conn()).unwrap(), 10);
     }
 
     #[test]
@@ -205,16 +211,16 @@ mod tests {
         // Db::open already ratcheted to latest; another run_pending must be a no-op.
         run_pending(&mut db).unwrap();
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 7);
+        assert_eq!(current_version(db.conn()).unwrap(), 10);
     }
 
     #[test]
-    fn migration_ratchets_to_v7() {
+    fn migration_ratchets_to_v10() {
         let (_tmp, mut db) = fresh_v1_db();
         // fresh_v1_db actually returns a DB already ratcheted to latest via
-        // Db::open; another run_pending is a no-op that still leaves us at v7.
+        // Db::open; another run_pending is a no-op that still leaves us at v10.
         run_pending(&mut db).unwrap();
-        assert_eq!(current_version(db.conn()).unwrap(), 7);
+        assert_eq!(current_version(db.conn()).unwrap(), 10);
     }
 
     #[test]
@@ -430,16 +436,124 @@ mod tests {
     }
 
     // The historical version-pin checks retire on each migration bump;
-    // `v7_schema_version_is_seven` below is the current latest check.
+    // `v10_schema_version_is_ten` below is the current latest check.
 
     #[test]
-    fn v7_schema_version_is_seven() {
+    fn v10_schema_version_is_ten() {
         let db = Db::open_in_memory().unwrap();
         let version: u32 = db
             .conn()
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 7);
+        assert_eq!(version, 10);
+    }
+
+    #[test]
+    fn v10_creates_editor_pill_table() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(editor_pill)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in [
+            "id",
+            "scene_id",
+            "rule",
+            "severity",
+            "message",
+            "suggestion",
+            "anchor_block_id",
+            "anchor_start",
+            "anchor_end",
+            "text_snippet",
+            "content_hash",
+            "dismissed",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "editor_pill missing column {required}; got {cols:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn v9_creates_rabbit_thought_table() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(rabbit_thought)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in [
+            "id",
+            "scene_id",
+            "parent_id",
+            "speaker_kind",
+            "speaker_id",
+            "message",
+            "depth",
+            "siblings_at_depth",
+            "sibling_index",
+            "direction",
+            "resonance",
+            "created_at",
+            "bytes",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "rabbit_thought missing column {required}; got {cols:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn v9_creates_rabbit_thought_indexes() {
+        let db = Db::open_in_memory().unwrap();
+        for ix in ["rabbit_thought_by_scene", "rabbit_thought_trim_order"] {
+            let count: i64 = db
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+                    [ix],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "missing index {ix}");
+        }
+    }
+
+    #[test]
+    fn v8_creates_trigger_feedback_table() {
+        let db = Db::open_in_memory().unwrap();
+        let cols: Vec<String> = db
+            .conn()
+            .prepare("PRAGMA table_info(trigger_feedback)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        for required in [
+            "trigger_id",
+            "r_ema",
+            "sensitivity",
+            "n_observations",
+            "pour_observations",
+            "reflect_observations",
+            "last_updated",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "trigger_feedback missing column {required}; got {cols:?}"
+            );
+        }
     }
 
     #[test]

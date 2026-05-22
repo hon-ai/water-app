@@ -56,6 +56,14 @@ pub use world::{WorldSegmentRow, WorldStore};
 pub mod heat;
 pub use heat::{HeatMetricKind, HeatRow, HeatStore};
 
+pub mod rabbit;
+pub use rabbit::{
+    ChildInsert, Direction, RabbitCaps, RabbitStore, RabbitThought, RootInsert, SpeakerKind,
+    TrimReport,
+};
+
+pub mod editor;
+
 pub mod canvas;
 pub use canvas::auto_flow;
 

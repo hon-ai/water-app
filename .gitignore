@@ -10,6 +10,9 @@ desktop.ini
 *.swo
 *~
 
+# Claude Code local settings + scheduled-task locks
+.claude/
+
 # Rust / Tauri (arrive in M1)
 /target/
 **/target/

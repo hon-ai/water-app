@@ -10,12 +10,13 @@
 //! `requires_confirmation` request. Stage 2 (LLM yes/no) happens in the
 //! orchestrator service (M3 T11).
 
+use crate::orchestrator::feedback::loosen_above;
 use crate::orchestrator::lemma_overlap::overlap;
 use crate::orchestrator::{
     CursorClassification, SpeakerTrack, Trigger, TriggerCandidate, TriggerContext,
 };
 
-const GATE_THRESHOLD: f32 = 0.30;
+const GATE_THRESHOLD_DEFAULT: f32 = 0.30;
 
 pub struct CharacterDissonance;
 
@@ -29,6 +30,7 @@ impl Trigger for CharacterDissonance {
             return None;
         }
         let paragraph = ctx.analysis.last_block_text.as_deref()?;
+        let gate = loosen_above(GATE_THRESHOLD_DEFAULT, ctx.tuning.sensitivity_for(self.id()));
         for char_id in &ctx.scene.characters_present {
             let Some(_speaker) = ctx.characters.by_id(char_id.as_str()) else {
                 continue;
@@ -50,7 +52,7 @@ impl Trigger for CharacterDissonance {
                     continue;
                 }
                 let ovl = overlap(paragraph, field_value);
-                if ovl >= GATE_THRESHOLD {
+                if ovl >= gate {
                     // Render Stage-2 confirmation from the built-in
                     // `pill_dissonance_check` TOML. If rendering fails
                     // (only possible if the id is somehow missing), drop
@@ -147,6 +149,8 @@ mod tests {
             characters_present: vec![char_id.clone()],
             word_count: 500,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         let mut reg = CharacterRegistry::empty();
         reg.insert_for_test(CharacterRegistryRow {
@@ -173,6 +177,7 @@ mod tests {
             characters: registry,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         }
     }
 

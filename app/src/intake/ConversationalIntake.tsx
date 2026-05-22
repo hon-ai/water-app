@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { IntakeField, IntakeSchemaSection } from "../ipc/commands";
+import { GlassSelect } from "../chrome/GlassSelect";
 
 /**
  * Props for the schema-agnostic conversational intake.
@@ -291,21 +292,13 @@ function FieldInput({
       );
     case "choice":
       return (
-        <select
-          aria-label={field.label}
+        <GlassSelect
+          ariaLabel={field.label}
           value={asString(value)}
-          onChange={(e) => onChange(e.target.value)}
-          autoFocus
-        >
-          <option value="" disabled>
-            Choose&hellip;
-          </option>
-          {kind.options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+          placeholder="Choose…"
+          options={kind.options.map((opt) => ({ value: opt, label: opt }))}
+          onChange={(next) => onChange(next)}
+        />
       );
   }
 }

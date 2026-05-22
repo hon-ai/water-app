@@ -1,9 +1,13 @@
 use super::anthropic::{build_user_with_exclusions, parse_bouquet_json};
-use super::{BouquetRequest, BouquetVariant, LlmProvider, ProviderId};
+use super::{BouquetRequest, BouquetVariant, GenerateRequest, LlmProvider, ProviderId};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+/// Default model used by the single-shot `generate_raw` path when
+/// `req.model` is empty. Matches the curated picker default.
+pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
 
 /// `LlmProvider` adapter for `OpenAI`'s Chat Completions API.
 pub struct OpenAiProvider {
@@ -148,6 +152,57 @@ impl LlmProvider for OpenAiProvider {
             .map(|c| c.message.content)
             .ok_or_else(|| Error::Provider("openai: no choices".into()))?;
         parse_bouquet_json(&text, req.n_variants)
+    }
+
+    /// Single-shot text generation. Used by level-0 pill dispatch,
+    /// rabbit-hole fan, and editor polish — every path that calls
+    /// `LlmRouter::generate_raw_with_default`.
+    async fn generate_raw(&self, req: GenerateRequest) -> Result<String> {
+        let model = if req.model.is_empty() {
+            OPENAI_DEFAULT_MODEL
+        } else {
+            &req.model
+        };
+        let max_tokens = if req.max_output_tokens == 0 {
+            512
+        } else {
+            req.max_output_tokens
+        };
+        let body = ChatRequest {
+            model,
+            temperature: req.temperature,
+            max_tokens,
+            messages: vec![
+                ChatMessage {
+                    role: "system",
+                    content: &req.system,
+                },
+                ChatMessage {
+                    role: "user",
+                    content: &req.user,
+                },
+            ],
+        };
+        let r = self
+            .http
+            .post(format!("{}/v1/chat/completions", self.base_url))
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| Error::Provider(format!("openai raw: {e}")))?;
+        let r = r
+            .error_for_status()
+            .map_err(|e| Error::Provider(format!("openai raw http: {e}")))?;
+        let resp: ChatResponse = r
+            .json()
+            .await
+            .map_err(|e| Error::Provider(format!("openai raw json: {e}")))?;
+        resp.choices
+            .into_iter()
+            .next()
+            .map(|c| c.message.content)
+            .ok_or_else(|| Error::Provider("openai raw: no choices".into()))
     }
 }
 

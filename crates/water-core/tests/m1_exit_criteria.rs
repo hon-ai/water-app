@@ -239,6 +239,7 @@ fn exit_rebuild_with_character_reference_round_trips() {
         .join(format!("{scene_id}.md"));
     water_core::scene_md::SceneFile {
         frontmatter: SceneFrontmatter {
+            water_scene: true,
             id: scene_id.clone(),
             name: "Opening".into(),
             chapter_id: None,

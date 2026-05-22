@@ -7,6 +7,7 @@ import {
   type SceneMetadata,
   type WorldEntryIndexEntry,
 } from "../ipc/commands";
+import { GlassSelect } from "../chrome/GlassSelect";
 
 interface Props {
   sceneId: string;
@@ -223,30 +224,19 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
         >
           POV character
         </h3>
-        <select
-          aria-label="POV character"
+        <GlassSelect
+          ariaLabel="POV character"
           value={meta.pov_character_id ?? ""}
-          onChange={(e) =>
-            void setPov(e.target.value === "" ? null : e.target.value)
-          }
-          style={{
-            fontFamily: "var(--water-font-sans)",
-            fontSize: "var(--water-fs-ui)",
-            padding: "4px 8px",
-            borderRadius: "var(--water-r-8)",
-            border:
-              "1px solid color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
-            background: "var(--water-bg-paper)",
-            color: "var(--water-fg-default)",
-          }}
-        >
-          <option value="">— none —</option>
-          {povOptions.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.full_name || "(unnamed)"}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "— none —" },
+            ...povOptions.map((c) => ({
+              value: c.id,
+              label: c.full_name || "(unnamed)",
+            })),
+          ]}
+          onChange={(next) => void setPov(next === "" ? null : next)}
+          triggerStyle={{ fontSize: "var(--water-fs-ui)" }}
+        />
       </section>
       {locationOptions !== null && (
         <section>
@@ -261,30 +251,19 @@ export function SceneMetadataSheet({ sceneId, open, onClose }: Props) {
           >
             Location
           </h3>
-          <select
-            aria-label="Location"
+          <GlassSelect
+            ariaLabel="Location"
             value={meta.location?.id ?? ""}
-            onChange={(e) =>
-              void setLocation(e.target.value === "" ? null : e.target.value)
-            }
-            style={{
-              fontFamily: "var(--water-font-sans)",
-              fontSize: "var(--water-fs-ui)",
-              padding: "4px 8px",
-              borderRadius: "var(--water-r-8)",
-              border:
-                "1px solid color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
-              background: "var(--water-bg-paper)",
-              color: "var(--water-fg-default)",
-            }}
-          >
-            <option value="">— none —</option>
-            {locationOptions.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.name || "(unnamed)"}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "— none —" },
+              ...locationOptions.map((opt) => ({
+                value: opt.id,
+                label: opt.name || "(unnamed)",
+              })),
+            ]}
+            onChange={(next) => void setLocation(next === "" ? null : next)}
+            triggerStyle={{ fontSize: "var(--water-fs-ui)" }}
+          />
         </section>
       )}
     </Sheet>

@@ -1,0 +1,7 @@
+version = "1"
+id = "idle_pause"
+framing = """
+The writer has paused without anyone named in the scene yet. Surface a
+quiet ambient noticing — texture, atmosphere, an image just out of frame.
+Not a question. Not advice.
+"""

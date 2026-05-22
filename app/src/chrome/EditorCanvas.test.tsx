@@ -6,6 +6,14 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
 }));
 
+// Phase 5 wired `editor_pills:updated` into the canvas hydrate
+// effect; the canvas subscribes via @tauri-apps/api/event. Stub the
+// listen call so it resolves to a no-op unlisten instead of trying
+// to reach the Tauri runtime (which doesn't exist in jsdom).
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: () => Promise.resolve(() => {}),
+}));
+
 // Mock the ProseMirror editor with a plain textarea so we can drive
 // content changes with fireEvent.change. EditorCanvas tests own only
 // the autosave + rename wiring; the real editor is covered by

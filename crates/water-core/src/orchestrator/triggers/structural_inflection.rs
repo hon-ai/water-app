@@ -94,6 +94,8 @@ mod tests {
             characters_present: vec![],
             word_count: 500,
             seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
         };
         (telem, analysis, scene, ProjectSnapshot::default())
     }
@@ -111,6 +113,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
         assert!(cand.priority > 7.0, "got priority {}", cand.priority);
@@ -129,6 +132,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         let cand = StructuralInflectionTrigger.evaluate(&ctx).unwrap();
         assert!(cand.priority < 4.0, "got priority {}", cand.priority);
@@ -146,6 +150,7 @@ mod tests {
             characters: &characters,
             world_registry: crate::orchestrator::test_util::test_world_registry(),
             prompts: crate::orchestrator::test_util::test_prompts(),
+            tuning: crate::orchestrator::test_util::test_tuning(),
         };
         assert!(StructuralInflectionTrigger.evaluate(&ctx).is_none());
     }

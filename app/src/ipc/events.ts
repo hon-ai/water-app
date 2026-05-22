@@ -57,6 +57,27 @@ export interface WaterEventPayloads {
    * spam every metric track. Fires on every autosave.
    */
   "heat:updated": { scene_id: string };
+  /**
+   * Phase 4: emitted when the rabbit_fan_4 LLM call returns and the
+   * four children have been persisted. `parent_id` is the rabbit
+   * thought that was deepened (root or interior).
+   */
+  "deepen:ready": {
+    parent_id: string;
+    children: Array<{
+      id: string;
+      direction: "closer" | "wider" | "opposite" | "deeper" | "root" | "";
+      text: string;
+    }>;
+  };
+  /** Phase 4: emitted when LLM dispatch or persistence failed. */
+  "deepen:failed": { parent_id: string; reason: string };
+  /**
+   * Phase 5: emitted after a diagnostic-engine run upserts editor
+   * pills for a scene. Renderer's diagnostics tab + inline-underline
+   * plugin re-fetch via `editor_pills_list` on receipt.
+   */
+  "editor_pills:updated": { scene_id: string; count: number };
 }
 
 export type WaterEventName = keyof WaterEventPayloads;

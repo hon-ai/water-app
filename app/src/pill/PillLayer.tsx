@@ -2,10 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { ipc } from "../ipc/commands";
 import { onWaterEvent } from "../ipc/events";
 import type { BouquetItem } from "./Bouquet";
+import { DeepenPanel } from "./DeepenPanel";
 import { HoverDim } from "./hover-dim";
 import { PillCapsule } from "./PillCapsule";
 import { RabbitHole, type RabbitHoleLevel } from "./RabbitHole";
 import type { Pill } from "./types";
+import {
+  computeBlockHash,
+  resolveAnchor,
+  type AnchorPayload,
+  type BlockSnapshot,
+} from "./anchorResolver";
+import { bestSentenceRange } from "./sentenceMatch";
 
 const MAX_ON_SCREEN = 4;
 /** Below this `<main>` width the pill margin overlaps the prose; capsules
@@ -61,6 +69,63 @@ interface PillLayerProps {
   sceneId?: string;
 }
 
+/**
+ * Phase 3.5 — snapshot a block's anchor at pill-emerge time. The
+ * snippet is a heuristic phrase derived from the block's leading
+ * text (first sentence up to ~60 chars on a word boundary) — until
+ * the backend emits a real trigger phrase, this gives us a tighter
+ * highlight than the whole paragraph while still resolving cleanly
+ * through edits.
+ *
+ * Returns `null` when the block isn't in the DOM (deeper sub-pills
+ * without an explicit block, or the block was deleted before the
+ * emerge handler ran). Callers treat null as "no precise anchor —
+ * skip the highlight entirely."
+ */
+function captureAnchor(blockId: string | null): AnchorPayload | null {
+  if (!blockId) return null;
+  const el = document.querySelector(`[data-bid="${blockId}"]`);
+  const text = el?.textContent ?? "";
+  if (text.length === 0) return null;
+
+  // Derive a 3–10 word snippet. Prefer a clean sentence end; fall
+  // back to a word boundary at ~60 chars; last resort, the first 40
+  // chars verbatim. Whitespace is preserved so the substring search
+  // matches the DOM text exactly.
+  const trimmed = text.replace(/^\s+/, "");
+  const startOffset = text.length - trimmed.length;
+  const sentenceEnd = trimmed.search(/[.!?](\s|$)/);
+  let snippet: string;
+  if (sentenceEnd !== -1 && sentenceEnd < 70) {
+    snippet = trimmed.slice(0, sentenceEnd + 1);
+  } else {
+    const cap = trimmed.slice(0, 60);
+    const lastSpace = cap.lastIndexOf(" ");
+    snippet = lastSpace > 20 ? cap.slice(0, lastSpace) : cap.slice(0, 40);
+  }
+  return {
+    blockId,
+    snippet,
+    blockHash: computeBlockHash(text),
+    offsetHint: startOffset,
+  };
+}
+
+/**
+ * Re-read every block in the editor at the moment of hover. Used by
+ * the resolver — anchors that drifted since capture get a fresh shot
+ * at being located.
+ */
+function snapshotEditorBlocks(): BlockSnapshot[] {
+  const out: BlockSnapshot[] = [];
+  document.querySelectorAll<HTMLElement>("[data-bid]").forEach((el) => {
+    const id = el.getAttribute("data-bid") ?? "";
+    if (!id) return;
+    out.push({ blockId: id, text: el.textContent ?? "" });
+  });
+  return out;
+}
+
 export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) {
   const [pills, setPills] = useState<Pill[]>([]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -69,6 +134,17 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
   const [rabbitHoles, setRabbitHoles] = useState<
     Record<string, RabbitHoleLevel[]>
   >({});
+  // Pill anchors captured at emerge time. Survives the session; cleared
+  // on dismiss/evict so it doesn't leak across pill churn.
+  const anchorsRef = useRef<Record<string, AnchorPayload>>({});
+  // Per-pill drift flag — true once the hover resolver fell to tier 4
+  // (whole-block fallback). Drives the soft pip on PillCapsule.
+  const [driftedByPill, setDriftedByPill] = useState<Record<string, boolean>>(
+    {},
+  );
+  // Phase 4: which pills currently have an active deepen panel
+  // open. Replaces the M2 bouquet expansion path for clicked pills.
+  const [deepenedIds, setDeepenedIds] = useState<Set<string>>(new Set());
   const layerRef = useRef<HTMLDivElement>(null);
   // Mirror of `pills` for the `bouquet:ready` reducer to read without stale
   // closures (the effect runs once, but pills mutate over the session).
@@ -81,12 +157,27 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
 
     (async () => {
       const u1 = await onWaterEvent("pill:emerged", (p) => {
+        // Snapshot the trigger anchor *before* React paints — the
+        // block is still in its emerge-time state. Survives later
+        // edits via the 4-tier resolver in anchorResolver.ts.
+        const a = captureAnchor(p.block_target_id);
+        if (a) anchorsRef.current[p.pill_id] = a;
         setPills((prev) => {
           const next = [...prev, p];
           // FIFO: when over capacity, drop the oldest entries.
-          return next.length > MAX_ON_SCREEN
-            ? next.slice(next.length - MAX_ON_SCREEN)
-            : next;
+          if (next.length > MAX_ON_SCREEN) {
+            const evictedIds = next.slice(0, next.length - MAX_ON_SCREEN);
+            for (const e of evictedIds) {
+              delete anchorsRef.current[e.pill_id];
+              // v8: tell the orchestrator about the FIFO eviction so
+              // the learning loop attributes the outcome. Fire-and-
+              // forget; failures are swallowed so a transient IPC
+              // hiccup never blocks the renderer.
+              void ipc.pillEvicted(e.pill_id).catch(() => {});
+            }
+            return next.slice(next.length - MAX_ON_SCREEN);
+          }
+          return next;
         });
       });
       if (cancelled) {
@@ -96,8 +187,15 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
       unsubs.push(u1);
 
       const u2 = await onWaterEvent("pill:dismissed", (e) => {
+        delete anchorsRef.current[e.pill_id];
         setPills((prev) => prev.filter((x) => x.pill_id !== e.pill_id));
         setRabbitHoles((prev) => {
+          if (!(e.pill_id in prev)) return prev;
+          const next = { ...prev };
+          delete next[e.pill_id];
+          return next;
+        });
+        setDriftedByPill((prev) => {
           if (!(e.pill_id in prev)) return prev;
           const next = { ...prev };
           delete next[e.pill_id];
@@ -111,8 +209,15 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
       unsubs.push(u2);
 
       const u3 = await onWaterEvent("pill:evicted", (e) => {
+        delete anchorsRef.current[e.pill_id];
         setPills((prev) => prev.filter((x) => x.pill_id !== e.pill_id));
         setRabbitHoles((prev) => {
+          if (!(e.pill_id in prev)) return prev;
+          const next = { ...prev };
+          delete next[e.pill_id];
+          return next;
+        });
+        setDriftedByPill((prev) => {
           if (!(e.pill_id in prev)) return prev;
           const next = { ...prev };
           delete next[e.pill_id];
@@ -195,15 +300,93 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
   }, []);
 
   const hoveredPill = pills.find((p) => p.pill_id === hoveredId) ?? null;
-  let anchorRect: DOMRect | null = null;
-  if (hoveredPill && hoveredPill.block_target_id) {
-    const blockEl = document.querySelector(
-      `[data-bid="${hoveredPill.block_target_id}"]`,
+
+  /**
+   * Phase 3.5 — resolve the hovered pill's anchor against the
+   * editor's current blocks and dispatch the inline trigger
+   * highlight via window CustomEvent (Editor.tsx listens and
+   * forwards into the PM plugin). When the resolver returns the
+   * fallback tier we flag the pill as drifted, so its capsule
+   * shows the soft pip.
+   */
+  const dispatchHighlightFor = (pill: Pill | null) => {
+    if (!pill) {
+      window.dispatchEvent(new Event("water:clear-trigger-highlight"));
+      return;
+    }
+    const payload = anchorsRef.current[pill.pill_id];
+    if (!payload) {
+      window.dispatchEvent(new Event("water:clear-trigger-highlight"));
+      return;
+    }
+    const blocks = snapshotEditorBlocks();
+    const resolved = resolveAnchor(payload, blocks);
+    if (!resolved) {
+      window.dispatchEvent(new Event("water:clear-trigger-highlight"));
+      setDriftedByPill((prev) =>
+        prev[pill.pill_id] ? prev : { ...prev, [pill.pill_id]: true },
+      );
+      return;
+    }
+    // Decide the highlight range. Try sentence-level pinpointing
+    // first — `bestSentenceRange` matches the pill's text against
+    // each sentence in the target block and returns a tight range
+    // when one sentence clearly dominates the keyword overlap.
+    // Falls back to the whole block (minus leading/trailing
+    // whitespace) when the match is ambiguous or the block is a
+    // single sentence. Pinpointing makes the link between pill and
+    // source feel precise; the whole-block fallback is still
+    // useful when the LLM's observation rides on the paragraph's
+    // overall mood instead of a single image.
+    const block = blocks.find((b) => b.blockId === resolved.blockId);
+    const blockText = block?.text ?? "";
+    let start: number;
+    let end: number;
+    const sentenceRange = bestSentenceRange(blockText, pill.text);
+    if (sentenceRange) {
+      start = sentenceRange.start;
+      end = sentenceRange.end;
+    } else if (blockText.length > 0) {
+      const leadingWs = blockText.length - blockText.trimStart().length;
+      const trailingWs = blockText.length - blockText.trimEnd().length;
+      start = leadingWs;
+      end = blockText.length - trailingWs;
+    } else {
+      start = resolved.start;
+      end = resolved.end;
+    }
+    window.dispatchEvent(
+      new CustomEvent("water:set-trigger-highlight", {
+        detail: {
+          blockId: resolved.blockId,
+          start,
+          end,
+        },
+      }),
     );
-    anchorRect = blockEl
-      ? (blockEl as HTMLElement).getBoundingClientRect()
-      : null;
-  }
+    const drifted = resolved.tier === "fallback";
+    setDriftedByPill((prev) => {
+      const current = prev[pill.pill_id] === true;
+      if (current === drifted) return prev;
+      return { ...prev, [pill.pill_id]: drifted };
+    });
+  };
+
+  useEffect(() => {
+    dispatchHighlightFor(hoveredPill);
+    // dispatchHighlightFor closes over refs/state setters only; the
+    // effect should re-run when the hovered pill changes, not on
+    // every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoveredPill?.pill_id]);
+
+  // Tear down any lingering highlight when the pill margin itself
+  // unmounts (scene-switch, surface change).
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new Event("water:clear-trigger-highlight"));
+    };
+  }, []);
 
   const closeRabbitHole = (rootId: string) => {
     setRabbitHoles((prev) => {
@@ -230,39 +413,95 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
 
   return (
     <>
+      {/* Phase 3.5: the precise inline trigger-highlight has replaced
+          the old whole-paragraph rect; we keep HoverDim only for the
+          soft dim backdrop. Passing a null anchorRect tells it to
+          skip the rectangle. */}
       <HoverDim
         active={hoveredPill !== null}
-        anchorRect={anchorRect}
+        anchorRect={null}
         hueToken={hoveredPill?.hue_token ?? "--water-hue-muse"}
       />
       <div
         ref={layerRef}
-        aria-label="pill margin"
-        data-narrow={
-          mainWidth > 0 && mainWidth < NARROW_BREAKPOINT_PX ? "true" : undefined
-        }
+        aria-label="nudge panel"
         style={{
-          position: "absolute",
-          top: 72,
-          right: 16,
-          width: 240,
+          // Flex sibling layout — the parent main is a flex row and
+          // we take a fixed 280px column on the right. This replaces
+          // the previous absolute-positioned overlay which could
+          // overlap prose at narrow viewports + stayed cut off on
+          // resize because absolute coords don't reflow.
+          width: "100%",
+          height: "100%",
+          padding: "72px 16px 96px 16px",
+          boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
           gap: 12,
-          pointerEvents: "none",
-          // Narrow-viewport fallback: capsules overlap the prose, so make
-          // them translucent. `mainWidth === 0` (unmeasured) keeps full
-          // opacity to avoid a flash on first paint.
-          opacity:
-            mainWidth > 0 && mainWidth < NARROW_BREAKPOINT_PX ? 0.7 : 1,
-          transition: "opacity 160ms ease",
+          // Long pill lists scroll inside the panel rather than
+          // pushing the editor's layout. `overflowY: auto` only
+          // shows the scrollbar when content actually exceeds the
+          // panel's height.
+          overflowY: "auto",
+          overflowX: "hidden",
+          // Pills inside re-enable pointer events on their wrappers;
+          // gaps between them stay transparent + non-interactive so
+          // the writer can drag-select prose underneath if they
+          // wanted to (no longer applies because we're not overlay
+          // — kept for symmetry with the wrapper pattern).
+          pointerEvents: "auto",
         }}
       >
         {pills.map((p) => {
+          // Phase 4: deepen panel takes precedence over the M2
+          // bouquet path. Clicking a pill no longer goes through
+          // `pillExpand` → bouquet; it goes through `pillDeepen` →
+          // DeepenPanel. The legacy RabbitHole path stays alive
+          // only for pills that were expanded via the older flow
+          // (e.g., kept open across a refactor); newly-clicked
+          // pills never enter it.
+          if (deepenedIds.has(p.pill_id)) {
+            return (
+              <div
+                key={p.pill_id}
+                // Same hover→highlight wiring as plain capsules so
+                // clicking a pill (which swaps it for the deepen
+                // panel) doesn't break the link back to the source
+                // paragraph. The dispatchHighlightFor effect keys
+                // off `hoveredPill.pill_id`, which we set to the
+                // ROOT pill — the deepen panel's children inherit
+                // the highlight from the root.
+                onMouseEnter={() => setHoveredId(p.pill_id)}
+                onMouseLeave={() =>
+                  setHoveredId((prev) => (prev === p.pill_id ? null : prev))
+                }
+                style={{ pointerEvents: "auto" }}
+              >
+                <DeepenPanel
+                  rootPill={p}
+                  onClose={() => {
+                    setDeepenedIds((prev) => {
+                      if (!prev.has(p.pill_id)) return prev;
+                      const next = new Set(prev);
+                      next.delete(p.pill_id);
+                      return next;
+                    });
+                  }}
+                />
+              </div>
+            );
+          }
           const path = rabbitHoles[p.pill_id];
           if (path && path.length > 0) {
             return (
-              <div key={p.pill_id} style={{ pointerEvents: "auto" }}>
+              <div
+                key={p.pill_id}
+                onMouseEnter={() => setHoveredId(p.pill_id)}
+                onMouseLeave={() =>
+                  setHoveredId((prev) => (prev === p.pill_id ? null : prev))
+                }
+                style={{ pointerEvents: "auto" }}
+              >
                 <RabbitHole
                   hueToken={p.hue_token}
                   path={path}
@@ -281,12 +520,22 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
               onMouseLeave={() =>
                 setHoveredId((prev) => (prev === p.pill_id ? null : prev))
               }
-              style={{ pointerEvents: "auto" }}
+              // `min-width: 0` lets this flex-column child shrink
+              // below its content's natural width — without it, a
+              // PillCapsule with `width: 100%` still won't contract
+              // because the parent's intrinsic content size locks it.
+              style={{ pointerEvents: "auto", minWidth: 0 }}
             >
               <PillCapsule
                 pill={p}
+                anchorDrifted={driftedByPill[p.pill_id] === true}
                 onClick={() => {
-                  void ipc.pillExpand(p.pill_id);
+                  setDeepenedIds((prev) => {
+                    if (prev.has(p.pill_id)) return prev;
+                    const next = new Set(prev);
+                    next.add(p.pill_id);
+                    return next;
+                  });
                 }}
               />
             </div>

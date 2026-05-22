@@ -131,6 +131,33 @@ pub struct LlmRouter {
     /// `NoSubscriber`/`Lagged` — this is a best-effort signal, not a
     /// reliable queue.
     status_tx: broadcast::Sender<ProviderHealthChange>,
+    /// Per-provider model override. When set, `req.model` on any
+    /// outbound call gets populated from this map *before* the
+    /// provider's own empty-model fallback kicks in. Lets the
+    /// renderer swap models per provider without re-constructing
+    /// the router. Empty by default — falls through to each
+    /// provider's hardcoded default.
+    default_models: Mutex<HashMap<ProviderId, String>>,
+    /// Cached per-provider health, populated by `generate_bouquet`
+    /// outcomes. `diagnostics_status` reads from this cache instead
+    /// of firing a live `provider.health()` HTTP request — without
+    /// it, the renderer's 3-second `diagnostics_status` poll hits
+    /// every provider's health endpoint 20×/min, which trips
+    /// OpenRouter's 429 rate-limit on free-tier accounts and
+    /// flickers Test indicators back to gray right after a green
+    /// Test result.
+    last_health: Mutex<HashMap<ProviderId, ProviderHealthSnapshot>>,
+}
+
+/// Cached health entry for a single provider. `Result::Ok` means the
+/// most recent bouquet call succeeded; `Err(string)` carries the most
+/// recent error message verbatim. `at` is purely informational so
+/// future TTL logic can age out stale entries without breaking the API.
+#[derive(Debug, Clone)]
+pub struct ProviderHealthSnapshot {
+    pub ok: bool,
+    pub error: Option<String>,
+    pub at: Instant,
 }
 
 impl LlmRouter {
@@ -156,7 +183,69 @@ impl LlmRouter {
             chain,
             state,
             status_tx,
+            default_models: Mutex::new(HashMap::new()),
+            last_health: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Snapshot of the per-provider health cache. Empty before any
+    /// bouquet call has run. Used by `diagnostics_status` so the
+    /// renderer's polling loop doesn't fire a live health probe
+    /// against every provider every 3 seconds — the cache is
+    /// authoritative until the next bouquet call updates it.
+    pub async fn cached_health(&self) -> Vec<(ProviderId, std::result::Result<(), String>)> {
+        let g = self.last_health.lock().await;
+        self.chain
+            .iter()
+            .filter_map(|p| {
+                let id = p.id();
+                g.get(&id).map(|snap| {
+                    let r = if snap.ok {
+                        Ok(())
+                    } else {
+                        Err(snap.error.clone().unwrap_or_default())
+                    };
+                    (id, r)
+                })
+            })
+            .collect()
+    }
+
+    async fn record_health(&self, id: &ProviderId, ok: bool, error: Option<String>) {
+        let mut g = self.last_health.lock().await;
+        g.insert(
+            id.clone(),
+            ProviderHealthSnapshot {
+                ok,
+                error,
+                at: Instant::now(),
+            },
+        );
+    }
+
+    /// Set / clear the active model override for a provider. `model`
+    /// is an empty string ⇒ clear (fall back to provider's hardcoded
+    /// default). Lock contention is cheap because reads are
+    /// per-call and writes are rare (writer toggling Settings).
+    pub async fn set_default_model(&self, provider_id: &ProviderId, model: &str) {
+        let mut g = self.default_models.lock().await;
+        if model.is_empty() {
+            g.remove(provider_id);
+        } else {
+            g.insert(provider_id.clone(), model.to_string());
+        }
+    }
+
+    /// Read the active model override for a provider. Returns the
+    /// empty string when no override is set; callers should fall
+    /// through to the provider's own default in that case.
+    pub async fn default_model_for(&self, provider_id: &ProviderId) -> String {
+        self.default_models
+            .lock()
+            .await
+            .get(provider_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Subscribe to provider health/CB transitions. Each `generate_bouquet`
@@ -195,10 +284,29 @@ impl LlmRouter {
         let primary = self
             .primary()
             .ok_or_else(|| Error::Provider("no primary provider".into()))?;
+        // Phase: per-provider model override. When the writer's
+        // Settings has picked a model for this provider, populate
+        // `req.model` so the adapter uses it instead of its
+        // hardcoded default. Empty string keeps the legacy
+        // "fall through to provider default" path.
+        let model = self.default_model_for(&primary.id()).await;
+        // Non-zero temperature is load-bearing for pill quality:
+        // `tone.toml` instructs the model to output the `PASS`
+        // sentinel when constraints can't be met, and at
+        // temperature 0.0 a deterministic model picks PASS as the
+        // safest answer almost every time — the post-filter then
+        // silently drops the pill. 0.7 matches what the bouquet
+        // path uses for level-0 pills (see `provider_test` +
+        // `pill_expand`). max_output_tokens 256 covers the 22-word
+        // pill cap with margin; some adapters (Kimi) forward
+        // max_tokens=0 to the upstream API verbatim, which
+        // truncates or rejects.
         let req = GenerateRequest {
             system,
             user,
-            ..Default::default()
+            model,
+            temperature: 0.7,
+            max_output_tokens: 256,
         };
         primary.generate_raw(req).await
     }
@@ -247,6 +355,7 @@ impl LlmRouter {
             match p.generate_bouquet(req).await {
                 Ok(variants) => {
                     st.breaker.lock().await.record_success();
+                    self.record_health(&id, true, None).await;
                     // Best-effort broadcast; ignore NoSubscriber errors. The
                     // subscriber side (renderer) treats this as advisory.
                     let _ = self.status_tx.send(ProviderHealthChange {
@@ -258,6 +367,7 @@ impl LlmRouter {
                 }
                 Err(e) => {
                     st.breaker.lock().await.record_failure();
+                    self.record_health(&id, false, Some(e.to_string())).await;
                     let _ = self.status_tx.send(ProviderHealthChange {
                         provider_id: id.as_str().to_string(),
                         ok: false,
@@ -339,6 +449,61 @@ mod tests {
         assert_eq!(out, "hello there");
     }
 
+    /// Regression: `generate_raw_with_default` must set a non-zero
+    /// temperature and a non-zero max_output_tokens. The original
+    /// `..Default::default()` left both at 0.0 / 0, which made every
+    /// provider either output the `PASS` sentinel (silently dropped
+    /// by the post-filter) or get rejected at the API for
+    /// `max_tokens=0`. Bug surfaced as "no pills ever spawn with
+    /// OpenRouter / Kimi configured."
+    #[tokio::test]
+    async fn generate_raw_with_default_sets_nonzero_temperature_and_max_tokens() {
+        use crate::llm::GenerateRequest;
+        use async_trait::async_trait;
+        use std::sync::Mutex;
+
+        struct CapturingProvider {
+            last: Mutex<Option<GenerateRequest>>,
+        }
+        #[async_trait]
+        impl LlmProvider for CapturingProvider {
+            fn id(&self) -> ProviderId {
+                ProviderId::new("capture")
+            }
+            async fn health(&self) -> crate::Result<()> {
+                Ok(())
+            }
+            async fn generate_bouquet(
+                &self,
+                _: &BouquetRequest,
+            ) -> crate::Result<Vec<BouquetVariant>> {
+                Ok(vec![])
+            }
+            async fn generate_raw(&self, req: GenerateRequest) -> crate::Result<String> {
+                *self.last.lock().unwrap() = Some(req);
+                Ok("ok".into())
+            }
+        }
+
+        let provider = Arc::new(CapturingProvider {
+            last: Mutex::new(None),
+        });
+        let router = LlmRouter::new(vec![provider.clone() as Arc<dyn LlmProvider>]);
+        let _ = router
+            .generate_raw_with_default("s".into(), "u".into())
+            .await
+            .unwrap();
+        let captured = provider.last.lock().unwrap().clone().expect("called");
+        assert!(
+            captured.temperature > 0.0,
+            "temperature must be > 0 so the model doesn't default to PASS"
+        );
+        assert!(
+            captured.max_output_tokens > 0,
+            "max_output_tokens must be > 0 so adapters that forward it verbatim don't truncate"
+        );
+    }
+
     #[tokio::test]
     async fn generate_structured_with_default_parses_primary_output() {
         #[derive(serde::Deserialize)]
@@ -388,6 +553,39 @@ mod tests {
             .expect("channel closed unexpectedly");
         // Whichever provider event we got, the struct is well-formed.
         assert!(!evt.provider_id.is_empty());
+    }
+
+    /// Regression: `cached_health` populates from `generate_bouquet`
+    /// outcomes and returns the snapshot. `diagnostics_status` reads
+    /// from this cache instead of probing live so the renderer's
+    /// 3-second poll doesn't burn provider rate limits (OpenRouter
+    /// returns 429 after a couple of minutes of live `/chat/completions`
+    /// health probes).
+    #[tokio::test]
+    async fn cached_health_populates_after_bouquet_success() {
+        let canned = Arc::new(CannedProvider::default()) as Arc<dyn LlmProvider>;
+        let router = LlmRouter::new(vec![canned]);
+        // Empty before any call.
+        assert!(router.cached_health().await.is_empty());
+        let _ = router.generate_bouquet(&req()).await.unwrap();
+        let snap = router.cached_health().await;
+        assert_eq!(snap.len(), 1);
+        let (id, result) = &snap[0];
+        assert_eq!(id.as_str(), "canned");
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn cached_health_records_failure_with_error_string() {
+        let primary = Arc::new(AlwaysFails) as Arc<dyn LlmProvider>;
+        let router = LlmRouter::new(vec![primary]);
+        let _ = router.generate_bouquet(&req()).await;
+        let snap = router.cached_health().await;
+        assert_eq!(snap.len(), 1);
+        let (_, result) = &snap[0];
+        assert!(result.is_err());
+        let msg = result.as_ref().unwrap_err();
+        assert!(msg.contains("nope"), "expected provider error to be cached, got: {msg}");
     }
 
     #[tokio::test]

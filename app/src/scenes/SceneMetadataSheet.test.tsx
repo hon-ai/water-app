@@ -167,13 +167,13 @@ describe("SceneMetadataSheet", () => {
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
     );
     await screen.findByLabelText("Marcus");
-    const select = screen.getByLabelText("POV character") as HTMLSelectElement;
-    const options = Array.from(select.querySelectorAll("option")).map(
-      (o) => o.textContent,
-    );
-    // "— none —" plus only linked characters.
-    expect(options).toContain("Marcus"); // linked
-    expect(options).not.toContain("Talia"); // not linked
+    // GlassSelect: open the chip via its aria-label and read the
+    // portal-mounted listbox option labels.
+    fireEvent.click(screen.getByLabelText("POV character"));
+    const options = await screen.findAllByRole("option");
+    const labels = options.map((o) => o.textContent ?? "");
+    expect(labels.some((l) => l.includes("Marcus"))).toBe(true);
+    expect(labels.some((l) => l.includes("Talia"))).toBe(false);
   });
 
   it("displays autosuggest chips after publish, hiding already-linked", async () => {
@@ -359,15 +359,13 @@ describe("SceneMetadataSheet", () => {
     render(
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
     );
-    const select = (await screen.findByLabelText(
-      "Location",
-    )) as HTMLSelectElement;
-    const options = Array.from(select.querySelectorAll("option")).map(
-      (o) => o.textContent,
-    );
-    expect(options).toContain("— none —");
-    expect(options).toContain("The Pell Library");
-    expect(options).toContain("Aren Square");
+    const trigger = await screen.findByLabelText("Location");
+    fireEvent.click(trigger);
+    const options = await screen.findAllByRole("option");
+    const labels = options.map((o) => o.textContent ?? "");
+    expect(labels.some((l) => l.includes("— none —"))).toBe(true);
+    expect(labels.some((l) => l.includes("The Pell Library"))).toBe(true);
+    expect(labels.some((l) => l.includes("Aren Square"))).toBe(true);
     // The dropdown must source from the `locations` segment, not any
     // single-doc segment — `worldEntryList` must be called with seg-loc.
     expect(ipc.worldEntryList).toHaveBeenCalledWith("seg-loc");
@@ -379,10 +377,11 @@ describe("SceneMetadataSheet", () => {
     render(
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
     );
-    const select = (await screen.findByLabelText(
-      "Location",
-    )) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "loc-1" } });
+    const trigger = await screen.findByLabelText("Location");
+    fireEvent.click(trigger);
+    fireEvent.click(
+      await screen.findByRole("option", { name: /The Pell Library/ }),
+    );
     await waitFor(() => {
       expect(ipc.sceneSetLocation).toHaveBeenCalledWith({
         sceneId: "s1",
@@ -406,12 +405,13 @@ describe("SceneMetadataSheet", () => {
     render(
       <SceneMetadataSheet sceneId="s1" open={true} onClose={vi.fn()} />,
     );
-    const select = (await screen.findByLabelText(
-      "Location",
-    )) as HTMLSelectElement;
-    // Confirm it loaded with loc-1 selected.
-    expect(select.value).toBe("loc-1");
-    fireEvent.change(select, { target: { value: "" } });
+    const trigger = await screen.findByLabelText("Location");
+    // The trigger's text label echoes the active option.
+    expect(trigger).toHaveTextContent(/The Pell Library/);
+    fireEvent.click(trigger);
+    fireEvent.click(
+      await screen.findByRole("option", { name: /— none —/ }),
+    );
     await waitFor(() => {
       expect(ipc.sceneSetLocation).toHaveBeenCalledWith({
         sceneId: "s1",

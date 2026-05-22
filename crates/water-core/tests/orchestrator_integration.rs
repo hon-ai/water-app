@@ -57,10 +57,13 @@ async fn end_to_end_trigger_evaluation_picks_speaker_and_assembles_prompt() {
         characters_present: vec![],
         word_count: 300,
         seconds_since_last_pill: 60,
+            scene_ordering: None,
+            manuscript_scene_count: None,
     };
     let project = ProjectSnapshot::default();
     let characters = CharacterRegistry::empty();
     let world_registry = water_core::world::WorldRegistry::default();
+    let tuning = water_core::orchestrator::feedback::TriggerTuning::default();
     let ctx = TriggerContext {
         telemetry: &telem,
         analysis: &analysis,
@@ -69,6 +72,7 @@ async fn end_to_end_trigger_evaluation_picks_speaker_and_assembles_prompt() {
         characters: &characters,
         world_registry: &world_registry,
         prompts: &prompts,
+        tuning: &tuning,
     };
 
     // --- trigger evaluation: highest-priority candidate wins ---
@@ -94,6 +98,7 @@ async fn end_to_end_trigger_evaluation_picks_speaker_and_assembles_prompt() {
         &*speaker,
         &cand.trigger_id,
         "She walked across the square.",
+        &water_core::prompts::PromptContext::default(),
     )
     .unwrap();
     assert!(

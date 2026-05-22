@@ -1,6 +1,10 @@
 use super::anthropic::{build_user_with_exclusions, parse_bouquet_json};
-use super::{BouquetRequest, BouquetVariant, LlmProvider, ProviderId};
+use super::{BouquetRequest, BouquetVariant, GenerateRequest, LlmProvider, ProviderId};
 use crate::{Error, Result};
+
+/// Default model when `req.model` is empty. Matches the curated
+/// picker default — small, broadly available on a fresh Ollama install.
+pub const OLLAMA_DEFAULT_MODEL: &str = "qwen2.5:3b";
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -139,6 +143,54 @@ impl LlmProvider for OllamaProvider {
             .await
             .map_err(|e| Error::Provider(format!("ollama json: {e}")))?;
         parse_bouquet_json(&resp.message.content, req.n_variants)
+    }
+
+    /// Single-shot text generation. Used by level-0 pill dispatch.
+    async fn generate_raw(&self, req: GenerateRequest) -> Result<String> {
+        let model = if req.model.is_empty() {
+            OLLAMA_DEFAULT_MODEL
+        } else {
+            &req.model
+        };
+        // num_predict=0 on Ollama means "generate nothing"; clamp.
+        let num_predict = if req.max_output_tokens == 0 {
+            512
+        } else {
+            req.max_output_tokens
+        };
+        let body = OllamaChatRequest {
+            model,
+            stream: false,
+            options: OllamaOptions {
+                temperature: req.temperature,
+                num_predict,
+            },
+            messages: vec![
+                OllamaMessage {
+                    role: "system",
+                    content: &req.system,
+                },
+                OllamaMessage {
+                    role: "user",
+                    content: &req.user,
+                },
+            ],
+        };
+        let r = self
+            .http
+            .post(format!("{}/api/chat", self.base_url))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| Error::Provider(format!("ollama raw: {e}")))?;
+        let r = r
+            .error_for_status()
+            .map_err(|e| Error::Provider(format!("ollama raw http: {e}")))?;
+        let resp: OllamaChatResponse = r
+            .json()
+            .await
+            .map_err(|e| Error::Provider(format!("ollama raw json: {e}")))?;
+        Ok(resp.message.content)
     }
 }
 

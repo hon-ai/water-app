@@ -147,15 +147,17 @@ describe("InlineField (string_list)", () => {
 });
 
 describe("InlineField (choice)", () => {
-  it("renders a select with the kind's options when editing", async () => {
+  it("renders a glass dropdown with the kind's options when editing", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <InlineField field={choiceField} value="" onSave={onSave} />,
     );
     fireEvent.click(screen.getByRole("button", { name: /Edit Gender/ }));
-    const select = await screen.findByRole("combobox", { name: /Gender/ });
-    fireEvent.change(select, { target: { value: "nonbinary" } });
-    fireEvent.blur(select);
+    // GlassSelect renders a button trigger with aria-label === field
+    // label, plus a portal-mounted listbox.
+    const trigger = await screen.findByLabelText("Gender");
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("option", { name: /nonbinary/ }));
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith("nonbinary");
     });
