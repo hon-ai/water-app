@@ -455,12 +455,22 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           display: "flex",
           flexDirection: "column",
           gap: 4,
-          // Asymmetric fade — push the left opaque edge further right
-          // by a few % so the stream stops bleeding into the prose
-          // column. Right edge unchanged (pills + pinned column own
-          // that shoulder anyway).
+          // Absolute-pixel fade widths so the transition feels the
+          // same at any window size. Percent units (the previous
+          // `22%` / `82%`) compressed at narrow widths and made the
+          // right fade look like a hard edge against the nudge
+          // panel — visible only when the window was shrunk.
+          //
+          // Left fade: 56 px (tight — the bg-paper extends almost
+          // all the way to the editor column's left edge, covering
+          // more of the WaterRibbon than before so the stream
+          // doesn't bleed into the prose's left margin).
+          // Right fade: 128 px (wider — extra-soft transition into
+          // the visible gap before the nudge panel, so the wrapper's
+          // right edge dissolves into the stream instead of meeting
+          // the panel's glass border as a hard line).
           background:
-            "linear-gradient(90deg, transparent 0%, var(--water-bg-paper) 22%, var(--water-bg-paper) 82%, transparent 100%)",
+            "linear-gradient(90deg, transparent 0, var(--water-bg-paper) 56px, var(--water-bg-paper) calc(100% - 128px), transparent 100%)",
         }}
       >
         <HeatmapStrip sceneId={sceneId} />
@@ -593,7 +603,12 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           flexShrink: 0,
           display: "flex",
           flexDirection: "column",
-          margin: "10px 10px 10px 0",
+          // Left margin of 12 px creates a breathing gap between
+          // the editor column and the panel — the WaterRibbon
+          // shows through this gap rather than the panel's glass
+          // border meeting the wrapper's right gradient fade as
+          // a hard line.
+          margin: "10px 10px 10px 12px",
           background:
             "color-mix(in srgb, var(--water-bg-paper) 55%, transparent)",
           backdropFilter: "blur(22px) saturate(160%)",
