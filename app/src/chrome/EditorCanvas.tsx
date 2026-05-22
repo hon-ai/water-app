@@ -33,7 +33,11 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
   const [editorPills, setEditorPills] = useState<EditorPillRow[]>([]);
   // Live width of the editor pane; drives the narrow-viewport fallback for
   // both <PillLayer> (translucent capsules) and <PinnedColumn> (24 px tab).
-  const mainRef = useRef<HTMLElement>(null);
+  // Typed as `HTMLDivElement` — the editor column wrapper became
+  // a `<div>` when we restructured `<main>` into a flex row with
+  // the nudge panel as a sibling. `useElementWidth` accepts either
+  // shape since its generic constraint is `Element`.
+  const mainRef = useRef<HTMLDivElement>(null);
   const mainWidth = useElementWidth(mainRef);
 
   // Stable ref so the unmount-flush effect reads the latest editor state
