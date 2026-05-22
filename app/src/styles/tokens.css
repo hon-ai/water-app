@@ -547,6 +547,52 @@ body {
   font-size: var(--water-fs-meta);
 }
 
+/* ──────────────── Resizer handle ────────────────
+   Override the browser-default `::-webkit-resizer` triangle grip
+   that sits in the bottom-right corner of any `textarea` with
+   `resize: vertical`. Default is platform-grey diagonal lines —
+   clashes against the matte-glass + sea aesthetic everywhere
+   intake textareas live (conversational intake, character sheet,
+   world bible). New handle: two sea-tinted diagonal stripes that
+   read as a grip but tonally match the rest of the chrome.
+
+   `::-webkit-resizer` only supports a narrow set of properties
+   (background, border, padding). Firefox doesn't expose an
+   equivalent hook at all — testers on Firefox keep the native
+   grey grip, which is acceptable graceful degradation. */
+textarea::-webkit-resizer {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      transparent 40%,
+      color-mix(in srgb, var(--water-sea-400) 60%, transparent) 40%,
+      color-mix(in srgb, var(--water-sea-400) 60%, transparent) 50%,
+      transparent 50%,
+      transparent 60%,
+      color-mix(in srgb, var(--water-sea-300) 50%, transparent) 60%,
+      color-mix(in srgb, var(--water-sea-300) 50%, transparent) 70%,
+      transparent 70%
+    );
+  border-bottom-right-radius: var(--water-r-8);
+}
+textarea:hover::-webkit-resizer,
+textarea:focus::-webkit-resizer {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 0%,
+      transparent 40%,
+      color-mix(in srgb, var(--water-sea-glow) 75%, transparent) 40%,
+      color-mix(in srgb, var(--water-sea-glow) 75%, transparent) 50%,
+      transparent 50%,
+      transparent 60%,
+      color-mix(in srgb, var(--water-sea-400) 70%, transparent) 60%,
+      color-mix(in srgb, var(--water-sea-400) 70%, transparent) 70%,
+      transparent 70%
+    );
+}
+
 /* Obsidian-style wiki-link rendering. The mark wraps text inside the
    editor; this style mirrors Obsidian's default link aesthetic (sea-
    tinted, soft underline) so the writer recognizes a wiki-link
