@@ -264,7 +264,14 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
       aria-label="Deepen pill"
       style={{
         position: "relative",
-        width: 360,
+        // Fill the available width of the nudge panel (which is
+        // 280 px wide with 16 px horizontal padding ≈ 248 px usable).
+        // The previous hardcoded 360 px overflowed by ~110 px,
+        // pushing the deepen panel off-screen to the right.
+        width: "100%",
+        maxWidth: "100%",
+        boxSizing: "border-box",
+        minWidth: 0,
         maxHeight: 680,
         display: "flex",
         flexDirection: "column",
