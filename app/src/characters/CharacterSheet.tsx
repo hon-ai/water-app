@@ -96,13 +96,21 @@ export function CharacterSheet({
   return (
     <div className="water-character-sheet" data-hue-token={hueToken}>
       <header>
-        <button type="button" onClick={onBackToIndex}>
+        <button
+          type="button"
+          className="water-button water-button-ghost"
+          onClick={onBackToIndex}
+        >
           ← All characters
         </button>
         <h1>{heading}</h1>
         <div>{completion}% complete</div>
         {completion < 100 && (
-          <button type="button" onClick={onContinueIntake}>
+          <button
+            type="button"
+            className="water-button water-button-primary"
+            onClick={onContinueIntake}
+          >
             Continue intake
           </button>
         )}

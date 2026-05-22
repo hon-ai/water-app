@@ -201,6 +201,7 @@ export function ConversationalIntake({
       <div role="group" aria-label="Intake navigation">
         <button
           type="button"
+          className="water-button water-button-ghost"
           onClick={back}
           disabled={index === 0 || busy}
         >
@@ -208,6 +209,7 @@ export function ConversationalIntake({
         </button>
         <button
           type="button"
+          className="water-button water-button-ghost"
           onClick={() => {
             void advance(true);
           }}
@@ -217,14 +219,20 @@ export function ConversationalIntake({
         </button>
         <button
           type="button"
+          className="water-button water-button-primary"
           onClick={() => {
             void advance(false);
           }}
           disabled={busy}
+          style={{ marginLeft: "auto" }}
         >
           {busy ? "Saving\u2026" : "Next"}
         </button>
-        <button type="button" onClick={onClose}>
+        <button
+          type="button"
+          className="water-button water-button-ghost"
+          onClick={onClose}
+        >
           Save &amp; close
         </button>
       </div>

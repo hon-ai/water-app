@@ -83,50 +83,15 @@
     0 0 0 3px color-mix(in srgb, var(--water-hue-flow) 18%, transparent);
 }
 
-/* Navigation row */
+/* Navigation row — buttons themselves now styled by `.water-button`
+   in tokens.css (Back/Skip are ghost; Next is primary; Save&close
+   is ghost). Keep the row layout rules here. */
 [data-testid="conversational-intake"] [role="group"] {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 6px;
   flex-wrap: wrap;
-}
-
-[data-testid="conversational-intake"] [role="group"] button {
-  padding: 8px 14px;
-  border: none;
-  border-radius: var(--water-r-8);
-  font-family: var(--water-font-sans);
-  font-size: var(--water-fs-ui);
-  font-weight: 500;
-  cursor: pointer;
-  background: transparent;
-  color: var(--water-fg-muted);
-  transition:
-    background-color var(--water-dur-tiny) var(--water-ease-out-soft),
-    color var(--water-dur-tiny) var(--water-ease-out-soft);
-}
-
-[data-testid="conversational-intake"] [role="group"] button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--water-fg-faint) 12%, transparent);
-  color: var(--water-fg-default);
-}
-
-[data-testid="conversational-intake"] [role="group"] button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Primary "Next" is the third button in the group (Back / Skip / Next / Save&close). */
-[data-testid="conversational-intake"] [role="group"] button:nth-child(3) {
-  margin-left: auto;
-  background: color-mix(in srgb, var(--water-hue-flow) 32%, transparent);
-  color: var(--water-fg-default);
-}
-
-[data-testid="conversational-intake"] [role="group"] button:nth-child(3):hover:not(:disabled) {
-  background: color-mix(in srgb, var(--water-hue-flow) 48%, transparent);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--water-hue-flow) 35%, transparent);
 }
 
 [data-testid="conversational-intake"] [data-testid="progress"] {

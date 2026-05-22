@@ -95,23 +95,9 @@ export function CreateProjectSheet({ open, onClose, onCreated }: Props) {
             />
             <button
               type="button"
+              className="water-button"
               onClick={handleBrowse}
               aria-label="Browse for folder"
-              style={{
-                padding: "8px 12px",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                border: "none",
-                background: "transparent",
-                color: "var(--water-fg-default)",
-                cursor: "pointer",
-                borderRadius: "var(--water-r-8)",
-                boxShadow:
-                  "inset 0 0 0 1px color-mix(in srgb, var(--water-fg-faint) 30%, transparent)",
-                fontFamily: "var(--water-font-sans)",
-                fontSize: "var(--water-fs-ui)",
-              }}
             >
               <Folder size={14} strokeWidth={1.5} />
               Browse…
@@ -126,34 +112,15 @@ export function CreateProjectSheet({ open, onClose, onCreated }: Props) {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
           <button
             type="button"
+            className="water-button water-button-ghost"
             onClick={onClose}
-            style={{
-              padding: "8px 14px",
-              border: "none",
-              background: "transparent",
-              color: "var(--water-fg-muted)",
-              cursor: "pointer",
-              borderRadius: "var(--water-r-8)",
-              fontFamily: "var(--water-font-sans)",
-              fontSize: "var(--water-fs-ui)",
-            }}
           >
             Cancel
           </button>
           <button
             type="submit"
+            className="water-button water-button-primary"
             disabled={busy || !name.trim() || !parentDir.trim()}
-            style={{
-              padding: "8px 16px",
-              border: "none",
-              background: "color-mix(in srgb, var(--water-hue-flow) 60%, transparent)",
-              color: "var(--water-fg-default)",
-              cursor: "pointer",
-              borderRadius: "var(--water-r-8)",
-              fontFamily: "var(--water-font-sans)",
-              fontSize: "var(--water-fs-ui)",
-              opacity: busy || !name.trim() || !parentDir.trim() ? 0.5 : 1,
-            }}
           >
             {busy ? "Creating…" : "Create"}
           </button>

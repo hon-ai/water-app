@@ -127,7 +127,11 @@ export function CharacterIndex({
             />
           </div>
         </label>
-        <button type="button" onClick={() => void handleNew()}>
+        <button
+          type="button"
+          className="water-button water-button-primary"
+          onClick={() => void handleNew()}
+        >
           + New character
         </button>
       </header>

@@ -77,6 +77,7 @@ export function WorldSettingsMenu({ segments, onChanged, onClose }: Props) {
               {!isBuiltin && (
                 <button
                   type="button"
+                  className="water-button water-button-danger water-button-compact"
                   onClick={async () => {
                     if (
                       window.confirm(

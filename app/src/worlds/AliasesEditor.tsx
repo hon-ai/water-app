@@ -46,6 +46,7 @@ export function AliasesEditor({
             {a}{" "}
             <button
               type="button"
+              className="water-button water-button-ghost water-button-icon"
               onClick={() => removeAlias(i)}
               data-testid={`remove-alias-${i}`}
               aria-label={`Remove alias ${a}`}
@@ -71,6 +72,7 @@ export function AliasesEditor({
       />
       <button
         type="button"
+        className="water-button water-button-compact"
         onClick={addAlias}
         data-testid="alias-add-button"
       >

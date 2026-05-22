@@ -61,16 +61,11 @@ export function WorldIndex({
         <h2>World Bible</h2>
         <button
           type="button"
+          className="water-button water-button-ghost water-button-icon"
           onClick={() => setShowSettings(true)}
           data-testid="world-settings-button"
           aria-label="World settings"
-          style={{
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            fontSize: 18,
-            color: "var(--water-fg-muted)",
-          }}
+          style={{ fontSize: 18, lineHeight: 1 }}
         >
           ⋯
         </button>

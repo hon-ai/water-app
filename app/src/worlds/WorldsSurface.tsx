@@ -86,7 +86,13 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
       )}
       {view.kind === "segment" && (
         <div>
-          <button onClick={goToIndex}>← Back</button>
+          <button
+            type="button"
+            className="water-button water-button-ghost"
+            onClick={goToIndex}
+          >
+            ← Back
+          </button>
           <WorldSegmentView
             segmentId={view.segmentId}
             onOpenEntry={(entryId) => goToEntry(view.segmentId, entryId)}
@@ -102,7 +108,13 @@ export function WorldsSurface({ projectId: _projectId }: { projectId: string }) 
       )}
       {view.kind === "entry" && (
         <div>
-          <button onClick={() => goToSegment(view.segmentId)}>← Back</button>
+          <button
+            type="button"
+            className="water-button water-button-ghost"
+            onClick={() => goToSegment(view.segmentId)}
+          >
+            ← Back
+          </button>
           <WorldEntrySheet
             segmentId={view.segmentId}
             entryId={view.entryId}

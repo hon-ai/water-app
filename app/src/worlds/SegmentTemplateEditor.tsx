@@ -246,6 +246,7 @@ export function SegmentTemplateEditor({
               {!locked && (
                 <button
                   type="button"
+                  className="water-button water-button-ghost water-button-icon"
                   onClick={() => removeField(i)}
                   data-testid={`field-remove-${i}`}
                   aria-label={`Remove field ${i + 1}`}
@@ -263,6 +264,7 @@ export function SegmentTemplateEditor({
         })}
         <button
           type="button"
+          className="water-button water-button-compact"
           onClick={addField}
           data-testid="add-field-button"
         >
@@ -270,11 +272,16 @@ export function SegmentTemplateEditor({
         </button>
       </div>
       <div className="actions" style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button type="button" onClick={onClose}>
+        <button
+          type="button"
+          className="water-button water-button-ghost"
+          onClick={onClose}
+        >
           Cancel
         </button>
         <button
           type="button"
+          className="water-button water-button-primary"
           onClick={() => {
             void handleSave();
           }}

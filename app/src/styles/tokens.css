@@ -429,6 +429,124 @@ body {
   to   { opacity: 1; }
 }
 
+/* ──────────────── Glass button system ────────────────
+   Default + variants for every clickable surface that isn't a
+   GlassSelect or a pill. Applied via `className="water-button"`
+   (default ghost), with modifiers `water-button-primary` (the
+   sea-accent action button), `water-button-danger` (drift-hue
+   destructive), `water-button-ghost` (no border, hover-only fill),
+   `water-button-icon` (square, tight for icon-only buttons).
+
+   The hover lift (`translateY(-1px)` + soft shadow) is the
+   load-bearing visual cue: every interactive element feels
+   "liftable" against the matte-glass substrate. The focus-visible
+   ring uses the flow hue so keyboard users have a consistent
+   accent. Disabled drops opacity + flips cursor — no other state
+   change so the button doesn't redraw on hover when unavailable. */
+.water-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid color-mix(in srgb, var(--water-fg-faint) 22%, transparent);
+  border-radius: var(--water-r-8);
+  background: color-mix(in srgb, var(--water-bg-paper) 55%, transparent);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  color: var(--water-fg-default);
+  font-family: var(--water-font-sans);
+  font-size: var(--water-fs-ui);
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    background-color var(--water-dur-tiny) var(--water-ease-out-soft),
+    transform var(--water-dur-tiny) var(--water-ease-out-soft),
+    box-shadow var(--water-dur-tiny) var(--water-ease-out-soft);
+}
+.water-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--water-sea-300) 45%, transparent);
+  background: color-mix(in srgb, var(--water-bg-paper) 75%, transparent);
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 14px -8px color-mix(in srgb, var(--water-fg-default) 30%, transparent);
+}
+.water-button:active:not(:disabled) {
+  transform: translateY(0);
+  background: color-mix(in srgb, var(--water-bg-paper) 60%, transparent);
+  box-shadow: none;
+}
+.water-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--water-hue-flow) 28%, transparent);
+}
+.water-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary action — sea-accented, more prominent. Use once per
+   visual cluster (Save, Apply, Next, Create) so the eye lands on
+   the right next-step without scanning. */
+.water-button-primary {
+  background: color-mix(in srgb, var(--water-hue-flow) 28%, transparent);
+  border-color: color-mix(in srgb, var(--water-hue-flow) 38%, transparent);
+}
+.water-button-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--water-hue-flow) 42%, transparent);
+  border-color: color-mix(in srgb, var(--water-hue-flow) 55%, transparent);
+  box-shadow:
+    0 6px 18px -8px color-mix(in srgb, var(--water-hue-flow) 48%, transparent),
+    0 0 12px color-mix(in srgb, var(--water-sea-glow) 22%, transparent);
+}
+
+/* Danger / destructive — drift hue. Soft border at rest, fills
+   on hover so accidental hover doesn't suggest "click me." */
+.water-button-danger {
+  border-color: color-mix(in srgb, var(--water-hue-drift) 38%, transparent);
+  color: color-mix(in srgb, var(--water-hue-drift) 65%, var(--water-fg-default));
+}
+.water-button-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--water-hue-drift) 14%, transparent);
+  border-color: color-mix(in srgb, var(--water-hue-drift) 55%, transparent);
+}
+
+/* Ghost — for tertiary actions (Cancel, Back, dismiss).
+   No border at rest; hover reveals a faint background + border so
+   the button is discoverable but doesn't compete visually. */
+.water-button-ghost {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: var(--water-fg-muted);
+}
+.water-button-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--water-fg-faint) 12%, transparent);
+  border-color: color-mix(in srgb, var(--water-fg-faint) 22%, transparent);
+  color: var(--water-fg-default);
+}
+
+/* Icon-only — square, tight padding. Combine with the variants
+   above for color (`water-button water-button-icon` = default
+   ghost-ish; `water-button water-button-danger water-button-icon`
+   = destructive). */
+.water-button-icon {
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+/* Compact — for inline rows where 7×14 padding is too tall. */
+.water-button-compact {
+  padding: 4px 10px;
+  font-size: var(--water-fs-meta);
+}
+
 /* Obsidian-style wiki-link rendering. The mark wraps text inside the
    editor; this style mirrors Obsidian's default link aesthetic (sea-
    tinted, soft underline) so the writer recognizes a wiki-link
