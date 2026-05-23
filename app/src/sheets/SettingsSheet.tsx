@@ -412,7 +412,6 @@ export function SettingsSheet({ open, onClose }: Props) {
               {needsApiKey(p.id) && (
                 <ProviderKeyInput
                   providerId={p.id}
-                  onSaved={() => void handleTest(p.id)}
                 />
               )}
               {p.error && (
@@ -822,7 +821,7 @@ function ProviderKeyInput({
     setPhase("saving");
     try {
       await ipc.providerSetKey(providerId, trimmed);
-      setSavedMsg("Saved. Testing…");
+      setSavedMsg("Saved.");
       setPhase("saved");
       setValue("");
       setShow(false);

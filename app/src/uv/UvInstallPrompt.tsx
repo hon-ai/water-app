@@ -25,13 +25,30 @@ interface Props {
 export function UvInstallPrompt({ open, state, onDismissForSession }: Props) {
   const { status, logs, error, install, restart } = state;
   const logsRef = useRef<HTMLPreElement | null>(null);
-  // Auto-scroll the log pane as lines arrive so the writer sees the
-  // tail rather than the head of a long install.
+  const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
+
   useEffect(() => {
     const el = logsRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [logs.length]);
+
+  // Auto-restart 3 seconds after a successful install.
+  useEffect(() => {
+    if (status !== "done") return;
+    setRestartCountdown(3);
+    const tick = window.setInterval(() => {
+      setRestartCountdown((n) => {
+        if (n === null || n <= 1) {
+          clearInterval(tick);
+          void restart();
+          return null;
+        }
+        return n - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [status, restart]);
 
   const isMac =
     typeof navigator !== "undefined" &&
@@ -236,8 +253,10 @@ export function UvInstallPrompt({ open, state, onDismissForSession }: Props) {
                 "1px solid color-mix(in srgb, var(--water-c-green, #4a8a5e) 30%, transparent)",
             }}
           >
-            uv installed. Restart Water to enable analysis &mdash; your open
-            project will reopen automatically.
+            uv installed.{" "}
+            {restartCountdown !== null
+              ? `Restarting in ${restartCountdown}s…`
+              : "Restarting…"}
           </div>
         )}
 
@@ -264,7 +283,7 @@ export function UvInstallPrompt({ open, state, onDismissForSession }: Props) {
               onClick={() => void restart()}
               autoFocus
             >
-              Restart Water
+              Restart Now
             </button>
           ) : (
             <button
