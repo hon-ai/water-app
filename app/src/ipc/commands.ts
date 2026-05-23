@@ -785,4 +785,17 @@ export const ipc = {
   // scope rejects with a "scope denied" error from the plugin.
   openExternalLink: (url: string): Promise<void> =>
     import("@tauri-apps/plugin-shell").then(({ open }) => open(url)),
+
+  // Probe whether `uv` is resolvable on disk. Returns `{ installed,
+  // path }` — the path is the absolute location the Rust resolver
+  // landed on (PATH first, then `.local/bin` / `.cargo/bin`).
+  checkUvInstalled: (): Promise<{ installed: boolean; path: string | null }> =>
+    invoke("check_uv_installed"),
+  // Kick off the official astral.sh installer. Resolves immediately
+  // after spawn — progress arrives via `uv:install:log` events, and
+  // the terminal state lands in `uv:install:done`.
+  installUv: (): Promise<void> => invoke("install_uv"),
+  // Restart the Tauri process. Used by the post-install "Restart"
+  // button so the next boot finds uv on disk and the sidecar spawns.
+  restartApp: (): Promise<void> => invoke("restart_app"),
 };

@@ -8,4 +8,5 @@ pub mod pill;
 pub mod project;
 pub mod provider;
 pub mod scene;
+pub mod uv;
 pub mod world;

@@ -91,6 +91,9 @@ fn main() {
             commands::canvas::scene_canvas_set_position,
             commands::canvas::scene_canvas_set_group,
             commands::canvas::scene_canvas_reset_all,
+            commands::uv::check_uv_installed,
+            commands::uv::install_uv,
+            commands::uv::restart_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

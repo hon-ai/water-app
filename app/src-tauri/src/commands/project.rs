@@ -385,10 +385,14 @@ fn sidecar_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
 async fn boot_sidecar_for_project(
     app: &AppHandle,
 ) -> (Option<Arc<Sidecar>>, Option<SidecarSupervisor>) {
-    let uv_path = match which::which("uv") {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(error = %e, "uv not found on PATH; sidecar disabled for this session");
+    // Use the broader resolver from `commands::uv` so the sidecar
+    // finds `uv` in `.local/bin` immediately after the in-app
+    // installer drops it there (PATH was captured at process start
+    // and would still miss it).
+    let uv_path = match crate::commands::uv::resolve_uv() {
+        Some(p) => p,
+        None => {
+            tracing::warn!("uv not found on PATH or canonical install dirs; sidecar disabled for this session");
             return (None, None);
         }
     };

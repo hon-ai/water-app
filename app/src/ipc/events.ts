@@ -78,6 +78,23 @@ export interface WaterEventPayloads {
    * plugin re-fetch via `editor_pills_list` on receipt.
    */
   "editor_pills:updated": { scene_id: string; count: number };
+  /**
+   * Streamed line of stdout/stderr from the in-app uv installer.
+   * Fires many times per install; the modal accumulates them into
+   * a scrolling log pane.
+   */
+  "uv:install:log": { line: string; stream: "stdout" | "stderr" };
+  /**
+   * Terminal event for the in-app uv installer. `success: true`
+   * means uv is now resolvable on disk; `path` is the absolute
+   * path the resolver landed on. On failure, `error` is a short
+   * sentence safe to show the tester.
+   */
+  "uv:install:done": {
+    success: boolean;
+    error: string | null;
+    path: string | null;
+  };
 }
 
 export type WaterEventName = keyof WaterEventPayloads;

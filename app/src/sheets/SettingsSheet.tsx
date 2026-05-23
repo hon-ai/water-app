@@ -20,6 +20,7 @@ import {
   setActiveModel,
 } from "../theme/providerModels";
 import { GlassSelect } from "../chrome/GlassSelect";
+import { useUvInstall } from "../uv/useUvInstall";
 
 /**
  * Where the writer goes to mint a fresh API key for a given provider.
@@ -443,6 +444,8 @@ export function SettingsSheet({ open, onClose }: Props) {
           </pre>
         )}
       </section>
+
+      <PythonSidecarSection section={section} heading={heading} />
 
       <section style={section}>
         <div style={heading}>Developer info</div>
@@ -1099,5 +1102,161 @@ function ProviderModelPicker({ providerId }: { providerId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Settings row for the Python analysis sidecar's `uv` dependency.
+ * Mirrors the in-prompt installer but lives in Settings so writers
+ * can re-install later (e.g. if uv was uninstalled, or the resolver
+ * lost it after a Homebrew update). Shares state via the
+ * `useUvInstall` hook — each mount gets its own subscription so the
+ * Settings UI and the boot-time prompt stay independent.
+ */
+function PythonSidecarSection({
+  section,
+  heading,
+}: {
+  section: React.CSSProperties;
+  heading: React.CSSProperties;
+}) {
+  const uv = useUvInstall();
+  const logsRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    const el = logsRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [uv.logs.length]);
+
+  const probing = uv.installed === null;
+  return (
+    <section style={section}>
+      <div style={heading}>Python sidecar</div>
+      <p
+        style={{
+          margin: "0 0 12px 0",
+          color: "var(--water-fg-muted)",
+          fontFamily: "var(--water-font-sans)",
+          fontSize: "var(--water-fs-meta)",
+          lineHeight: 1.5,
+        }}
+      >
+        Water&apos;s stylometric nudges (pacing, prose-craft, character
+        voice drift) run from a local Python sidecar. It needs{" "}
+        <code style={{ fontFamily: "var(--water-font-mono)" }}>uv</code> on
+        your machine.
+      </p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          data-testid="uv-settings-status"
+          style={{
+            fontFamily: "var(--water-font-sans)",
+            fontSize: "var(--water-fs-meta)",
+            color: uv.installed
+              ? "var(--water-c-green, #4a8a5e)"
+              : "var(--water-fg-muted)",
+          }}
+        >
+          {probing
+            ? "Checking…"
+            : uv.installed
+              ? `Installed at ${uv.path ?? "(unknown path)"}`
+              : "Not installed"}
+        </span>
+        <div style={{ flex: 1 }} />
+        {uv.installed === false && uv.status !== "done" && (
+          <button
+            type="button"
+            className="water-button water-button-primary water-button-compact"
+            onClick={() => void uv.install()}
+            disabled={uv.status === "installing"}
+            data-testid="uv-settings-install"
+          >
+            {uv.status === "installing"
+              ? "Installing…"
+              : uv.status === "failed"
+                ? "Retry install"
+                : "Install uv"}
+          </button>
+        )}
+        {uv.status === "done" && (
+          <button
+            type="button"
+            className="water-button water-button-primary water-button-compact"
+            onClick={() => void uv.restart()}
+            data-testid="uv-settings-restart"
+          >
+            Restart Water
+          </button>
+        )}
+        {uv.installed && uv.status !== "installing" && uv.status !== "done" && (
+          <button
+            type="button"
+            className="water-button water-button-ghost water-button-compact"
+            onClick={() => void uv.recheck()}
+          >
+            Re-check
+          </button>
+        )}
+      </div>
+      {(uv.status === "installing" ||
+        uv.status === "failed" ||
+        uv.status === "done") &&
+        uv.logs.length > 0 && (
+          <pre
+            ref={logsRef}
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              maxHeight: 160,
+              overflow: "auto",
+              fontFamily: "var(--water-font-mono)",
+              fontSize: 11,
+              lineHeight: 1.5,
+              color: "var(--water-fg-muted)",
+              background:
+                "color-mix(in srgb, var(--water-bg-canvas) 70%, transparent)",
+              border:
+                "1px solid color-mix(in srgb, var(--water-fg-faint) 16%, transparent)",
+              borderRadius: "var(--water-r-12)",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {uv.logs.map((entry, i) => (
+              <div
+                key={i}
+                style={{
+                  color:
+                    entry.stream === "stderr"
+                      ? "var(--water-fg-default)"
+                      : "var(--water-fg-muted)",
+                }}
+              >
+                {entry.line}
+              </div>
+            ))}
+          </pre>
+        )}
+      {uv.status === "failed" && uv.error && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 8,
+            fontSize: "var(--water-fs-meta)",
+            color: "var(--water-fg-default)",
+          }}
+        >
+          {uv.error}
+        </div>
+      )}
+    </section>
   );
 }

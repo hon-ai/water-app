@@ -16,6 +16,8 @@ import { dialog } from "./ipc/dialog";
 import { WaterRibbon, type Anchor } from "./chrome/WaterRibbon";
 import { applyUpdateInBackground, checkForUpdate } from "./boot";
 import type { Update } from "@tauri-apps/plugin-updater";
+import { useUvInstall } from "./uv/useUvInstall";
+import { UvInstallPrompt } from "./uv/UvInstallPrompt";
 
 /** Track viewport dimensions for the App-level WaterRibbon. */
 function useWindowSize() {
@@ -57,22 +59,17 @@ export default function App() {
   // has no way to learn that a provider needs setup.
   const [hasActiveProvider, setHasActiveProvider] = useState(false);
   // Sidecar status — null when the sidecar never tried to spawn,
-  // "loading"/"ready"/"error" otherwise. We surface a tester-
-  // friendly banner that points at the `uv` install when the
-  // sidecar's missing, so people don't need to dig through
-  // TESTER.md to find out why five of the eleven triggers are dark.
+  // "loading"/"ready"/"error" otherwise. Diagnostics + the heatmap
+  // strip read this; we no longer drive the uv prompt off of it
+  // because the writer needs to be nudged before they open a
+  // project (the prompt also fires from the splash screen).
   const [sidecarStatus, setSidecarStatus] = useState<string | null>(null);
-  // Persisted dismissal of the uv install banner — once a tester
-  // has acknowledged it, don't keep pestering on every reboot.
-  // Stored as a boolean string in localStorage so we can offer a
-  // global reset later if needed.
-  const [uvBannerDismissed, setUvBannerDismissed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem("water:uv-banner-dismissed") === "true";
-    } catch {
-      return false;
-    }
-  });
+  // Session-only dismissal of the uv install prompt. Intentionally
+  // not persisted to localStorage: when uv is missing the analysis
+  // half of Water is dark, so we want the prompt to come back on
+  // every reload until the writer actually installs.
+  const [uvPromptDismissed, setUvPromptDismissed] = useState(false);
+  const uvInstall = useUvInstall();
   // Auto-updater state. `available` populates once `check()` returns
   // a non-null `Update`; the writer dismisses via `setAvailable(null)`
   // or applies via the toast's button.
@@ -271,21 +268,11 @@ export default function App() {
         {projectOpen && !hasActiveProvider && (
           <NoProviderBanner onOpenSettings={() => setSettingsOpen(true)} />
         )}
-        {projectOpen &&
-          hasActiveProvider &&
-          (sidecarStatus === null || sidecarStatus === "error") &&
-          !uvBannerDismissed && (
-            <UvInstallBanner
-              onDismiss={() => {
-                try {
-                  localStorage.setItem("water:uv-banner-dismissed", "true");
-                } catch {
-                  /* swallow */
-                }
-                setUvBannerDismissed(true);
-              }}
-            />
-          )}
+        <UvInstallPrompt
+          open={uvInstall.installed === false && !uvPromptDismissed}
+          state={uvInstall}
+          onDismissForSession={() => setUvPromptDismissed(true)}
+        />
         {updateAvailable && (
           <UpdateToast
             update={updateAvailable}
@@ -438,110 +425,6 @@ export default function App() {
         <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </div>
     </ThemeProvider>
-  );
-}
-
-/**
- * Lower-priority banner under the project's title bar that nudges
- * testers to install `uv` so the analysis sidecar can boot. The
- * sidecar drives the five stylometric triggers
- * (block_anchored_drift, topic_drift, pace_floor, valence_spike,
- * scene_flow_dip); without it the council still surfaces ambient +
- * character-track pills, but the prose-craft-shaped ones stay dark.
- *
- * One-click copy of the install command for the writer's OS plus a
- * link to the full install docs. Persistent dismissal — stored in
- * localStorage so it doesn't re-show after a writer's chosen to
- * skip it.
- */
-function UvInstallBanner({ onDismiss }: { onDismiss: () => void }) {
-  const isMac =
-    typeof navigator !== "undefined" &&
-    /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-  const command = isMac
-    ? "curl -LsSf https://astral.sh/uv/install.sh | sh"
-    : `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`;
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* clipboard blocked — fall back: do nothing, the writer can
-         hand-copy the command from the visible text */
-    }
-  };
-  return (
-    <div
-      data-testid="uv-install-banner"
-      role="status"
-      style={{
-        position: "fixed",
-        top: 56,
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 28,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "8px 12px 8px 14px",
-        maxWidth: "min(680px, calc(100vw - 80px))",
-        borderRadius: "var(--water-r-16)",
-        background:
-          "color-mix(in srgb, var(--water-bg-paper) 78%, transparent)",
-        backdropFilter: "blur(18px) saturate(160%)",
-        WebkitBackdropFilter: "blur(18px) saturate(160%)",
-        border:
-          "1px solid color-mix(in srgb, var(--water-hairline) 50%, transparent)",
-        boxShadow: "var(--water-elev-1)",
-        fontFamily: "var(--water-font-sans)",
-        fontSize: "var(--water-fs-meta)",
-        color: "var(--water-fg-default)",
-        animation:
-          "water-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
-      }}
-    >
-      <span style={{ color: "var(--water-fg-muted)" }}>
-        Install <code style={{ fontFamily: "var(--water-font-mono)" }}>uv</code>
-        {" "}to enable stylometric nudges:
-      </span>
-      <code
-        style={{
-          flex: 1,
-          minWidth: 0,
-          padding: "3px 8px",
-          borderRadius: "var(--water-r-8)",
-          background:
-            "color-mix(in srgb, var(--water-bg-canvas) 60%, transparent)",
-          border:
-            "1px solid color-mix(in srgb, var(--water-fg-faint) 18%, transparent)",
-          fontFamily: "var(--water-font-mono)",
-          fontSize: 11,
-          color: "var(--water-fg-default)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={command}
-      >
-        {command}
-      </code>
-      <button
-        type="button"
-        className="water-button water-button-compact"
-        onClick={() => void copy()}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
-      <button
-        type="button"
-        className="water-button water-button-ghost water-button-compact"
-        onClick={onDismiss}
-      >
-        Dismiss
-      </button>
-    </div>
   );
 }
 
