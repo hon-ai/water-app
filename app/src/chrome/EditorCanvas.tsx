@@ -616,7 +616,13 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
         style={{
           flex: "0 0 280px",
           alignSelf: "flex-start",
-          margin: "10px 10px 10px 0",
+          // Top margin matches the writing column's `padding-top: 72px`
+          // so the aside's top edge lines up with the HeatmapStrip
+          // (which is the first child of the writing surface, sitting
+          // at exactly that offset). Without this match, the panel
+          // started 62 px above the heatmap and the gaze had to
+          // travel up-and-over to find it.
+          margin: "72px 10px 10px 0",
           display: "flex",
           flexDirection: "column",
           background:
