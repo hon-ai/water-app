@@ -591,7 +591,16 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
           // scrolls the page to reach the bottom. Removing the
           // internal `overflowY: auto` is what enables the aside
           // to expand instead of clipping its children.
+          //
+          // `overflowX: clip` keeps any rogue child (a slab with
+          // long nowrap text, a pill capsule running over its
+          // budget) from pushing the panel — and via flex
+          // ripple, the writing column — wider than 280 px. We
+          // use `clip` not `hidden` so it doesn't establish a
+          // scroll container that would interfere with the
+          // stash dropdown's overflow.
           width: "100%",
+          overflowX: "clip",
           padding: "56px 16px 24px 16px",
           boxSizing: "border-box",
           display: "flex",

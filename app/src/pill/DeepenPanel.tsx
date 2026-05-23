@@ -332,12 +332,21 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
           role="button"
           aria-label="Expand deepen panel"
           style={{
+            // Width-locked to the aside's content area — the slab
+            // must NEVER push wider than the expanded panel,
+            // otherwise the centered flex group reflows and the
+            // text editor visibly shifts on every collapse/expand.
+            // `maxWidth: "100%"` + `boxSizing: border-box` keep the
+            // outer box inside the parent; the inner text wraps
+            // (up to 2 lines, clamped) instead of running off the
+            // right edge.
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
             width: "100%",
+            maxWidth: "100%",
             minWidth: 0,
             boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
             padding: "8px 12px",
             borderRadius: "var(--water-r-12)",
             background:
@@ -362,6 +371,7 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
               flex: "0 0 6px",
               width: 6,
               height: 6,
+              marginTop: 6,
               borderRadius: "50%",
               background: `color-mix(in oklch, var(${rootPill.hue_token}) 80%, transparent)`,
             }}
@@ -370,9 +380,15 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
             style={{
               flex: 1,
               minWidth: 0,
-              whiteSpace: "nowrap",
+              // Wrap instead of `nowrap` so a long pill text falls
+              // to a second line inside the slab rather than
+              // forcing the slab wider than the aside. Two-line
+              // clamp keeps the slab's height predictable.
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
               overflow: "hidden",
-              textOverflow: "ellipsis",
+              wordBreak: "break-word",
             }}
           >
             {currentLevel.parentText || rootPill.text}
