@@ -445,16 +445,32 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           </>
         )}
       </div>
+      {/* Combined centering group — writing surface + nudge aside
+          sit together inside one max-width container so the panel
+          tracks the right edge of the prose instead of pinning to
+          the window edge. The combined max is canvas-max (720) +
+          240 wrapper halo + 12 gap + 280 aside = 1252 px. */}
+      <div
+        style={{
+          maxWidth: "calc(var(--water-canvas-max) + 240px + 12px + 280px)",
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 12,
+        }}
+      >
       <div
         style={{
           // Wide backdrop that fades horizontally into the stream on
-          // either side of the prose. Centered with margin: 0 auto;
-          // a soft linear gradient transitions from transparent at
-          // the very edges to opaque bg-paper across the prose area
-          // and back. Result: stream visible at shoulders, gentle
-          // halo around the writing column — no hard cut-off.
+          // either side of the prose. A soft linear gradient
+          // transitions from transparent at the very edges to opaque
+          // bg-paper across the prose area and back. Result: stream
+          // visible at shoulders, gentle halo around the writing
+          // column — no hard cut-off.
+          flex: 1,
+          minWidth: 0,
           maxWidth: "calc(var(--water-canvas-max) + 240px)",
-          margin: "0 auto",
           padding: "72px 144px 96px 144px",
           display: "flex",
           flexDirection: "column",
@@ -579,35 +595,24 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           }}
         />
       </div>
-      <PinnedColumn mainWidth={mainWidth} sceneId={sceneId} />
-      </div>
-      {/* LiveModelChip lives at `<main>` level (not inside the
-          scrollable editor div) so its `position: absolute; bottom:
-          14` anchors to main's viewport-stable bottom edge. Inside
-          the editor div, `bottom` would resolve against the
-          content's full scrollable height — the chip would scroll
-          off-screen along with the prose. */}
-      <LiveModelChip />
-      {/* Right-side nudge panel — fixed-width flex sibling of the
-          editor column. Replaces the previous absolute-positioned
-          overlay so pills never overlap prose at any window width,
-          and the column reflows correctly on window resize without
-          the manual coord math (which used to leave the column cut
-          off after a compress + widen cycle). */}
+      {/* Right-side nudge panel — sticky inside the editor's scroll
+          container so it tracks the writer's viewport and sits
+          adjacent to the prose column rather than pinned to the
+          window edge. `position: relative` is required for the
+          stash chip's absolute positioning inside <PillLayer> to
+          anchor here. */}
       <aside
         aria-label="nudges"
         className="water-floating-panel"
         style={{
-          width: 280,
-          flexShrink: 0,
+          flex: "0 0 280px",
+          alignSelf: "flex-start",
+          position: "sticky",
+          top: 10,
+          maxHeight: "calc(100vh - 20px)",
+          margin: "10px 10px 10px 0",
           display: "flex",
           flexDirection: "column",
-          // Left margin of 12 px creates a breathing gap between
-          // the editor column and the panel — the WaterRibbon
-          // shows through this gap rather than the panel's glass
-          // border meeting the wrapper's right gradient fade as
-          // a hard line.
-          margin: "10px 10px 10px 12px",
           background:
             "color-mix(in srgb, var(--water-bg-paper) 55%, transparent)",
           backdropFilter: "blur(22px) saturate(160%)",
@@ -616,7 +621,7 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
             "1px solid color-mix(in srgb, var(--water-hairline) 60%, transparent)",
           borderRadius: "var(--water-r-24)",
           boxShadow: "var(--water-elev-2)",
-          overflow: "hidden",
+          overflow: "visible",
         }}
       >
         <header
@@ -638,6 +643,16 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           <PillLayer mainWidth={mainWidth} sceneId={sceneId} />
         </div>
       </aside>
+      </div>
+      <PinnedColumn mainWidth={mainWidth} sceneId={sceneId} />
+      </div>
+      {/* LiveModelChip lives at `<main>` level (not inside the
+          scrollable editor div) so its `position: absolute; bottom:
+          14` anchors to main's viewport-stable bottom edge. Inside
+          the editor div, `bottom` would resolve against the
+          content's full scrollable height — the chip would scroll
+          off-screen along with the prose. */}
+      <LiveModelChip />
     </main>
   );
 }

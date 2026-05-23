@@ -20,6 +20,15 @@ const MAX_ON_SCREEN = 4;
  *  drop to 0.7 opacity so writing underneath stays readable. Matches the
  *  PinnedColumn collapse breakpoint so both fallbacks engage in lockstep. */
 const NARROW_BREAKPOINT_PX = 1100;
+/** Hover this long on a pill and it counts as "engaged" — when the FIFO
+ *  later pushes it off-screen, it lands in the stash dropdown instead of
+ *  being lost. Five seconds is long enough that an accidental hover-over
+ *  while reaching for another pill doesn't qualify. */
+const HOVER_ENGAGE_MS = 5000;
+/** Soft cap on the stash so a long session doesn't accumulate hundreds
+ *  of recall slots. Oldest entries fall off the bottom when the cap is
+ *  hit; the writer keeps the more recent engagement context. */
+const MAX_STASHED = 20;
 
 /**
  * Absolute-positioned overlay anchored to the top-right of the editor canvas.
@@ -145,6 +154,20 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
   // Phase 4: which pills currently have an active deepen panel
   // open. Replaces the M2 bouquet expansion path for clicked pills.
   const [deepenedIds, setDeepenedIds] = useState<Set<string>>(new Set());
+  // Engaged-pill stash. A pill becomes "engaged" via long hover
+  // (>= HOVER_ENGAGE_MS), being clicked open, or having a sub-pill
+  // drilled. When FIFO eviction would otherwise drop an engaged
+  // pill, it lands here instead so the writer can pull it back —
+  // useful for the case where a thought from earlier in the
+  // session re-becomes relevant once the prose moves on.
+  const engagedRef = useRef<Set<string>>(new Set());
+  // Per-pill hover timer ids. Tracked separately from `engagedRef`
+  // because we need to cancel a pending 5s timer when the writer
+  // hovers off a pill before it qualifies. Without this the timer
+  // would still fire and falsely mark a fleeting hover as engaged.
+  const hoverTimersRef = useRef<Record<string, number>>({});
+  const [stashedPills, setStashedPills] = useState<Pill[]>([]);
+  const [stashOpen, setStashOpen] = useState(false);
   const layerRef = useRef<HTMLDivElement>(null);
   // Mirror of `pills` for the `bouquet:ready` reducer to read without stale
   // closures (the effect runs once, but pills mutate over the session).
@@ -166,14 +189,33 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
           const next = [...prev, p];
           // FIFO: when over capacity, drop the oldest entries.
           if (next.length > MAX_ON_SCREEN) {
-            const evictedIds = next.slice(0, next.length - MAX_ON_SCREEN);
-            for (const e of evictedIds) {
-              delete anchorsRef.current[e.pill_id];
-              // v8: tell the orchestrator about the FIFO eviction so
-              // the learning loop attributes the outcome. Fire-and-
-              // forget; failures are swallowed so a transient IPC
-              // hiccup never blocks the renderer.
+            const evictedItems = next.slice(0, next.length - MAX_ON_SCREEN);
+            const toStash: Pill[] = [];
+            for (const e of evictedItems) {
+              if (engagedRef.current.has(e.pill_id)) {
+                // Engaged pill — preserve in stash. Keep its anchor
+                // payload so a future restore can re-light the
+                // source paragraph on hover. Still send pillEvicted
+                // for the orchestrator's attribution close-out; the
+                // restore later issues a fresh emerge.
+                toStash.push(e);
+                engagedRef.current.delete(e.pill_id);
+              } else {
+                delete anchorsRef.current[e.pill_id];
+              }
+              // Always tell the orchestrator about the FIFO eviction
+              // so the learning loop attributes the outcome at the
+              // *moment of dropping from active view*. Restoring
+              // from stash re-emerges as a separate event.
               void ipc.pillEvicted(e.pill_id).catch(() => {});
+            }
+            if (toStash.length > 0) {
+              setStashedPills((prevStash) => {
+                // Newest stashed entries at the top — that's the
+                // order writers will look for them in.
+                const merged = [...toStash.reverse(), ...prevStash];
+                return merged.slice(0, MAX_STASHED);
+              });
             }
             return next.slice(next.length - MAX_ON_SCREEN);
           }
@@ -299,6 +341,53 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
     };
   }, []);
 
+  /**
+   * Mark a pill engaged. Used by both the long-hover timer and the
+   * synchronous click paths. Idempotent — adding an already-engaged
+   * id is a no-op. We don't bother re-rendering on this change
+   * because the engagement flag is only read at eviction time.
+   */
+  const markEngaged = (pillId: string) => {
+    engagedRef.current.add(pillId);
+  };
+
+  /**
+   * Hover-enter for pills. In addition to setting `hoveredId` (which
+   * drives the trigger-highlight effect), arm a 5s timer that
+   * promotes the pill to "engaged" if the writer stays on it. The
+   * timer cancels on hover-leave so a fly-over doesn't qualify.
+   */
+  const handlePillHoverEnter = (pillId: string) => {
+    setHoveredId(pillId);
+    if (engagedRef.current.has(pillId)) return; // already engaged
+    if (hoverTimersRef.current[pillId]) return; // timer already running
+    const id = window.setTimeout(() => {
+      markEngaged(pillId);
+      delete hoverTimersRef.current[pillId];
+    }, HOVER_ENGAGE_MS);
+    hoverTimersRef.current[pillId] = id;
+  };
+
+  const handlePillHoverLeave = (pillId: string) => {
+    setHoveredId((prev) => (prev === pillId ? null : prev));
+    const id = hoverTimersRef.current[pillId];
+    if (id !== undefined) {
+      window.clearTimeout(id);
+      delete hoverTimersRef.current[pillId];
+    }
+  };
+
+  // Cancel any in-flight hover timers on unmount so they don't
+  // fire against a torn-down ref.
+  useEffect(() => {
+    return () => {
+      for (const id of Object.values(hoverTimersRef.current)) {
+        window.clearTimeout(id);
+      }
+      hoverTimersRef.current = {};
+    };
+  }, []);
+
   const hoveredPill = pills.find((p) => p.pill_id === hoveredId) ?? null;
 
   /**
@@ -398,6 +487,8 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
   };
 
   const onSubClick = (rootId: string, level: number, item: BouquetItem) => {
+    // Drilling into a sub-pill counts as engagement on the root.
+    markEngaged(rootId);
     setRabbitHoles((prev) => {
       const path = prev[rootId];
       if (!path) return prev;
@@ -411,6 +502,59 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
     void ipc.pillExpand(item.sub_pill_id);
   };
 
+  /**
+   * Pull a stashed pill back into the active list. Treated as a
+   * fresh emerge: we re-insert at the top of `pills` and run the
+   * same FIFO logic so the oldest active pill makes room (and
+   * itself may stash if engaged). The pill's anchor payload is
+   * still in `anchorsRef` (we kept it on stashing), so the source-
+   * paragraph highlight lights up on hover immediately.
+   *
+   * The orchestrator already closed attribution at the original
+   * eviction; firing `pillExpand` on restore would be wrong (it
+   * means "deepen this pill"). We fire-and-forget a fresh emerge
+   * signal via `ipc.pillEmerged` so the learning loop sees the
+   * recall as a new exposure. If that command doesn't exist yet
+   * the catch swallows the rejection — frontend behavior is
+   * unaffected.
+   */
+  const restoreStashed = (pillId: string) => {
+    const pill = stashedPills.find((s) => s.pill_id === pillId);
+    if (!pill) return;
+    setStashedPills((prev) => prev.filter((s) => s.pill_id !== pillId));
+    // Re-add to active pills, re-running the FIFO eviction with
+    // the same engagement-aware logic. This mirrors the
+    // `pill:emerged` reducer path.
+    setPills((prev) => {
+      const next = [...prev, pill];
+      if (next.length > MAX_ON_SCREEN) {
+        const evictedItems = next.slice(0, next.length - MAX_ON_SCREEN);
+        const toStash: Pill[] = [];
+        for (const e of evictedItems) {
+          if (engagedRef.current.has(e.pill_id)) {
+            toStash.push(e);
+            engagedRef.current.delete(e.pill_id);
+          } else {
+            delete anchorsRef.current[e.pill_id];
+          }
+          void ipc.pillEvicted(e.pill_id).catch(() => {});
+        }
+        if (toStash.length > 0) {
+          setStashedPills((prevStash) => {
+            const merged = [...toStash.reverse(), ...prevStash];
+            return merged.slice(0, MAX_STASHED);
+          });
+        }
+        return next.slice(next.length - MAX_ON_SCREEN);
+      }
+      return next;
+    });
+    // TODO(attribution): the orchestrator side needs a
+    // `pill_reemerged` command so the learning loop counts the
+    // restore as a fresh exposure. UI-side this works in isolation;
+    // attribution will start flowing once the backend hook lands.
+  };
+
   return (
     <>
       {/* Phase 3.5: the precise inline trigger-highlight has replaced
@@ -422,6 +566,20 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
         anchorRect={null}
         hueToken={hoveredPill?.hue_token ?? "--water-hue-muse"}
       />
+      {/* Stash chip — top-right corner of the nudge panel.
+          Hidden when no stashed pills exist so the header stays
+          uncluttered for new sessions. Click toggles the dropdown
+          below it; the dropdown lists engaged pills the FIFO
+          would otherwise have dropped from view. */}
+      {stashedPills.length > 0 && (
+        <StashChip
+          count={stashedPills.length}
+          open={stashOpen}
+          onToggle={() => setStashOpen((v) => !v)}
+          pills={stashedPills}
+          onRestore={restoreStashed}
+        />
+      )}
       <div
         ref={layerRef}
         aria-label="nudge panel"
@@ -471,10 +629,8 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
                 // off `hoveredPill.pill_id`, which we set to the
                 // ROOT pill — the deepen panel's children inherit
                 // the highlight from the root.
-                onMouseEnter={() => setHoveredId(p.pill_id)}
-                onMouseLeave={() =>
-                  setHoveredId((prev) => (prev === p.pill_id ? null : prev))
-                }
+                onMouseEnter={() => handlePillHoverEnter(p.pill_id)}
+                onMouseLeave={() => handlePillHoverLeave(p.pill_id)}
                 style={{ pointerEvents: "auto" }}
               >
                 <DeepenPanel
@@ -496,10 +652,8 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
             return (
               <div
                 key={p.pill_id}
-                onMouseEnter={() => setHoveredId(p.pill_id)}
-                onMouseLeave={() =>
-                  setHoveredId((prev) => (prev === p.pill_id ? null : prev))
-                }
+                onMouseEnter={() => handlePillHoverEnter(p.pill_id)}
+                onMouseLeave={() => handlePillHoverLeave(p.pill_id)}
                 style={{ pointerEvents: "auto" }}
               >
                 <RabbitHole
@@ -530,6 +684,11 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
                 pill={p}
                 anchorDrifted={driftedByPill[p.pill_id] === true}
                 onClick={() => {
+                  // Clicking to expand is a strong engagement
+                  // signal; promote immediately so a fast-evict
+                  // burst doesn't lose the pill before the timer
+                  // would have fired.
+                  markEngaged(p.pill_id);
                   setDeepenedIds((prev) => {
                     if (prev.has(p.pill_id)) return prev;
                     const next = new Set(prev);
@@ -543,5 +702,172 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
         })}
       </div>
     </>
+  );
+}
+
+/**
+ * Top-right chip + dropdown that surfaces stashed (engaged-then-
+ * evicted) pills. The chip itself shows a glass disc with the stash
+ * count; clicking it expands a card listing each stashed pill as a
+ * mini row. Clicking a row restores the pill to the active list.
+ *
+ * Positioned absolute relative to the parent nudge aside so it sits
+ * inside the header strip — `top: 12` clears the panel's rounded
+ * top corner and the EditorCanvas-rendered "Nudges" label sits to
+ * the left of it.
+ */
+function StashChip({
+  count,
+  open,
+  onToggle,
+  pills,
+  onRestore,
+}: {
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  pills: Pill[];
+  onRestore: (pillId: string) => void;
+}) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 12,
+        right: 14,
+        zIndex: 4,
+        fontFamily: "var(--water-font-sans)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={`${count} stashed nudges`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "4px 10px 4px 8px",
+          height: 24,
+          borderRadius: 999,
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: 0.4,
+          textTransform: "uppercase",
+          color: "var(--water-fg-muted)",
+          background:
+            "color-mix(in srgb, var(--water-bg-paper) 70%, transparent)",
+          border:
+            "1px solid color-mix(in srgb, var(--water-hairline) 55%, transparent)",
+          backdropFilter: "blur(14px) saturate(160%)",
+          WebkitBackdropFilter: "blur(14px) saturate(160%)",
+          boxShadow: "var(--water-elev-1)",
+          cursor: "pointer",
+          transition:
+            "background var(--water-dur-tiny) var(--water-ease-out-soft)",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background:
+              "color-mix(in srgb, var(--water-hue-flow) 75%, transparent)",
+          }}
+        />
+        {count}
+      </button>
+      {open && (
+        <div
+          role="region"
+          aria-label="stashed nudges"
+          style={{
+            position: "absolute",
+            top: 30,
+            right: 0,
+            width: 240,
+            maxHeight: 320,
+            overflowY: "auto",
+            padding: 6,
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            borderRadius: "var(--water-r-16)",
+            background:
+              "color-mix(in srgb, var(--water-bg-paper) 88%, transparent)",
+            backdropFilter: "blur(22px) saturate(160%)",
+            WebkitBackdropFilter: "blur(22px) saturate(160%)",
+            border:
+              "1px solid color-mix(in srgb, var(--water-hairline) 60%, transparent)",
+            boxShadow: "var(--water-elev-2)",
+            animation:
+              "water-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
+          }}
+        >
+          {pills.map((p) => (
+            <button
+              type="button"
+              key={p.pill_id}
+              onClick={() => onRestore(p.pill_id)}
+              title="Restore this nudge"
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                padding: "8px 10px",
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                borderRadius: "var(--water-r-12)",
+                cursor: "pointer",
+                textAlign: "left",
+                color: "var(--water-fg-default)",
+                fontFamily: "var(--water-font-sans)",
+                fontSize: 12,
+                lineHeight: 1.4,
+                transition:
+                  "background var(--water-dur-tiny) var(--water-ease-out-soft)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "color-mix(in srgb, var(--water-bg-canvas) 55%, transparent)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "transparent";
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  flex: "0 0 6px",
+                  width: 6,
+                  height: 6,
+                  marginTop: 6,
+                  borderRadius: "50%",
+                  background: `color-mix(in oklch, var(${p.hue_token}) 80%, transparent)`,
+                }}
+              />
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                  color: "var(--water-fg-muted)",
+                }}
+              >
+                {p.text || "…"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
