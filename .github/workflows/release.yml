@@ -27,8 +27,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu-22.04
-            label: linux
+          # Closed-alpha testers are on macOS + Windows only. Linux
+          # is omitted because `bundle.targets` in tauri.conf.json
+          # doesn't include `deb`/`appimage` — adding them would
+          # require additional Linux-side packaging review (icons
+          # in the right format, desktop entry, etc.). Add the
+          # Linux row back here AND add `deb`/`appimage` to
+          # `tauri.conf.json::bundle.targets` when we want to ship
+          # a Linux build.
           - platform: windows-latest
             label: windows
           - platform: macos-latest
