@@ -68,6 +68,45 @@ cargo test --workspace                  # Rust tests (~490)
 pnpm --filter @water/app test -- --run  # frontend tests (~220)
 ```
 
+## New User Flow
+
+  1. Find the installer
+
+  Releases page → download the platform installer (.msi Windows, .dmg macOS).
+
+  2. Install uv (optional but recommended — before first launch)
+
+  # Windows
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  # macOS
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  Without uv: app works, but 5 of 10 triggers are disabled (the sidecar-dependent ones: block_anchored_drift,
+  topic_drift, pace_floor, valence_spike, scene_flow_dip). The other 5 fire from typing telemetry alone.
+
+  3. Run the installer, launch Water
+
+  4. Provider setup (blocks pills entirely until done)
+
+  A banner reads "Set up a provider to enable nudges" → Open Settings:
+  1. Pick provider (Anthropic / OpenAI / Kimi / OpenRouter)
+  2. Click "Get a key →" to open their signup page
+  3. Paste key → Save (stored in OS keychain, never in files)
+  4. Dot turns green = ready. Red/gray = error block below the row explains it.
+
+  5. Create a project and write
+
+  - Create new project = pick a folder on disk
+  - + New scene in the left rail
+  - Optional: link characters via the ⋯ metadata sheet — character-linked scenes fire more triggers
+  - Write, pause ≥ 3s on a sentence end → pills appear in the right margin
+
+  ---
+  Gaps / friction points worth knowing
+
+  - Sidecar install timing: the doc says "before first launch" but doesn't explain why — Water checks for uv
+  at startup and skips sidecar init if absent, so installing uv post-launch requires a restart.
+  - Read docs/TESTER.md for more details.
+
 ## License
 
 [AGPL-3.0](LICENSE). If you run a modified version as a network service, you must release your modifications under the same license. Pull requests welcome.
