@@ -257,11 +257,123 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
   const currentLevel = path[path.length - 1]!;
   const ancestors = path.slice(0, path.length - 1);
 
+  // Auto-collapse after 10 s of no hover. Without this, every open
+  // deepen panel stays full-height and a writer with several pills
+  // clicked-open ends up with a panel taller than the viewport.
+  // Hover (or click) re-expands and resets the timer.
+  const [collapsed, setCollapsed] = useState(false);
+  const collapseTimerRef = useRef<number | null>(null);
+  const armCollapse = () => {
+    if (collapseTimerRef.current !== null) {
+      window.clearTimeout(collapseTimerRef.current);
+    }
+    collapseTimerRef.current = window.setTimeout(() => {
+      setCollapsed(true);
+      collapseTimerRef.current = null;
+    }, 10000);
+  };
+  const cancelCollapse = () => {
+    if (collapseTimerRef.current !== null) {
+      window.clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
+  };
+  // Arm on mount + whenever a new level is pushed (the writer just
+  // interacted by clicking a child; we want the 10 s clock to reset).
+  useEffect(() => {
+    armCollapse();
+    return () => {
+      cancelCollapse();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path.length]);
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        data-testid="deepen-panel-collapsed"
+        aria-label="Expand deepen panel"
+        onClick={() => {
+          setCollapsed(false);
+          armCollapse();
+        }}
+        onMouseEnter={() => {
+          setCollapsed(false);
+          armCollapse();
+        }}
+        style={{
+          width: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          borderRadius: "var(--water-r-12)",
+          background:
+            "color-mix(in srgb, var(--water-bg-paper) 62%, transparent)",
+          backdropFilter: "blur(18px) saturate(160%)",
+          WebkitBackdropFilter: "blur(18px) saturate(160%)",
+          border:
+            "1px solid color-mix(in srgb, var(--water-hairline) 50%, transparent)",
+          boxShadow: "var(--water-elev-1)",
+          textAlign: "left",
+          cursor: "pointer",
+          fontFamily: "var(--water-font-sans)",
+          color: "var(--water-fg-muted)",
+          fontSize: 12,
+          lineHeight: 1.4,
+          animation:
+            "water-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            flex: "0 0 6px",
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: `color-mix(in oklch, var(${rootPill.hue_token}) 80%, transparent)`,
+          }}
+        />
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {currentLevel.parentText || rootPill.text}
+        </span>
+        {path.length > 1 && (
+          <span
+            aria-hidden
+            style={{
+              flex: "0 0 auto",
+              fontSize: 10,
+              color: "var(--water-fg-faint)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+            title={`${path.length} levels deep`}
+          >
+            ·{path.length}
+          </span>
+        )}
+      </button>
+    );
+  }
+
   return (
     <div
       data-testid="deepen-panel"
       role="dialog"
       aria-label="Deepen pill"
+      onMouseEnter={cancelCollapse}
+      onMouseLeave={armCollapse}
       style={{
         position: "relative",
         // Fill the available width of the nudge panel (which is
