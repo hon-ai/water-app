@@ -429,6 +429,36 @@ body {
   to   { opacity: 1; }
 }
 
+/* DeepenPanel expand/collapse animations. Expansion grows from
+   the slab's height (≈ 36 px) outward + downward with a tiny
+   upward translate so the body "settles" into place rather than
+   appearing flat-on. Collapse is the mirror: shrink + lift away.
+   Both lean on `transform-origin: top` so the motion radiates
+   from where the slab's top edge was sitting. */
+@keyframes water-deepen-expand {
+  from {
+    opacity: 0;
+    transform: scaleY(0.85) translateY(-4px);
+    transform-origin: top;
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+    transform-origin: top;
+  }
+}
+
+@keyframes water-deepen-collapse {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ──────────────── Glass button system ────────────────
    Default + variants for every clickable surface that isn't a
    GlassSelect or a pill. Applied via `className="water-button"`

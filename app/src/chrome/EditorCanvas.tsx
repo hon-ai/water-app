@@ -409,6 +409,13 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           background: "transparent",
           overflow: "auto",
           minWidth: 0,
+          // Always reserve the vertical scrollbar gutter so the
+          // centered flex group (and the nudge aside inside it)
+          // doesn't shift horizontally when DeepenPanels collapse
+          // or expand and the scrollbar toggles on/off. Without
+          // this, every collapse causes a 15-px width pop in the
+          // panel.
+          scrollbarGutter: "stable",
         }}
       >
       <div

@@ -288,94 +288,120 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path.length]);
 
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        data-testid="deepen-panel-collapsed"
-        aria-label="Expand deepen panel"
-        onClick={() => {
+  return (
+    <div
+      data-collapsed={collapsed}
+      onMouseEnter={() => {
+        if (collapsed) setCollapsed(false);
+        cancelCollapse();
+        armCollapse();
+      }}
+      onMouseLeave={armCollapse}
+      onClick={() => {
+        if (collapsed) {
           setCollapsed(false);
           armCollapse();
-        }}
-        onMouseEnter={() => {
-          setCollapsed(false);
-          armCollapse();
-        }}
-        style={{
-          width: "100%",
-          minWidth: 0,
-          boxSizing: "border-box",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "8px 12px",
-          borderRadius: "var(--water-r-12)",
-          background:
-            "color-mix(in srgb, var(--water-bg-paper) 62%, transparent)",
-          backdropFilter: "blur(18px) saturate(160%)",
-          WebkitBackdropFilter: "blur(18px) saturate(160%)",
-          border:
-            "1px solid color-mix(in srgb, var(--water-hairline) 50%, transparent)",
-          boxShadow: "var(--water-elev-1)",
-          textAlign: "left",
-          cursor: "pointer",
-          fontFamily: "var(--water-font-sans)",
-          color: "var(--water-fg-muted)",
-          fontSize: 12,
-          lineHeight: 1.4,
-          animation:
-            "water-fade-in var(--water-dur-tiny) var(--water-ease-out-soft) both",
-        }}
-      >
-        <span
-          aria-hidden
+        }
+      }}
+      style={{
+        // Shared wrapper that animates between the slab and the
+        // full deepen panel. Sized by content (so the centered
+        // flex group reflows naturally) but the inner swap uses
+        // a fade so collapse/expand reads as a smooth glass
+        // morph instead of a hard pop.
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        position: "relative",
+        cursor: collapsed ? "pointer" : "default",
+        // Same easing as the rest of the glass system. Tiny
+        // duration on the slab read (faster perceived response),
+        // medium on the expansion (the writer just hovered and
+        // wants to see the full panel revealed gracefully).
+        transition:
+          "filter var(--water-dur-tiny) var(--water-ease-out-soft)",
+      }}
+    >
+      {/* Collapsed slab — rendered only when collapsed so its
+          interactive role/aria stay accurate for assistive tech.
+          The animation comes from the wrapper's swap plus the
+          slab's own fade-in keyframe. */}
+      {collapsed && (
+        <div
+          data-testid="deepen-panel-collapsed"
+          role="button"
+          aria-label="Expand deepen panel"
           style={{
-            flex: "0 0 6px",
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: `color-mix(in oklch, var(${rootPill.hue_token}) 80%, transparent)`,
-          }}
-        />
-        <span
-          style={{
-            flex: 1,
+            width: "100%",
             minWidth: 0,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
+            boxSizing: "border-box",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 12px",
+            borderRadius: "var(--water-r-12)",
+            background:
+              "color-mix(in srgb, var(--water-bg-paper) 62%, transparent)",
+            backdropFilter: "blur(18px) saturate(160%)",
+            WebkitBackdropFilter: "blur(18px) saturate(160%)",
+            border:
+              "1px solid color-mix(in srgb, var(--water-hairline) 50%, transparent)",
+            boxShadow: "var(--water-elev-1)",
+            textAlign: "left",
+            fontFamily: "var(--water-font-sans)",
+            color: "var(--water-fg-muted)",
+            fontSize: 12,
+            lineHeight: 1.4,
+            animation:
+              "water-deepen-collapse var(--water-dur-medium) var(--water-ease-out-soft) both",
           }}
         >
-          {currentLevel.parentText || rootPill.text}
-        </span>
-        {path.length > 1 && (
           <span
             aria-hidden
             style={{
-              flex: "0 0 auto",
-              fontSize: 10,
-              color: "var(--water-fg-faint)",
-              fontVariantNumeric: "tabular-nums",
+              flex: "0 0 6px",
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: `color-mix(in oklch, var(${rootPill.hue_token}) 80%, transparent)`,
             }}
-            title={`${path.length} levels deep`}
+          />
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
           >
-            ·{path.length}
+            {currentLevel.parentText || rootPill.text}
           </span>
-        )}
-      </button>
-    );
-  }
-
-  return (
+          {path.length > 1 && (
+            <span
+              aria-hidden
+              style={{
+                flex: "0 0 auto",
+                fontSize: 10,
+                color: "var(--water-fg-faint)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+              title={`${path.length} levels deep`}
+            >
+              ·{path.length}
+            </span>
+          )}
+        </div>
+      )}
+      {!collapsed && (
     <div
       data-testid="deepen-panel"
       role="dialog"
       aria-label="Deepen pill"
-      onMouseEnter={cancelCollapse}
-      onMouseLeave={armCollapse}
       style={{
         position: "relative",
+        animation:
+          "water-deepen-expand var(--water-dur-medium) var(--water-ease-out-soft) both",
         // Fill the available width of the nudge panel (which is
         // 280 px wide with 16 px horizontal padding ≈ 248 px usable).
         // The previous hardcoded 360 px overflowed by ~110 px,
@@ -397,8 +423,6 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
           "1px solid color-mix(in srgb, var(--water-hairline) 55%, transparent)",
         boxShadow:
           "var(--water-elev-3), inset 0 1px 0 color-mix(in srgb, white 22%, transparent)",
-        animation:
-          "water-pill-fade-in var(--water-dur-medium) var(--water-ease-out-soft) both",
         pointerEvents: "auto",
         gap: 10,
       }}
@@ -524,6 +548,8 @@ export function DeepenPanel({ rootPill, onClose }: Props) {
           ))
         )}
       </div>
+    </div>
+      )}
     </div>
   );
 }
