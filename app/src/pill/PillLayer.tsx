@@ -584,24 +584,19 @@ export function PillLayer({ mainWidth = 0, sceneId = "" }: PillLayerProps = {}) 
         ref={layerRef}
         aria-label="nudge panel"
         style={{
-          // Flex sibling layout — the parent main is a flex row and
-          // we take a fixed 280px column on the right. This replaces
-          // the previous absolute-positioned overlay which could
-          // overlap prose at narrow viewports + stayed cut off on
-          // resize because absolute coords don't reflow.
+          // The aside (this layer's parent) grows with content
+          // rather than capping at viewport height + scrolling
+          // internally. Pills + open deepen panels flow naturally
+          // here; if the total exceeds viewport, the writer
+          // scrolls the page to reach the bottom. Removing the
+          // internal `overflowY: auto` is what enables the aside
+          // to expand instead of clipping its children.
           width: "100%",
-          height: "100%",
-          padding: "72px 16px 96px 16px",
+          padding: "56px 16px 24px 16px",
           boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
           gap: 12,
-          // Long pill lists scroll inside the panel rather than
-          // pushing the editor's layout. `overflowY: auto` only
-          // shows the scrollbar when content actually exceeds the
-          // panel's height.
-          overflowY: "auto",
-          overflowX: "hidden",
           // Pills inside re-enable pointer events on their wrappers;
           // gaps between them stay transparent + non-interactive so
           // the writer can drag-select prose underneath if they

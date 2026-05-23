@@ -595,21 +595,20 @@ export function EditorCanvas({ sceneId, onRenamed }: Props) {
           }}
         />
       </div>
-      {/* Right-side nudge panel — sticky inside the editor's scroll
-          container so it tracks the writer's viewport and sits
-          adjacent to the prose column rather than pinned to the
-          window edge. `position: relative` is required for the
-          stash chip's absolute positioning inside <PillLayer> to
-          anchor here. */}
+      {/* Right-side nudge panel — flex sibling adjacent to the
+          writing column. The panel grows with its content (no
+          max-height cap, no internal scroll), and the editor's
+          outer scroll container (`mainRef`) extends to accommodate
+          a tall panel. So when the writer has several deepen
+          panels open at once, scrolling the page down reveals the
+          remaining pills instead of them getting clipped past the
+          panel boundary or stranded below the window. */}
       <aside
         aria-label="nudges"
         className="water-floating-panel"
         style={{
           flex: "0 0 280px",
           alignSelf: "flex-start",
-          position: "sticky",
-          top: 10,
-          maxHeight: "calc(100vh - 20px)",
           margin: "10px 10px 10px 0",
           display: "flex",
           flexDirection: "column",
