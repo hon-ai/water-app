@@ -8,8 +8,6 @@ import "./styles/worlds.css";
 import "./styles/characters.css";
 import "./styles/sheets.css";
 import "./styles/intake.css";
-// alpha.4 diagnostic — imported last so its !important rules win.
-import "./styles/perf-diagnostic.css";
 import { loadAndApplyFont } from "./theme/fonts";
 import { initSentry } from "./boot";
 
