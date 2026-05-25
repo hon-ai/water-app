@@ -504,7 +504,6 @@ function SprayDots() {
             opacity: 0,
             animation: `water-heat-orb-life-${i % 6} ${d.duration}s ease-in-out ${d.delay}s infinite`,
             willChange: "opacity",
-            transition: "left 600ms ease, top 600ms ease",
           }}
         />
       ))}

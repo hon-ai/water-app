@@ -355,22 +355,25 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
         if (tr.docChanged && !syncingRef.current) {
           onChangeRef.current(markdownFromDoc(next.doc));
           // Structural-inflection scan: any scene_break -> "new_scene",
-          // any h2 -> "new_chapter". Heuristic: this scans every block on
-          // every transaction, OK at M2 scene sizes; revisit if it shows
-          // up in profiling once scenes get long.
-          let inflection: StructuralInflection = "none";
-          next.doc.descendants((node) => {
-            if (node.type.name === "scene_break") {
-              inflection = "new_scene";
-              return false;
-            }
-            if (node.type.name === "heading" && node.attrs["level"] === 2) {
-              inflection = "new_chapter";
-              return false;
-            }
-            return true;
-          });
-          if (inflection !== "none") pendingInflectionRef.current = inflection;
+          // any h2 -> "new_chapter". Gated on top-level block-count
+          // change so plain typing inside a paragraph is O(1). The rare
+          // setBlockType-in-place case (promoting a paragraph to h2 via
+          // shortcut) won't trip this — acceptable per spec; the engine
+          // picks the heading up on the next insertion.
+          if (tr.before.childCount !== next.doc.childCount) {
+            let inflection: StructuralInflection = "none";
+            next.doc.forEach((node) => {
+              if (node.type.name === "scene_break") {
+                inflection = "new_scene";
+              } else if (
+                node.type.name === "heading" &&
+                node.attrs["level"] === 2
+              ) {
+                inflection = "new_chapter";
+              }
+            });
+            if (inflection !== "none") pendingInflectionRef.current = inflection;
+          }
           // Reset idle timer; this is real user activity.
           onActivityRef.current();
           // 5 Hz cap on live-typing emits.
