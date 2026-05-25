@@ -96,8 +96,7 @@ impl LlmProvider for AnthropicProvider {
             .send()
             .await
             .map_err(|e| Error::Provider(format!("anthropic health: {e}")))?;
-        r.error_for_status()
-            .map_err(|e| Error::Provider(format!("anthropic health http: {e}")))?;
+        check_response_status(r, "anthropic health").await?;
         Ok(())
     }
 
@@ -126,9 +125,7 @@ impl LlmProvider for AnthropicProvider {
             .send()
             .await
             .map_err(|e| Error::Provider(format!("anthropic: {e}")))?;
-        let r = r
-            .error_for_status()
-            .map_err(|e| Error::Provider(format!("anthropic http: {e}")))?;
+        let r = check_response_status(r, "anthropic").await?;
         let resp: MessagesResponse = r
             .json()
             .await
@@ -187,9 +184,7 @@ impl LlmProvider for AnthropicProvider {
             .send()
             .await
             .map_err(|e| Error::Provider(format!("anthropic: {e}")))?;
-        let r = r
-            .error_for_status()
-            .map_err(|e| Error::Provider(format!("anthropic http: {e}")))?;
+        let r = check_response_status(r, "anthropic").await?;
         let resp: MessagesResponse = r
             .json()
             .await
@@ -202,6 +197,26 @@ impl LlmProvider for AnthropicProvider {
             .next()
             .ok_or_else(|| Error::Provider("anthropic: no text block".into()))
     }
+}
+
+/// Convert a non-2xx response into a `Provider` error that includes the
+/// server's response body. `reqwest::Response::error_for_status` discards
+/// the body, so the caller would never see Anthropic / OpenAI's structured
+/// error JSON (`{"error":{"type":"invalid_request_error","message":"..."}}`).
+/// Without the body, a 400 is unactionable; with it, the writer sees the
+/// actual reason.
+async fn check_response_status(r: reqwest::Response, provider: &str) -> Result<reqwest::Response> {
+    let status = r.status();
+    if status.is_success() {
+        return Ok(r);
+    }
+    let body = r
+        .text()
+        .await
+        .unwrap_or_else(|_| "(failed to read response body)".into());
+    Err(Error::Provider(format!(
+        "{provider} http {status}: {body}"
+    )))
 }
 
 pub(super) fn build_user_with_exclusions(base: &str, prior: &[String], n: usize) -> String {
