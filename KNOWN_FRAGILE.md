@@ -482,4 +482,22 @@ If a future writer authors a 200-trait OC and then drops them into every scene, 
 
 ---
 
+## 23. `keyring` crate silently falls back to a Mock backend without explicit platform features
+
+**What it is.** The `keyring` crate (v3.x) does not enable any platform backend by default. With a bare `keyring = "3"` declaration, every `Entry::new(...)` returns a `MockCredential` whose data lives in a per-instance `Mutex` and is discarded the moment the Entry value drops. `set_password` writes to that mock; the next `Entry::new` call returns a fresh empty mock; `get_password` returns "no entry." No error is raised — the contract is silently a no-op.
+
+**Where it lives.** `Cargo.toml` (workspace dep declaration) — currently `keyring = { version = "3", features = ["apple-native", "windows-native"] }`. Consumed by `crates/water-core/src/llm/secrets.rs::Secrets::{get,set}`.
+
+**Why it's fragile.** The crate compiles, the tests pass (the test suite uses a deliberately-loose assertion in `secrets.rs::tests::dev_keys_fallback_works` because keychain state isn't deterministic on CI), and the bug only surfaces on a fresh user install with no `dev-keys.toml` and no env vars: keys appear to save, but Test always fails with `no secret for provider`. Discovered in alpha.2 release after a Mac tester saw "Test hangs forever" — the renderer wasn't surfacing the immediate `NotFound` error visibly, so the failure mode looked like a hang rather than a clean rejection.
+
+**What success looks like.** `cargo check -p water-core` resolves `security-framework` (macOS) and `windows-sys` (Windows) into the dependency graph. `RUST_LOG=debug` shows `keyring` log lines mentioning the native credential type (`MacCredential`, `WinCredential`) rather than `MockCredential`. End-to-end: a key saved in Settings persists across an app relaunch and Test resolves it successfully on the next click.
+
+**First-look mitigations.**
+
+1. If a tester reports keys not persisting on a fresh install, run the packaged binary with `RUST_LOG=debug` and grep for `MockCredential` in the keyring log lines. Its presence confirms the regression.
+2. When bumping `keyring` to a future major (v4+), re-verify the feature flag names — keyring has renamed its platform features more than once across major versions (`platform-macos` → `apple-native`, etc.). The Cargo.toml declaration is the only source of truth.
+3. The `Secrets::get` keychain path uses `if let Ok(entry) = ...` guards (`secrets.rs:42`), which means *any* keyring error (including a backend missing) falls through silently. If we ever want hard failures on keyring misconfiguration, replace the guards with explicit error mapping.
+
+---
+
 *(More entries will be added as fragile heuristics are introduced. Keep this file in repo root.)*

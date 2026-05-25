@@ -147,7 +147,7 @@ export function SettingsSheet({ open, onClose }: Props) {
   const { theme, setTheme } = useTheme();
   const [status, setStatus] = useState<DiagnosticsStatus | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
+  const [testError, setTestError] = useState<{ id: string; message: string } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -236,7 +236,7 @@ export function SettingsSheet({ open, onClose }: Props) {
       const model = getActiveModel(providerId);
       await ipc.providerTest(providerId, model || undefined);
     } catch (e) {
-      setTestError(String(e));
+      setTestError({ id: providerId, message: String(e) });
     } finally {
       setTestingId(null);
       refresh();
@@ -414,7 +414,7 @@ export function SettingsSheet({ open, onClose }: Props) {
                   providerId={p.id}
                 />
               )}
-              {p.error && (
+              {(p.error || (testError && testError.id === p.id)) && (
                 <div
                   data-testid={`provider-error-${p.id}`}
                   style={{
@@ -431,17 +431,15 @@ export function SettingsSheet({ open, onClose }: Props) {
                     lineHeight: 1.5,
                   }}
                 >
-                  {friendlyError(p.error, p.id)}
+                  {friendlyError(
+                    (testError && testError.id === p.id ? testError.message : p.error) ?? "",
+                    p.id,
+                  )}
                 </div>
               )}
             </li>
           ))}
         </ul>
-        {testError && (
-          <pre style={{ color: "var(--water-hue-drift)", marginTop: 12, fontSize: "var(--water-fs-meta)" }}>
-            {testError}
-          </pre>
-        )}
       </section>
 
       <PythonSidecarSection section={section} heading={heading} />
