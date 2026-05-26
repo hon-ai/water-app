@@ -179,18 +179,37 @@ export default function App() {
   // Re-measure scene row positions periodically so the WaterRibbon
   // can bend its centerline toward them. Width stays constant — only
   // the bending physics responds. We avoid scroll listeners because
-  // they'd repaint the ribbon on every event; 500 ms polling is
-  // cheap (one querySelectorAll + a flat map) and catches scenes
-  // added / removed / scrolled into view without coupling to DOM
-  // mutation observers.
+  // they'd repaint the ribbon on every event.
+  //
+  // The polling runs every 2 s with a cheap pre-check: read each
+  // row's `offsetTop` (no forced layout for layout-clean reads, and
+  // far cheaper than `getBoundingClientRect` regardless) to detect
+  // whether anything has moved. Only when the structural signature
+  // changes do we fall through to the full `getBoundingClientRect`
+  // sweep that drives the ribbon's anchor list. On Ventura WebKit
+  // with backdrop-filter ancestors, getBoundingClientRect can cost
+  // 5–50 ms per call — the previous 500 ms unconditional poll was
+  // a measurable contributor to typing lag.
   const [sceneAnchors, setSceneAnchors] = useState<Anchor[]>([]);
   useEffect(() => {
     if (!projectOpen) {
       setSceneAnchors([]);
       return;
     }
+    let lastSignature = "";
     const measure = () => {
+      // Skip work when the user can't see the result anyway.
+      if (document.hidden) return;
       const rows = document.querySelectorAll<HTMLElement>("[data-scene-row]");
+      // Structural pre-check: rows count + each row's offsetTop. A
+      // cheap signature; if it matches last frame, no anchor moved
+      // and we can skip the costly bounding-rect sweep entirely.
+      let signature = `${rows.length}:`;
+      rows.forEach((row) => {
+        signature += `${row.offsetTop},`;
+      });
+      if (signature === lastSignature) return;
+      lastSignature = signature;
       const anchors: Anchor[] = [];
       rows.forEach((row, i) => {
         const r = row.getBoundingClientRect();
@@ -221,7 +240,7 @@ export default function App() {
       });
     };
     measure();
-    const interval = window.setInterval(measure, 500);
+    const interval = window.setInterval(measure, 2000);
     return () => window.clearInterval(interval);
   }, [projectOpen, scenesReloadKey, scenesCollapsed]);
 
