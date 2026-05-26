@@ -82,6 +82,13 @@ function friendlyError(raw: string, providerId: string): string {
   if (lower.includes("402") || lower.includes("payment")) {
     return `${pretty} reports no credit / billing on the account (402). Add a payment method on the provider's site and re-test.`;
   }
+  if (
+    lower.includes("credit balance is too low") ||
+    lower.includes("insufficient credit") ||
+    lower.includes("insufficient balance")
+  ) {
+    return `${pretty} reports the account is out of credits. Add credits on the provider's site (Plans & Billing) and re-test, or switch to a different provider in the Settings list.`;
+  }
   if (lower.includes("403") || lower.includes("forbidden")) {
     return `${pretty} forbade the request (403). The key may not have access to the chosen model — try a different one in the Model picker.`;
   }

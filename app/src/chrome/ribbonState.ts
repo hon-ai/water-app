@@ -19,16 +19,33 @@
  */
 import type { Anchor } from "./WaterRibbon";
 
-const POS_EASE = 0.05; // ~1s for x/y to converge at 60fps
-const WEIGHT_EASE = 0.04; // ~1.5s for weight to fade in/out
+// Easing constants were originally tuned at 60fps. Doubled to keep
+// the same perceptual convergence speed at 30fps.
+const POS_EASE = 0.1; // ~1s for x/y to converge at 30fps
+const WEIGHT_EASE = 0.08; // ~1.5s for weight to fade in/out at 30fps
 const DROP_THRESHOLD = 0.02;
+
+// Throttle the clock to 30fps. The wave is slow and graceful; 30fps
+// looks identical to 60fps for this kind of easing while halving the
+// per-frame work (React force-update + buildStrand path regeneration
+// + SVG diff + WebKit repaint). Was the dominant lag cause through
+// alpha.5: a continuous 60fps loop kept the main thread saturated
+// even when the user was idle.
+const TARGET_FRAME_MS = 1000 / 30;
 
 let displayed: Anchor[] = [];
 let target: Anchor[] = [];
 let rafId = 0;
+let lastTickAt = 0;
 const listeners = new Set<() => void>();
 
-function tick() {
+function tick(now: number) {
+  if (now - lastTickAt < TARGET_FRAME_MS) {
+    rafId = requestAnimationFrame(tick);
+    return;
+  }
+  lastTickAt = now;
+
   const targetMap = new Map(target.map((t) => [t.id, t]));
   const next: Anchor[] = [];
   // Targets: ease toward, or fade in if newly appeared.
@@ -58,6 +75,15 @@ function tick() {
   }
   displayed = next;
   for (const cb of listeners) cb();
+
+  // Stop the loop when no WaterRibbon is mounted to observe it. The
+  // next ensureClock() call (on subscribe or target change) restarts.
+  // Without this gate the clock ran forever after first mount, which
+  // was the alpha.5 lag cause.
+  if (listeners.size === 0) {
+    rafId = 0;
+    return;
+  }
   rafId = requestAnimationFrame(tick);
 }
 
