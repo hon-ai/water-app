@@ -367,19 +367,13 @@ export function CanvasFlowRibbon({
       width={w}
       height={h}
       viewBox={`${xMin} ${minStrandY} ${w} ${h}`}
-      style={{ display: "block", overflow: "visible" }}
+      style={{
+        display: "block",
+        overflow: "visible",
+        transform: "translate3d(0, 0, 0)",
+        willChange: "transform",
+      }}
     >
-      <defs>
-        <filter id="cf-glow-wide" x="-10%" y="-30%" width="120%" height="160%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="14" />
-        </filter>
-        <filter id="cf-glow-mid" x="-10%" y="-30%" width="120%" height="160%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="4" />
-        </filter>
-        <filter id="cf-drop-glow" x="-300%" y="-300%" width="700%" height="700%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="1.4" />
-        </filter>
-      </defs>
       {strands.map((strand, ix) => (
         // Inner-group animations: each strand wobbles + shimmers with
         // its own period and offset so they don't move in lockstep.
@@ -419,8 +413,8 @@ export function CanvasFlowRibbon({
               ))}
             </linearGradient>
           </defs>
-          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.8} filter="url(#cf-glow-wide)" />
-          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.85} filter="url(#cf-glow-mid)" />
+          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.6} style={{ filter: "blur(14px)" }} />
+          <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.85} style={{ filter: "blur(4px)" }} />
           <path d={strand.d} fill={`url(#cf-grad-${ix})`} opacity={0.65} />
           <path
             d={strand.edge}
@@ -438,7 +432,7 @@ export function CanvasFlowRibbon({
                 r={d.r * 2.2}
                 fill="var(--water-sea-glow)"
                 opacity={d.opacity * 0.5}
-                filter="url(#cf-drop-glow)"
+                style={{ filter: "blur(1.4px)" }}
               />
               <circle
                 cx={d.cx}

@@ -45,6 +45,17 @@ type StructuralInflection =
   | "location_change"
   | "none";
 
+function countDocWords(doc: import("prosemirror-model").Node): number {
+  let words = 0;
+  doc.descendants((node) => {
+    if (node.isText && node.text) {
+      words += node.text.split(/\s+/).filter(Boolean).length;
+    }
+    return true;
+  });
+  return words;
+}
+
 interface Props {
   value: string;
   onChange: (markdown: string) => void;
@@ -78,6 +89,9 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
   // the change handler so the parent doesn't see its own value bounced
   // back as a "user edit".
   const syncingRef = useRef(false);
+  // Track the last serialized markdown string we emitted or synced from the parent
+  // to avoid redundant serialization loops during keystrokes/re-renders.
+  const lastSerializedRef = useRef<string | null>(null);
   // Telemetry state: rate-limit timestamps, rolling 10s word-count history,
   // and the most-recent detected structural inflection (consumed + cleared
   // on emit). The history is an append-only ring of `{ts, totalWords}`
@@ -117,7 +131,7 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     // snapshot exists (history is empty or all entries are within the
     // last 10 s window), the baseline is 0.
     const now = Date.now();
-    const totalWords = markdownFromDoc(state.doc).split(/\s+/).filter(Boolean).length;
+    const totalWords = countDocWords(state.doc);
     const history = wordHistoryRef.current;
     const tenSecAgo = now - 10_000;
     let baseline = 0;
@@ -353,7 +367,9 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
         const next = view.state.apply(tr);
         view.updateState(next);
         if (tr.docChanged && !syncingRef.current) {
-          onChangeRef.current(markdownFromDoc(next.doc));
+          const markdown = markdownFromDoc(next.doc);
+          lastSerializedRef.current = markdown;
+          onChangeRef.current(markdown);
           // Structural-inflection scan: any scene_break -> "new_scene",
           // any h2 -> "new_chapter". Gated on top-level block-count
           // change so plain typing inside a paragraph is O(1). The rare
@@ -393,10 +409,10 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     wordHistoryRef.current = [
       {
         ts: Date.now(),
-        totalWords: markdownFromDoc(state.doc).split(/\s+/).filter(Boolean)
-          .length,
+        totalWords: countDocWords(state.doc),
       },
     ];
+    lastSerializedRef.current = value;
 
     return () => {
       // Defer view.destroy() to a microtask so child components
@@ -420,8 +436,12 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    if (value === lastSerializedRef.current) return;
     const current = markdownFromDoc(view.state.doc);
-    if (current === value) return;
+    if (current === value) {
+      lastSerializedRef.current = value;
+      return;
+    }
     const newDoc = docFromMarkdown(schema, value);
     const tr = view.state.tr.replaceWith(
       0,
@@ -440,12 +460,11 @@ export function Editor({ value, onChange, onTransaction, placeholder }: Props) {
     wordHistoryRef.current = [
       {
         ts: Date.now(),
-        totalWords: markdownFromDoc(view.state.doc)
-          .split(/\s+/)
-          .filter(Boolean).length,
+        totalWords: countDocWords(view.state.doc),
       },
     ];
     pendingInflectionRef.current = "none";
+    lastSerializedRef.current = value;
   }, [value]);
 
   // Pill trigger-highlight bridge. PillLayer dispatches window

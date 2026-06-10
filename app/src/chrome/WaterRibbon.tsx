@@ -486,8 +486,8 @@ export function WaterRibbon({
           ))}
         </linearGradient>
       </defs>
-      <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.6} filter="url(#wr-glow-wide)" />
-      <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.75} filter="url(#wr-glow-mid)" />
+      <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.6} style={{ filter: "blur(22px)" }} />
+      <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.75} style={{ filter: "blur(6px)" }} />
       <path d={strand.d} fill={`url(#wr-grad-${ix})`} opacity={0.5} />
       <path
         d={strand.edge}
@@ -509,7 +509,7 @@ export function WaterRibbon({
                 r={dr.r * 2.2}
                 fill="var(--water-sea-glow)"
                 opacity={finalOpacity * 0.5}
-                filter="url(#wr-drop-glow)"
+                style={{ filter: "blur(1.5px)" }}
               />
               <circle
                 cx={dr.cx}
@@ -535,19 +535,10 @@ export function WaterRibbon({
           top: svgTop,
           display: "block",
           overflow: "visible",
+          transform: "translate3d(0, 0, 0)",
+          willChange: "transform",
         }}
       >
-        <defs>
-          <filter id="wr-glow-wide" x="-10%" y="-30%" width="120%" height="160%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="22" />
-          </filter>
-          <filter id="wr-glow-mid" x="-10%" y="-30%" width="120%" height="160%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="6" />
-          </filter>
-          <filter id="wr-drop-glow" x="-300%" y="-300%" width="700%" height="700%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" />
-          </filter>
-        </defs>
         {/* One unified strand. */}
         {renderStrand(strand, 0, true)}
       </svg>

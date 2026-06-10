@@ -40,6 +40,10 @@ let lastTickAt = 0;
 const listeners = new Set<() => void>();
 
 function tick(now: number) {
+  if (typeof document !== "undefined" && document.hidden) {
+    rafId = 0;
+    return;
+  }
   if (now - lastTickAt < TARGET_FRAME_MS) {
     rafId = requestAnimationFrame(tick);
     return;
@@ -91,6 +95,14 @@ function ensureClock() {
   if (rafId === 0) {
     rafId = requestAnimationFrame(tick);
   }
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      ensureClock();
+    }
+  });
 }
 
 /** Set the desired anchor list. Easing transitions toward it. */
